@@ -104,6 +104,18 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     awaitCond(bob.stateName == CLOSED)
   }
 
+  test("recv FundingCreated (channel_id already used)") { f =>
+    import f._
+    val fundingCreated = alice2bob.expectMsgType[FundingCreated]
+    // We already have a channel with the same channel_id in our channels map.
+    val channelId = toLongId(fundingCreated.fundingTxId, fundingCreated.fundingOutputIndex)
+    bob.underlyingActor.nodeParams.addChannelIdIfAbsent(channelId, bob.underlyingActor.remoteNodeId)
+    alice2bob.forward(bob, fundingCreated)
+    val error = bob2alice.expectMsgType[Error]
+    assert(error == Error(channelId, InvalidFundingTx(channelId).getMessage))
+    awaitCond(bob.stateName == CLOSED)
+  }
+
   test("recv Error") { f =>
     import f._
     bob ! Error(ByteVector32.Zeroes, "oops")

@@ -241,11 +241,18 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               val fundingCreated = FundingCreated(temporaryChannelId, fundingTx.txid, fundingTxOutputIndex, localSig)
               val channelId = toLongId(fundingTx.txid, fundingTxOutputIndex)
               val channelParams1 = d.channelParams.copy(channelId = channelId)
-              peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
-              txPublisher ! SetChannelId(remoteNodeId, channelId)
-              context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
-              // NB: we don't send a ChannelSignatureSent for the first commit
-              goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(channelParams1, d.channelType, d.localCommitParams, d.remoteCommitParams, d.remoteFundingPubKey, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, fundingCreated, d.replyTo) sending fundingCreated
+              nodeParams.addChannelIdIfAbsent(channelId, remoteNodeId) match {
+                case None =>
+                  peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
+                  txPublisher ! SetChannelId(remoteNodeId, channelId)
+                  context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
+                  // NB: we don't send a ChannelSignatureSent for the first commit
+                  goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(channelParams1, d.channelType, d.localCommitParams, d.remoteCommitParams, d.remoteFundingPubKey, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, fundingCreated, d.replyTo) sending fundingCreated
+                case Some(nodeId) =>
+                  log.warning("channel_id={} already used with remoteNodeId={}: aborting local channel open", channelId, nodeId)
+                  d.replyTo ! OpenChannelResponse.Rejected("channel_id conflict")
+                  handleLocalError(InvalidFundingTx(channelId), d, None)
+              }
           }
       }
 
@@ -331,19 +338,26 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                     remotePerCommitmentSecrets = ShaChain.init,
                     originChannels = Map.empty)
                   val d1 = DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, nodeParams.currentBlockHeight, None, Right(fundingSigned))
-                  nodeParams.db.channels.addChannel(d1) match {
+                  nodeParams.addChannelIdIfAbsent(channelId, remoteNodeId) match {
                     case None =>
-                      peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
-                      txPublisher ! SetChannelId(remoteNodeId, channelId)
-                      context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
-                      context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
-                      context.system.eventStream.publish(ChannelFundingCreated(self, channelId, remoteNodeId, Left(commitment.fundingTxId), commitment.fundingTxIndex, commitments))
-                      // NB: we don't send a ChannelSignatureSent for the first commit
-                      log.info("waiting for them to publish the funding tx for channelId={} fundingTxid={}", channelId, commitment.fundingTxId)
-                      watchFundingConfirmed(commitment.fundingTxId, d.channelParams.minDepth(nodeParams.channelConf.minDepth), delay_opt = None)
-                      goto(WAIT_FOR_FUNDING_CONFIRMED) using d1 sending fundingSigned
-                    case Some(t) =>
-                      log.error(s"cannot add channel to DB: ${t.getMessage}")
+                      nodeParams.db.channels.addChannel(d1) match {
+                        case None =>
+                          peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
+                          txPublisher ! SetChannelId(remoteNodeId, channelId)
+                          context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
+                          context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
+                          context.system.eventStream.publish(ChannelFundingCreated(self, channelId, remoteNodeId, Left(commitment.fundingTxId), commitment.fundingTxIndex, commitments))
+                          // NB: we don't send a ChannelSignatureSent for the first commit
+                          log.info("waiting for them to publish the funding tx for channelId={} fundingTxid={}", channelId, commitment.fundingTxId)
+                          watchFundingConfirmed(commitment.fundingTxId, d.channelParams.minDepth(nodeParams.channelConf.minDepth), delay_opt = None)
+                          goto(WAIT_FOR_FUNDING_CONFIRMED) using d1 sending fundingSigned
+                        case Some(t) =>
+                          log.error(s"cannot add channel to DB: ${t.getMessage}")
+                          val error = Error(channelId, InvalidFundingTx(channelId).getMessage)
+                          goto(CLOSED) using IgnoreClosedData(d) sending error
+                      }
+                    case Some(nodeId) =>
+                      log.warning("channel_id={} already used with remoteNodeId={}: aborting remote channel open", channelId, nodeId)
                       val error = Error(channelId, InvalidFundingTx(channelId).getMessage)
                       goto(CLOSED) using IgnoreClosedData(d) sending error
                   }

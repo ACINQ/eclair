@@ -63,6 +63,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
         }
         nodeParams.db.channels.removeChannel(c.channelId, closingData_opt)
       })
+      channels.foreach(c => nodeParams.addChannelIdIfAbsent(c.channelId, c.remoteNodeId))
       val peersWithChannels = channels.groupBy(_.remoteNodeId)
       val peersWithOnTheFlyFunding = nodeParams.db.liquidity.listPendingOnTheFlyFunding()
       peersWithChannels.foreach { case (remoteNodeId, states) => createOrGetPeer(remoteNodeId, offlineChannels = states.toSet, peersWithOnTheFlyFunding.getOrElse(remoteNodeId, Map.empty)) }

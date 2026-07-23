@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorRef
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel._
@@ -161,6 +162,7 @@ object TestConstants {
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hours,
       ),
+      channelIds = collection.concurrent.TrieMap.empty[ByteVector32, PublicKey],
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
         maxClosingFeerate = FeeratePerKw(15_000 sat),
@@ -383,6 +385,7 @@ object TestConstants {
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hour,
       ),
+      channelIds = collection.concurrent.TrieMap.empty[ByteVector32, PublicKey],
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
         maxClosingFeerate = FeeratePerKw(15_000 sat),

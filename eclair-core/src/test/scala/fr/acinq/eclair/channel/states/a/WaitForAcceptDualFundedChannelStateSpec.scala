@@ -236,6 +236,19 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
+  test("recv AcceptDualFundedChannel (channel_id already used)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
+    val channelId = Helpers.computeChannelId(open.revocationBasepoint, accept.revocationBasepoint)
+    alice.underlyingActor.nodeParams.addChannelIdIfAbsent(channelId, alice.underlyingActor.remoteNodeId)
+    alice ! accept
+    val error = alice2bob.expectMsgType[Error]
+    assert(error == Error(accept.temporaryChannelId, InvalidFundingTx(channelId).getMessage))
+    listener.expectMsgType[ChannelAborted]
+    awaitCond(alice.stateName == CLOSED)
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
+  }
+
   test("recv Error", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     alice ! Error(ByteVector32.Zeroes, "dual funding not supported")

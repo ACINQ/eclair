@@ -18,15 +18,18 @@ package fr.acinq.eclair.channel.states.b
 
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.BlockingOnChainWallet
+import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
+import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomKey, toLongId}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -57,6 +60,24 @@ class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFu
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
       withFixture(test.toNoArgTest(FixtureParam(alice, aliceOpenReplyTo, alice2bob, bob2alice, alice2blockchain, listener)))
     }
+  }
+
+  test("recv funding tx response (channel_id already used)") { f =>
+    import f._
+    val localFundingPubKey = alice.underlyingActor.channelKeys.fundingKey(fundingTxIndex = 0).publicKey
+    val remoteFundingPubKey = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].remoteFundingPubKey
+    val fundingTx = Transaction(
+      version = 2,
+      txIn = Seq(TxIn(OutPoint(randomTxId(), 3), Nil, 0)),
+      txOut = Seq(TxOut(100_000 sat, Script.pay2wsh(Scripts.multiSig2of2(localFundingPubKey, remoteFundingPubKey)))),
+      lockTime = 0
+    )
+    val channelId = toLongId(fundingTx.txid, 0)
+    alice.underlyingActor.nodeParams.addChannelIdIfAbsent(channelId, alice.underlyingActor.remoteNodeId)
+    alice ! MakeFundingTxResponse(fundingTx, 0, 150 sat)
+    listener.expectMsgType[ChannelAborted]
+    awaitCond(alice.stateName == CLOSED)
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
   test("recv Status.Failure (wallet error)") { f =>
