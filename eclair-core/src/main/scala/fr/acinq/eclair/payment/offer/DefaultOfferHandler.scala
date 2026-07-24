@@ -118,10 +118,11 @@ object DefaultOfferHandler {
         val hops = routes(i % routes.length)
         // We always pad blinded paths to the configured length, using dummy hops if necessary.
         val dummyHops = Seq.fill(nodeParams.offersConfig.paymentPathLength - hops.length)(ChannelHop.dummy(nodeParams.nodeId, 0 msat, 0, CltvExpiryDelta(0)))
-        // We always override the fees of the payment path: the payer shouldn't be paying for our privacy.
-        // Note that we told the router to only find paths with a lower cltv_expiry_delta than what we'll be using,
-        // which ensures that we won't reject payments because of their expiry.
-        InvoiceRequestActor.Route(hops ++ dummyHops, nodeParams.channelConf.maxExpiryDelta, feeOverride_opt = Some(RelayFees.zero), cltvOverride_opt = Some(nodeParams.offersConfig.paymentPathCltvExpiryDelta))
+        // Note that we currently don't override the fees of the payment path.
+        // While this would be more fair (payers shouldn't be paying for our privacy), this doesn't work well with MPP.
+        // Payers could abuse it by splitting payments into many tiny parts, where everything goes to routing fees.
+        // We'll need a more robust protocol to allow that feature to be safely activated.
+        InvoiceRequestActor.Route(hops ++ dummyHops, nodeParams.channelConf.maxExpiryDelta, feeOverride_opt = None, cltvOverride_opt = Some(nodeParams.offersConfig.paymentPathCltvExpiryDelta))
       })
     }
   }
