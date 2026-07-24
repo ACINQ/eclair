@@ -49,7 +49,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   type FixtureParam = SetupFixture
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+    val setup = init(tags = test.tags)
     within(30 seconds) {
       reachNormal(setup, test.tags)
       withFixture(test.toNoArgTest(setup))
@@ -746,6 +746,65 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(aliceTx4.fee > aliceTx1.fee)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceTx4.tx.txid)
     alice2blockchain.expectNoMessage(100 millis)
+    alice2bob.expectNoMessage(100 millis)
+  }
+
+  test("recv ClosingComplete (rate-limited)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.DelayRbfAttempts)) { f =>
+    import f._
+
+    aliceClose(f)
+    alice2bob.expectMsgType[ClosingComplete]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ClosingComplete]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[ClosingSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ClosingSig]
+    bob2alice.forward(alice)
+
+    // The next closing transaction must be after the next block is found.
+    val probe = TestProbe()
+    val currentBlockHeight = bob.underlyingActor.nodeParams.currentBlockHeight
+    val nextFeerate = alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].lastClosingFeerate * 1.25
+    alice ! CMD_CLOSE(probe.ref, None, Some(ClosingFeerates(nextFeerate, nextFeerate, nextFeerate)))
+    probe.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    alice2bob.expectMsgType[ClosingComplete]
+    alice2bob.forward(bob)
+    assert(bob2alice.expectMsgType[Warning].toAscii == InvalidRbfAttemptTooSoon(channelId(alice), currentBlockHeight, currentBlockHeight + 1).getMessage)
+    bob2alice.expectNoMessage(100 millis)
+  }
+
+  test("recv ClosingComplete (max attempts exhausted)", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+    import f._
+
+    aliceClose(f)
+    alice2bob.expectMsgType[ClosingComplete]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ClosingComplete]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[ClosingSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ClosingSig]
+    bob2alice.forward(alice)
+
+    // We allow a few closing transactions and reject new ones after reaching our limit.
+    val probe = TestProbe()
+    (1 to 4).foreach(_ => {
+      val nextFeerate = bob.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].lastClosingFeerate * 1.25
+      bob ! CMD_CLOSE(probe.ref, None, Some(ClosingFeerates(nextFeerate, nextFeerate, nextFeerate)))
+      probe.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+      bob2alice.expectMsgType[ClosingComplete]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[ClosingSig]
+      alice2bob.forward(bob)
+    })
+
+    val nextFeerate = bob.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].lastClosingFeerate * 1.25
+    bob ! CMD_CLOSE(probe.ref, None, Some(ClosingFeerates(nextFeerate, nextFeerate, nextFeerate)))
+    probe.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    bob2alice.expectMsgType[ClosingComplete]
+    bob2alice.forward(alice)
+    assert(alice2bob.expectMsgType[Warning].toAscii == InvalidRbfAttemptsExhausted(channelId(alice), 5).getMessage)
     alice2bob.expectNoMessage(100 millis)
   }
 

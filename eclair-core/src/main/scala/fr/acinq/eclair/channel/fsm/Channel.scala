@@ -234,8 +234,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   // Closee nonces are first exchanged in shutdown messages, and replaced by a new nonce after each closing_sig.
   var localCloseeNonce_opt: Option[LocalNonce] = None
   var remoteCloseeNonce_opt: Option[IndividualNonce] = None
-  // our closing_complete message, that includes partial musig2 signatures generated with random nonces.
+  // Our closing_complete message, that includes partial musig2 signatures generated with random nonces.
   var localClosingComplete_opt: Option[ClosingComplete] = None
+  // We rate-limit remote closing transactions to avoid wasting resources.
+  var lastRemoteClosingCompleteBlockHeight_opt: Option[BlockHeight] = None
 
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: akka.event.DiagnosticLoggingAdapter = diagLog
@@ -1255,6 +1257,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               // Our peer is trying to trick us into contributing the amount they were previously paying for, but
               // without paying for it by leveraging the fact that we'll keep contributing the same amount.
               stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidRbfMissingLiquidityPurchase(d.channelId, rbf.latestFundingTx.liquidityPurchase_opt.get.amount).getMessage)
+            case Right(rbf) if nodeParams.channelConf.remoteRbfLimits.maxAttempts <= rbf.previousTransactions.length =>
+              log.info("rejecting rbf attempt: maximum number of attempts reached (max={})", nodeParams.channelConf.remoteRbfLimits.maxAttempts)
+              stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidRbfAttemptsExhausted(d.channelId, nodeParams.channelConf.remoteRbfLimits.maxAttempts).getMessage)
             case Right(rbf) if nodeParams.currentBlockHeight < rbf.latestFundingTx.createdAt + nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks =>
               log.info("rejecting rbf attempt: last attempt was less than {} blocks ago", nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks)
               stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidRbfAttemptTooSoon(d.channelId, rbf.latestFundingTx.createdAt, rbf.latestFundingTx.createdAt + nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks).getMessage)
@@ -1929,9 +1934,15 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     case Event(closingComplete: ClosingComplete, d: DATA_NEGOTIATING_SIMPLE) =>
       // Note that if there is a failure here and we don't send our closing_sig, they may eventually disconnect.
       // On reconnection, we will retransmit shutdown with our latest scripts, so future signing attempts should work.
-      if (closingComplete.closeeScriptPubKey != d.localScriptPubKey) {
+      val localClosingTxs = d.proposedClosingTxs.flatMap(_.all).map(_.tx.txid).toSet
+      val remoteClosingTxCount = d.publishedClosingTxs.count(tx => !localClosingTxs.contains(tx.tx.txid))
+      if (remoteClosingTxCount >= nodeParams.channelConf.remoteRbfLimits.maxAttempts) {
+        stay() sending Warning(d.channelId, InvalidRbfAttemptsExhausted(d.channelId, nodeParams.channelConf.remoteRbfLimits.maxAttempts).getMessage)
+      } else if (lastRemoteClosingCompleteBlockHeight_opt.exists(h => nodeParams.currentBlockHeight < h + nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks)) {
+        stay() sending Warning(d.channelId, InvalidRbfAttemptTooSoon(d.channelId, lastRemoteClosingCompleteBlockHeight_opt.get, lastRemoteClosingCompleteBlockHeight_opt.get + nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks).getMessage)
+      } else if (closingComplete.closeeScriptPubKey != d.localScriptPubKey) {
         log.warning("their closing_complete is not using our latest script: this may happen if we changed our script while they were sending closing_complete")
-        // No need to persist their latest script, they will re-sent it on reconnection.
+        // No need to persist their latest script, they will re-send it on reconnection.
         stay() using d.copy(remoteScriptPubKey = closingComplete.closerScriptPubKey) sending Warning(d.channelId, InvalidCloseeScript(d.channelId, closingComplete.closeeScriptPubKey, d.localScriptPubKey).getMessage)
       } else {
         MutualClose.signSimpleClosingTx(channelKeys, d.commitments.latest, closingComplete.closeeScriptPubKey, closingComplete.closerScriptPubKey, closingComplete, localCloseeNonce_opt) match {
@@ -1941,6 +1952,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           case Right((signedClosingTx, closingSig, nextCloseeNonce_opt)) =>
             log.debug("signing remote mutual close transaction: {}", signedClosingTx.tx)
             localCloseeNonce_opt = nextCloseeNonce_opt
+            lastRemoteClosingCompleteBlockHeight_opt = Some(nodeParams.currentBlockHeight)
             val d1 = d.copy(remoteScriptPubKey = closingComplete.closerScriptPubKey, publishedClosingTxs = d.publishedClosingTxs :+ signedClosingTx)
             stay() using d1 storing() calling doPublish(signedClosingTx, localPaysClosingFees = false) sending closingSig
         }
@@ -1957,7 +1969,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           stay() sending Warning(d.channelId, f.getMessage)
         case Right(signedClosingTx) =>
           log.debug("received signatures for local mutual close transaction: {}", signedClosingTx.tx)
-          val d1 = d.copy(publishedClosingTxs = d.publishedClosingTxs :+ signedClosingTx)
+          val d1 = if (!d.publishedClosingTxs.exists(_.tx.txid == signedClosingTx.tx.txid)) {
+            d.copy(publishedClosingTxs = d.publishedClosingTxs :+ signedClosingTx)
+          } else {
+            // Since we're using a list and not a set, we explicitly avoid storing duplicate transactions.
+            d
+          }
           remoteCloseeNonce_opt = closingSig.nextCloseeNonce_opt
           stay() using d1 storing() calling doPublish(signedClosingTx, localPaysClosingFees = true)
       }
@@ -2842,9 +2859,13 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       // note: in any case we still need to keep all previously sent closing_signed, because they may publish one of them
       if (d.commitments.localChannelParams.paysClosingFees) {
         // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
-        val (closingTx, closingSigned) = Closing.MutualClose.makeFirstClosingTx(channelKeys, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.currentFeeratesForFundingClosing, nodeParams.onChainFeeConf, None)
-        val closingTxProposed1 = d.closingTxProposed :+ List(ClosingTxProposed(closingTx, closingSigned))
-        goto(NEGOTIATING) using d.copy(closingTxProposed = closingTxProposed1) storing() sending d.localShutdown :: closingSigned :: Nil
+        if (d.closingTxProposed.flatten.size < MAX_NEGOTIATION_ITERATIONS) {
+          val (closingTx, closingSigned) = Closing.MutualClose.makeFirstClosingTx(channelKeys, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.currentFeeratesForFundingClosing, nodeParams.onChainFeeConf, None)
+          val closingTxProposed1 = d.closingTxProposed :+ List(ClosingTxProposed(closingTx, closingSigned))
+          goto(NEGOTIATING) using d.copy(closingTxProposed = closingTxProposed1) storing() sending d.localShutdown :: closingSigned :: Nil
+        } else {
+          goto(NEGOTIATING) using d sending d.localShutdown
+        }
       } else {
         // we start a new round of negotiation
         val closingTxProposed1 = if (d.closingTxProposed.last.isEmpty) d.closingTxProposed else d.closingTxProposed :+ List()
