@@ -119,13 +119,18 @@ object MessageOnion {
     def validate(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, FinalPayload] = {
       BlindedRouteData.validateMessageRecipientData(blindedRecords).map(_ =>
         (records.get[InvoiceRequest], records.get[Invoice], records.get[InvoiceError], records.get[ReplyPath]) match {
+          // We disallow unknown records entirely, even odd ones.
           case _ if records.unknown.nonEmpty => InvalidResponsePayload(records, blindedRecords, ForbiddenTlv(records.unknown.head.tag))
+          // When receiving an invoice_request, we need a reply path to send our invoice back.
+          case (Some(_), _, _, None) => InvalidResponsePayload(records, blindedRecords, MissingRequiredTlv(UInt64(2)))
           case (Some(invoiceRequest), None, None, Some(_)) =>
             OfferTypes.InvoiceRequest.validate(invoiceRequest.tlvs) match {
               case Left(failure) => InvalidResponsePayload(records, blindedRecords, failure)
               case Right(_) => InvoiceRequestPayload(records, blindedRecords)
             }
-          case (None, Some(invoice), None, None) =>
+          // Invoices may include a reply path for a potential invoice_error (even though it's not strictly necessary
+          // since we've already reached them with our invoice_request and can reuse the same path).
+          case (None, Some(invoice), None, _) =>
             Bolt12Invoice.validate(invoice.tlvs) match {
               case Left(failure) => InvalidResponsePayload(records, blindedRecords, failure)
               case Right(_) => InvoicePayload(records, blindedRecords)
@@ -135,7 +140,9 @@ object MessageOnion {
               case Left(failure) => InvalidResponsePayload(records, blindedRecords, failure)
               case Right(_) => InvoiceErrorPayload(records, blindedRecords)
             }
-          case _ => InvalidResponsePayload(records, blindedRecords, MissingRequiredTlv(UInt64(0)))
+          // If the message doesn't contain an invoice, invoice_request or invoice_error, or contains more than one of
+          // those fields, we don't know what the sender meant: we act as if they didn't include an invoice_error.
+          case _ => InvalidResponsePayload(records, blindedRecords, MissingRequiredTlv(UInt64(68)))
         }
       )
     }
