@@ -363,9 +363,9 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
               log.debug("ignoring start_batch: we only support batching commit_sig messages")
               d.transport ! Warning(msg.channelId, "invalid start_batch message: we only support batching commit_sig messages")
               stay()
-            } else if (msg.batchSize > 20) {
-              log.debug("ignoring start_batch with batch_size = {} > 20", msg.batchSize)
-              d.transport ! Warning(msg.channelId, "invalid start_batch message: batch_size must not be greater than 20")
+            } else if (msg.batchSize < 1 || msg.batchSize > 20) {
+              log.debug("ignoring start_batch with invalid batch_size = {} (max = 20)", msg.batchSize)
+              d.transport ! Warning(msg.channelId, "invalid start_batch message: batch_size must be greater than 0 and not be greater than 20")
               stay()
             } else {
               log.debug("starting commit_sig batch of size {} for channel_id={}", msg.batchSize, msg.channelId)
