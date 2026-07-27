@@ -9,6 +9,15 @@
 With this release, eclair requires using Bitcoin Core 31.x.
 Newer versions of Bitcoin Core may be used, but have not been extensively tested.
 
+### Disable blinded path fee discount for Bolt12
+
+We've disabled blinded path fee discount introduced in #2993 for Bolt12 payments.
+It doesn't work well with MPP and need to be re-designed.
+If you're using a custom offer-handler plugin, make sure you don't set `feeOverride_opt`
+in the `InvoiceRequestActor.Route` you create, otherwise your node will be at risk.
+
+See #3332 for more details.
+
 ### Configuration changes
 
 <insert changes>
