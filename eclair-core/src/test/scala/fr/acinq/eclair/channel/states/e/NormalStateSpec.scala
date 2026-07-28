@@ -1853,6 +1853,29 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectWatchTxConfirmed(tx.txid)
   }
 
+  test("recv UpdateFulfillHtlc (duplicate)") { f =>
+    import f._
+
+    val (r, htlc) = addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    bob ! CMD_FULFILL_HTLC(htlc.id, r, None)
+    val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
+    bob2alice.forward(alice, fulfill)
+    awaitCond(alice.commitments.changes.remoteChanges.proposed.contains(fulfill))
+    alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFulfill]]
+    val remoteChanges = alice.commitments.changes.remoteChanges
+
+    // We relay fulfill commands (which are ignored downstream since they are duplicates) and ignore failures.
+    // We don't store the duplicate/conflicting message.
+    bob2alice.forward(alice, fulfill)
+    alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFulfill]]
+    assert(alice.commitments.changes.remoteChanges == remoteChanges)
+    val fail = UpdateFailHtlc(fulfill.channelId, fulfill.id, randomBytes(292))
+    bob2alice.forward(alice, fail)
+    alice2relayer.expectNoMessage(100 millis)
+    assert(alice.commitments.changes.remoteChanges == remoteChanges)
+  }
+
   private def testCmdFailHtlc(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
     import f._
 
@@ -2094,6 +2117,28 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
     alice2blockchain.expectFinalTxPublished("local-main-delayed")
     alice2blockchain.expectWatchTxConfirmed(tx.txid)
+  }
+
+  test("recv UpdateFailHtlc (duplicate)") { f =>
+    import f._
+
+    val (r, htlc) = addHtlc(27_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    bob ! CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(PermanentChannelFailure()), None)
+    val fail = bob2alice.expectMsgType[UpdateFailHtlc]
+    bob2alice.forward(alice, fail)
+    awaitCond(alice.commitments.changes.remoteChanges.proposed.contains(fail))
+    alice2relayer.expectNoMessage(100 millis)
+    val remoteChanges = alice.commitments.changes.remoteChanges
+
+    // We ignore duplicate failures, but if we receive a fulfill we relay it downstream.
+    bob2alice.forward(alice, fail)
+    alice2relayer.expectNoMessage(100 millis)
+    assert(alice.commitments.changes.remoteChanges == remoteChanges)
+    val fulfill = UpdateFulfillHtlc(fail.channelId, fail.id, r)
+    bob2alice.forward(alice, fulfill)
+    alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFulfill]]
+    assert(alice.commitments.changes.remoteChanges == remoteChanges)
   }
 
   test("recv UpdateFailHtlc (onion error bigger than recommended value)") { f =>
