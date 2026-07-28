@@ -570,6 +570,17 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsg(TransportHandler.ReadAck(commitSig4))
     peer.expectMsg(commitSig4)
     peer.expectNoMessage(100 millis)
+
+    // We receive a batch with size=1: we ignore it.
+    val startBatch5 = StartBatch(channelId, batchSize = 1, TlvStream(StartBatchTlv.MessageType(132)))
+    val commitSig5 = CommitSig(channelId, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId())))
+    transport.send(peerConnection, startBatch5)
+    transport.expectMsg(TransportHandler.ReadAck(startBatch5))
+    transport.expectMsgType[Warning]
+    transport.send(peerConnection, commitSig5)
+    transport.expectMsg(TransportHandler.ReadAck(commitSig5))
+    peer.expectMsg(commitSig5)
+    peer.expectNoMessage(100 millis)
   }
 
   test("react to peer's bad behavior") { f =>
