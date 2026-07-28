@@ -807,8 +807,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     val payment = payOffer(alice, offer, amount)
     assert(payment.isInstanceOf[PaymentSent])
-    // For offers managed by eclair, the fees of the blinded path are paid by the recipient, not by the payer.
-    assert(payment.asInstanceOf[PaymentSent].feesPaid == 0.msat)
+    assert(payment.asInstanceOf[PaymentSent].feesPaid > 0.msat)
     assert(payment.asInstanceOf[PaymentSent].parts.nonEmpty)
     payment.asInstanceOf[PaymentSent].parts.foreach(p => {
       val blinded = p.route.flatMap(_.lastOption).get
@@ -831,12 +830,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     val payment = payOffer(alice, offer, amount)
     assert(payment.isInstanceOf[PaymentSent])
-    // For offers managed by eclair, the fees of the blinded path are paid by the recipient, not by the payer.
-    // If the payer is part of the blinded path, it means that the recipient is refunding the fees of the payer's
-    // first hop: but this hop is not part of the payer fees, since the channel belongs to the payer, so it looks
-    // like the payment used negative fees. In reality, this simply means that we obtained the preimage while paying
-    // less than the invoice amount, which is fine.
-    assert(payment.asInstanceOf[PaymentSent].feesPaid < 0.msat)
+    assert(payment.asInstanceOf[PaymentSent].feesPaid > 0.msat)
     assert(payment.asInstanceOf[PaymentSent].parts.nonEmpty)
     payment.asInstanceOf[PaymentSent].parts.foreach(p => {
       val blinded = p.route.flatMap(_.lastOption).get
