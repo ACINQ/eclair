@@ -1953,7 +1953,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             log.debug("signing remote mutual close transaction: {}", signedClosingTx.tx)
             localCloseeNonce_opt = nextCloseeNonce_opt
             lastRemoteClosingCompleteBlockHeight_opt = Some(nodeParams.currentBlockHeight)
-            val d1 = d.copy(remoteScriptPubKey = closingComplete.closerScriptPubKey, publishedClosingTxs = d.publishedClosingTxs :+ signedClosingTx)
+            val d1 = if (!d.publishedClosingTxs.exists(_.tx.txid == signedClosingTx.tx.txid)) {
+              d.copy(remoteScriptPubKey = closingComplete.closerScriptPubKey, publishedClosingTxs = d.publishedClosingTxs :+ signedClosingTx)
+            } else {
+              d.copy(remoteScriptPubKey = closingComplete.closerScriptPubKey)
+            }
             stay() using d1 storing() calling doPublish(signedClosingTx, localPaysClosingFees = false) sending closingSig
         }
       }
