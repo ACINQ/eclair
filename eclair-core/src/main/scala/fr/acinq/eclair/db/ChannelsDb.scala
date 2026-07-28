@@ -24,6 +24,9 @@ import fr.acinq.eclair.{CltvExpiry, Paginated}
 
 trait ChannelsDb {
 
+  /** Returns an exception if the channel already exists in the DB or cannot be added. */
+  def addChannel(data: PersistentChannelData): Option[Throwable]
+
   def addOrUpdateChannel(data: PersistentChannelData): Unit
 
   def getChannel(channelId: ByteVector32): Option[PersistentChannelData]

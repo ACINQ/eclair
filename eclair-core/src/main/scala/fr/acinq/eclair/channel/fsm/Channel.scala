@@ -2380,13 +2380,19 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   when(CLOSED)(handleExceptions {
     case Event(Symbol("shutdown"), _) =>
       stateData match {
+        case _: TransientChannelData => // nothing was stored in the DB
         case d: DATA_CLOSED =>
           log.info(s"moving channelId=${d.channelId} to the closed channels DB")
           nodeParams.db.channels.removeChannel(d.channelId, Some(d))
-        case _: PersistentChannelData | _: IgnoreClosedData =>
+        case _: PersistentChannelData =>
           log.info("deleting database record for channelId={}", stateData.channelId)
           nodeParams.db.channels.removeChannel(stateData.channelId, None)
-        case _: TransientChannelData => // nothing was stored in the DB
+        case IgnoreClosedData(d) => d match {
+          case _: PersistentChannelData =>
+            log.info("deleting database record for channelId={}", stateData.channelId)
+            nodeParams.db.channels.removeChannel(stateData.channelId, None)
+          case _ => // nothing was stored in the DB
+        }
       }
       log.info("shutting down")
       stop(FSM.Normal)

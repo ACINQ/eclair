@@ -87,6 +87,30 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     )(logger)
   }
 
+  override def addChannel(data: PersistentChannelData): Option[Throwable] = withMetrics("channels/add-channel", DbBackends.Postgres) {
+    try {
+      withLock { pg =>
+        val encoded = channelDataCodec.encode(data).require.toByteArray
+        using(pg.prepareStatement(
+          """
+            | INSERT INTO local.channels (channel_id, remote_node_id, data, json, created_timestamp, last_connected_timestamp)
+            | VALUES (?, ?, ?, ?::JSONB, ?, ?)
+            | """.stripMargin)) { statement =>
+          statement.setString(1, data.channelId.toHex)
+          statement.setString(2, data.remoteNodeId.toHex)
+          statement.setBytes(3, encoded)
+          statement.setString(4, serialization.write(data))
+          statement.setTimestamp(5, Timestamp.from(Instant.now()))
+          statement.setTimestamp(6, Timestamp.from(Instant.now()))
+          statement.executeUpdate()
+        }
+        None
+      }
+    } catch {
+      case t: Throwable => Some(t)
+    }
+  }
+
   override def addOrUpdateChannel(data: PersistentChannelData): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Postgres) {
     withLock { pg =>
       val encoded = channelDataCodec.encode(data).require.toByteArray

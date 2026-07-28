@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, toLongId}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -88,6 +88,31 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     alice2bob.forward(bob)
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(fundingCreated.temporaryChannelId, CannotAffordFirstCommitFees(fundingCreated.temporaryChannelId, 3370 sat, 3470 sat).getMessage))
+    awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv FundingCreated (channel already exists)") { f =>
+    import f._
+    val fundingCreated = alice2bob.expectMsgType[FundingCreated]
+    // We already have a channel with the same channel_id in our DB.
+    val channelId = toLongId(fundingCreated.fundingTxId, fundingCreated.fundingOutputIndex)
+    val commitments = CommitmentsSpec.makeCommitments(100_000_000 msat, 0 msat, channelId = channelId)
+    bob.underlyingActor.nodeParams.db.channels.addOrUpdateChannel(DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, BlockHeight(0), None, Left(fundingCreated)))
+    alice2bob.forward(bob, fundingCreated)
+    val error = bob2alice.expectMsgType[Error]
+    assert(error == Error(channelId, InvalidFundingTx(channelId).getMessage))
+    awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv FundingCreated (channel_id already used)") { f =>
+    import f._
+    val fundingCreated = alice2bob.expectMsgType[FundingCreated]
+    // We already have a channel with the same channel_id in our channels map.
+    val channelId = toLongId(fundingCreated.fundingTxId, fundingCreated.fundingOutputIndex)
+    bob.underlyingActor.nodeParams.addChannelIdIfAbsent(channelId, bob.underlyingActor.remoteNodeId)
+    alice2bob.forward(bob, fundingCreated)
+    val error = bob2alice.expectMsgType[Error]
+    assert(error == Error(channelId, InvalidFundingTx(channelId).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
