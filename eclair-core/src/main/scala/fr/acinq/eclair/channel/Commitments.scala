@@ -902,10 +902,19 @@ case class Commitments(channelParams: ChannelParams,
     if (cmd.cltvExpiry < minExpiry) {
       return Left(ExpiryTooSmall(channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockHeight = currentHeight))
     }
-    // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
+    // We don't want to use too high a refund timeout, because our funds will be locked during that time if the payment
+    // is never fulfilled.
+    // We apply the same expiry limits to the corresponding incoming HTLCs: we do it here instead of inside receiveAdd,
+    // because returning a failure in receiveAdd would force-close the channel, whereas it is harmless to accept the
+    // HTLC and then fail it (like we do for dust exposure limits).
     val maxExpiry = channelConf.maxExpiryDelta.toCltvExpiry(currentHeight)
-    if (cmd.cltvExpiry >= maxExpiry) {
-      return Left(ExpiryTooBig(channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockHeight = currentHeight))
+    val expiry = cmd.origin.upstream match {
+      case _: Upstream.Local => cmd.cltvExpiry
+      case u: Upstream.Hot.Channel => Seq(cmd.cltvExpiry, u.expiryIn).max
+      case u: Upstream.Hot.Trampoline => (cmd.cltvExpiry +: u.received.map(_.expiryIn)).max
+    }
+    if (expiry >= maxExpiry) {
+      return Left(ExpiryTooBig(channelId, maximum = maxExpiry, actual = expiry, blockHeight = currentHeight))
     }
 
     // even if remote advertises support for 0 msat htlc, we limit ourselves to values strictly positive, hence the max(1 msat)
@@ -978,6 +987,10 @@ case class Commitments(channelParams: ChannelParams,
   def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] =
     getOutgoingHtlcCrossSigned(fulfill.id) match {
       case Some(htlc) if htlc.paymentHash == Crypto.sha256(fulfill.paymentPreimage) => originChannels.get(fulfill.id) match {
+        case Some(origin) if CommitmentChanges.alreadyProposed(changes.remoteChanges.proposed, htlc.id) =>
+          // We've already received a fail/fulfill for this HTLC, so we don't need to add it again to the remote changes.
+          // If it differs from the previous settlement message, our peer is buggy and we will force-close when exchanging commit_sig.
+          Right(this, origin, htlc)
         case Some(origin) =>
           payment.Monitoring.Metrics.recordOutgoingPaymentDistribution(remoteNodeId, htlc.amountMsat)
           Right(copy(changes = changes.addRemoteProposal(fulfill)), origin, htlc)
@@ -1018,6 +1031,7 @@ case class Commitments(channelParams: ChannelParams,
   def receiveFail(fail: UpdateFailHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] =
     getOutgoingHtlcCrossSigned(fail.id) match {
       case Some(htlc) => originChannels.get(fail.id) match {
+        case Some(origin) if CommitmentChanges.alreadyProposed(changes.remoteChanges.proposed, htlc.id) => Right(this, origin, htlc)
         case Some(origin) => Right(copy(changes = changes.addRemoteProposal(fail)), origin, htlc)
         case None => Left(UnknownHtlcId(channelId, fail.id))
       }
@@ -1031,6 +1045,7 @@ case class Commitments(channelParams: ChannelParams,
     } else {
       getOutgoingHtlcCrossSigned(fail.id) match {
         case Some(htlc) => originChannels.get(fail.id) match {
+          case Some(origin) if CommitmentChanges.alreadyProposed(changes.remoteChanges.proposed, htlc.id) => Right(this, origin, htlc)
           case Some(origin) => Right(copy(changes = changes.addRemoteProposal(fail)), origin, htlc)
           case None => Left(UnknownHtlcId(channelId, fail.id))
         }

@@ -39,7 +39,7 @@ import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommi
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampMilli, TimestampSecondLong, UInt64, nodeFee, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampMilli, TimestampMilliLong, TimestampSecondLong, UInt64, nodeFee, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -703,7 +703,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(decryptedFailure == failure)
   }
 
-  test("build htlc failure onion (blinded payment)") {
+  test("build htlc failure onion with attribution data (blinded payment)") {
     // a -> b -> c -> d -> e, blinded after c
     val (_, route, recipient) = longBlindedHops(hex"0451")
     val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max(accountable = false))
@@ -720,21 +720,71 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_e.isInstanceOf[FinalPayload.Blinded])
 
     // nodes after the introduction node cannot send `update_fail_htlc` messages
-    val Right(fail_e: UpdateFailMalformedHtlc) = buildHtlcFailure(priv_e.privateKey, useAttributableFailures = false, CMD_FAIL_HTLC(add_e.id, FailureReason.LocalFailure(TemporaryNodeFailure()), None), add_e)
+    val Right(fail_e: UpdateFailMalformedHtlc) = buildHtlcFailure(priv_e.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(add_e.id, FailureReason.LocalFailure(TemporaryNodeFailure()), Some(FailureAttributionData(500 unixms, None))), add_e, now = 550 unixms)
     assert(fail_e.id == add_e.id)
     assert(fail_e.onionHash == Sphinx.hash(add_e.onionRoutingPacket))
     assert(fail_e.failureCode == InvalidOnionBlinding(fail_e.onionHash).code)
-    val Right(fail_d: UpdateFailMalformedHtlc) = buildHtlcFailure(priv_d.privateKey, useAttributableFailures = false, CMD_FAIL_HTLC(add_d.id, FailureReason.LocalFailure(UnknownNextPeer()), None), add_d)
+    val Right(fail_d: UpdateFailMalformedHtlc) = buildHtlcFailure(priv_d.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(add_d.id, FailureReason.LocalFailure(UnknownNextPeer()), Some(FailureAttributionData(500 unixms, None))), add_d, now = 560 unixms)
     assert(fail_d.id == add_d.id)
     assert(fail_d.onionHash == Sphinx.hash(add_d.onionRoutingPacket))
     assert(fail_d.failureCode == InvalidOnionBlinding(fail_d.onionHash).code)
     // only the introduction node is allowed to send an `update_fail_htlc` message
     val failure = InvalidOnionBlinding(Sphinx.hash(add_c.onionRoutingPacket))
-    val Right(fail_c: UpdateFailHtlc) = buildHtlcFailure(priv_c.privateKey, useAttributableFailures = false, CMD_FAIL_HTLC(add_c.id, FailureReason.LocalFailure(failure), None), add_c)
+    val Right(fail_c: UpdateFailHtlc) = buildHtlcFailure(priv_c.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(add_c.id, FailureReason.LocalFailure(failure), Some(FailureAttributionData(500 unixms, None))), add_c, now = 630 unixms)
     assert(fail_c.id == add_c.id)
-    val Right(fail_b: UpdateFailHtlc) = buildHtlcFailure(priv_b.privateKey, useAttributableFailures = false, CMD_FAIL_HTLC(add_b.id, FailureReason.EncryptedDownstreamFailure(fail_c.reason, None), None), add_b)
+    assert(fail_c.attribution_opt.nonEmpty)
+    val Right(fail_b: UpdateFailHtlc) = buildHtlcFailure(priv_b.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(add_b.id, FailureReason.EncryptedDownstreamFailure(fail_c.reason, fail_c.attribution_opt), Some(FailureAttributionData(380 unixms, None))), add_b, now = 650 unixms)
     assert(fail_b.id == add_b.id)
-    val Right(Sphinx.DecryptedFailurePacket(failingNode, 2, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, fail_b.attribution_opt, payment.sharedSecrets).failure
+    assert(fail_b.attribution_opt.nonEmpty)
+    val fail_a = Sphinx.FailurePacket.decrypt(fail_b.reason, fail_b.attribution_opt, payment.sharedSecrets)
+    assert(fail_a.failure.isRight)
+    assert(fail_a.failure.toOption.get.originNode == c)
+    assert(fail_a.failure.toOption.get.index == 2)
+    assert(fail_a.failure.toOption.get.failureMessage == failure)
+    assert(fail_a.holdTimes == Seq(HoldTime(200 millis, b), HoldTime(100 millis, c)))
+  }
+
+  test("build htlc failure onion with attribution data (trampoline payment)") {
+    // Create a trampoline payment to e:
+    //        .--> d --.
+    //       /          \
+    // b -> c            e
+    val invoiceFeatures = Features[Bolt11Feature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, Features.TrampolinePaymentPrototype -> Optional)
+    val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_e.privateKey, Left("invoice"), CltvExpiryDelta(12), paymentSecret = paymentSecret, features = invoiceFeatures)
+    val payment = TrampolinePayment.buildOutgoingPayment(c, invoice, finalExpiry)
+
+    val add_c = UpdateAddHtlc(randomBytes32(), 0, payment.trampolineAmount, paymentHash, payment.trampolineExpiry, payment.onion.packet, None, accountable = false, None)
+    val Right(RelayToTrampolinePacket(_, _, payload_c, trampolinePacket_e, _)) = decrypt(add_c, priv_c.privateKey, Features.empty)
+    val (add_d, sharedSecrets_c) = {
+      // c finds a path c->d->e
+      val payloads = Seq(
+        NodePayload(d, PaymentOnion.IntermediatePayload.ChannelRelay.Standard(channelUpdate_de.shortChannelId, payload_c.amountToForward, payload_c.outgoingCltv, upgradeAccountability = false)),
+        NodePayload(e, PaymentOnion.FinalPayload.Standard.createTrampolinePayload(payload_c.amountToForward, payload_c.amountToForward, payload_c.outgoingCltv, paymentSecret, trampolinePacket_e, upgradeAccountability = false))
+      )
+      val onion_d = OutgoingPaymentPacket.buildOnion(payloads, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
+      val add_d = UpdateAddHtlc(randomBytes32(), 0, payload_c.amountToForward + 500.msat, paymentHash, payload_c.outgoingCltv + CltvExpiryDelta(36), onion_d.packet, None, accountable = false, None)
+      (add_d, onion_d.sharedSecrets)
+    }
+    val Right(ChannelRelayPacket(_, _, packet_e, _)) = decrypt(add_d, priv_d.privateKey, Features.empty)
+    val add_e = UpdateAddHtlc(randomBytes32(), 3, payload_c.amountToForward, paymentHash, payload_c.outgoingCltv, packet_e, None, accountable = false, None)
+    val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features.empty)
+    assert(payload_e.isInstanceOf[FinalPayload.Standard])
+
+    // e returns a failure
+    val failure = IncorrectOrUnknownPaymentDetails(finalAmount, BlockHeight(currentBlockCount))
+    val Right(fail_e: UpdateFailHtlc) = buildHtlcFailure(priv_e.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(add_e.id, FailureReason.LocalFailure(failure), Some(FailureAttributionData(TimestampMilli(500), Some(TimestampMilli(520))))), add_e, now = TimestampMilli(550))
+    assert(fail_e.id == add_e.id)
+    val Right(fail_d: UpdateFailHtlc) = buildHtlcFailure(priv_d.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(add_d.id, FailureReason.EncryptedDownstreamFailure(fail_e.reason, fail_e.attribution_opt), Some(FailureAttributionData(TimestampMilli(350), None))), add_d, now = TimestampMilli(560))
+    assert(fail_d.id == add_d.id)
+    // c is able to decrypt the failure and attribution data for the downstream path
+    val failureDetails_c = Sphinx.FailurePacket.decrypt(fail_d.reason, fail_d.attribution_opt, sharedSecrets_c)
+    assert(failureDetails_c.holdTimes == Seq(HoldTime(200 millis, d), HoldTime(0 millis, e)))
+    assert(failureDetails_c.failure.isRight)
+    // c creates a new error for the sender without downstream attribution data
+    val Right(fail_b: UpdateFailHtlc) = buildHtlcFailure(priv_c.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(add_c.id, FailureReason.LocalFailure(failure), Some(FailureAttributionData(TimestampMilli(250), Some(TimestampMilli(280))))), add_c, now = TimestampMilli(600))
+    assert(fail_b.attribution_opt.nonEmpty)
+    val Sphinx.HtlcFailure(holdTimes, Right(Sphinx.DecryptedFailurePacket(failingNode, _, decryptedFailure))) = Sphinx.FailurePacket.decrypt(fail_b.reason, fail_b.attribution_opt, payment.onion.sharedSecrets)
+    assert(holdTimes == Seq(HoldTime(300 millis, c)))
     assert(failingNode == c)
     assert(decryptedFailure == failure)
   }

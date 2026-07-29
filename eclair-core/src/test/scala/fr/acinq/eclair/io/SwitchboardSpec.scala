@@ -27,13 +27,22 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
   test("on initialization create peers") {
     val nodeParams = Alice.nodeParams
     val (probe, peer) = (TestProbe(), TestProbe())
-    val remoteNodeId = ChannelCodecsSpec.normal.remoteNodeId
+    val channelData = ChannelCodecsSpec.normal.withChannelKeys(nodeParams)
     // If we have a channel with that remote peer, we will automatically reconnect.
-
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
-    switchboard ! Switchboard.Init(List(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)))
-    probe.expectMsg(remoteNodeId)
-    peer.expectMsg(Peer.Init(Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)), Map.empty))
+    switchboard ! Switchboard.Init(List(channelData))
+    probe.expectMsg(channelData.remoteNodeId)
+    peer.expectMsg(Peer.Init(Set(channelData), Map.empty))
+    // The channel has been added to the shared channels map.
+    assert(nodeParams.addChannelIdIfAbsent(channelData.channelId, randomKey().publicKey).contains(channelData.remoteNodeId))
+    // We can add and remove channels from the shared channels map after initializing peers.
+    val otherChannel = randomBytes32()
+    val otherNodeId = randomKey().publicKey
+    assert(nodeParams.addChannelIdIfAbsent(otherChannel, otherNodeId).isEmpty)
+    assert(nodeParams.removeChannelId(randomBytes32()).isEmpty)
+    assert(nodeParams.removeChannelId(otherChannel).contains(otherNodeId))
+    assert(nodeParams.removeChannelId(otherChannel).isEmpty)
+    assert(nodeParams.addChannelIdIfAbsent(otherChannel, channelData.remoteNodeId).isEmpty)
   }
 
   test("on initialization create peers with pending on-the-fly funding proposals") {

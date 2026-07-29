@@ -248,6 +248,18 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     awaitCond(bob.stateName == CLOSED)
   }
 
+  test("recv OpenDualFundedChannel (channel_id already used)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenDualFundedChannel]
+    val channelId = Helpers.computeChannelId(open.revocationBasepoint, bob.underlyingActor.channelKeys.revocationBasePoint)
+    bob.underlyingActor.nodeParams.addChannelIdIfAbsent(channelId, bob.underlyingActor.remoteNodeId)
+    bob ! open
+    val error = bob2alice.expectMsgType[Error]
+    assert(error == Error(open.temporaryChannelId, InvalidFundingTx(channelId).getMessage))
+    bobListener.expectMsgType[ChannelAborted]
+    awaitCond(bob.stateName == CLOSED)
+  }
+
   test("recv Error", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     bob ! Error(ByteVector32.Zeroes, "dual funding not supported")

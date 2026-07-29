@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel
@@ -71,6 +71,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       private val overrideInitFeatures: Map[PublicKey, Features[InitFeature]],
                       pluginParams: Seq[PluginParams],
                       channelConf: ChannelConf,
+                      private val channelIds: collection.concurrent.TrieMap[ByteVector32, PublicKey],
                       onChainFeeConf: OnChainFeeConf,
                       relayParams: RelayParams,
                       db: Databases,
@@ -117,6 +118,17 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   /** Only to be used in tests. */
   def setBitcoinCoreFeerates(value: FeeratesPerKw): Unit = bitcoinCoreFeerates.set(value)
+
+  /**
+   * Add the channel_id or temporary_channel_id provided to the channels map.
+   * If there is already an entry for this ID, the channels map will not be modified and we return the remote_node_id.
+   * If there was no entry for this ID, we return None.
+   * Callers must check the returned value to ensure that we don't allow conflicts between channel_ids.
+   */
+  def addChannelIdIfAbsent(channelId: ByteVector32, remoteNodeId: PublicKey): Option[PublicKey] = channelIds.putIfAbsent(channelId, remoteNodeId)
+
+  /** Remove the channel_id or temporary_channel_id from the channel map, once the corresponding channel is closed. */
+  def removeChannelId(channelId: ByteVector32): Option[PublicKey] = channelIds.remove(channelId)
 
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
@@ -606,6 +618,7 @@ object NodeParams extends Logging {
         balanceThresholds = config.getConfigList("channel.channel-update.balance-thresholds").asScala.map(conf => BalanceThreshold(Satoshi(conf.getLong("available-sat")), Satoshi(conf.getLong("max-htlc-sat")))).toSeq,
         minTimeBetweenUpdates = FiniteDuration(config.getDuration("channel.channel-update.min-time-between-updates").getSeconds, TimeUnit.SECONDS),
       ),
+      channelIds = collection.concurrent.TrieMap.empty[ByteVector32, PublicKey],
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
         maxClosingFeerate = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.max-closing-feerate"))).perKw,

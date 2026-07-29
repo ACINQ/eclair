@@ -1382,6 +1382,46 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.map(_.fundingTxIndex) == Seq.empty)
   }
 
+  test("splice local/remote locking (while reconnecting)", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight)) { f =>
+    import f._
+
+    val fundingInput = alice.commitments.latest.fundingInput
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    checkWatchConfirmed(f, spliceTx)
+    val commitAlice1 = alice.signCommitTx()
+    val commitBob1 = bob.signCommitTx()
+
+    // Bob sees the splice confirm, but Alice doesn't.
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, spliceTx)
+    bob2blockchain.expectWatchFundingSpent(spliceTx.txid, Some(Set(commitAlice1.txid, commitBob1.txid)))
+    bob2blockchain.expectMsg(UnwatchFundingSpent(fundingInput.txid, fundingInput.index.toInt))
+    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == spliceTx.txid)
+    bob2alice.forward(alice)
+
+    // They disconnect.
+    disconnect(f)
+    val (channelReestablishAlice, channelReestablishBob) = reconnect(f, sendReestablish = false)
+    assert(channelReestablishAlice.myCurrentFundingLocked_opt.contains(fundingInput.txid))
+    assert(channelReestablishBob.myCurrentFundingLocked_opt.contains(spliceTx.txid))
+
+    // While reconnecting, Alice sees the splice confirm after sending her channel_reestablish, but before receiving
+    // Bob's channel_reestablish: she must send splice_locked since her channel_reestablish used the previous funding.
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, spliceTx)
+    alice2blockchain.expectWatchFundingSpent(spliceTx.txid, Some(Set(commitAlice1.txid, commitBob1.txid)))
+    alice2blockchain.expectMsg(UnwatchFundingSpent(fundingInput.txid, fundingInput.index.toInt))
+    val spliceLockedAlice = alice2bob.expectMsgType[SpliceLocked]
+    assert(spliceLockedAlice.fundingTxId == spliceTx.txid)
+    alice2bob.forward(bob, channelReestablishAlice)
+    alice2bob.forward(bob, spliceLockedAlice)
+    bob2alice.forward(alice, channelReestablishBob)
+
+    // Once reconnected, Alice and Bob can send HTLCs without signing commitments for the previous funding tx.
+    val (preimage, add) = addHtlc(40_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(add.id, preimage, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+  }
+
   test("emit post-splice events", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight)) { f =>
     import f._
 

@@ -108,6 +108,7 @@ class Peer(val nodeParams: NodeParams,
         // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
         val channelIds = d.channels.filter(_._2 == actor).keys
         log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
+        channelIds.foreach(channelId => nodeParams.removeChannelId(channelId.id))
         d.channels -- channelIds
       } else {
         d.channels
@@ -206,40 +207,48 @@ class Peer(val nodeParams: NodeParams,
 
       case Event(SpawnChannelInitiator(replyTo, c, channelConfig, channelType, localParams), d: ConnectedData) =>
         val channelKeys = nodeParams.channelKeyManager.channelKeys(channelConfig, localParams.fundingKeyPath)
-        val channel = spawnChannel(channelKeys)
-        context.system.scheduler.scheduleOnce(c.timeout_opt.map(_.duration).getOrElse(nodeParams.channelConf.channelFundingTimeout), channel, Channel.TickChannelOpenTimeout)(context.dispatcher)
         val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
-        val requireConfirmedInputs = c.requireConfirmedInputsOverride_opt.getOrElse(nodeParams.channelConf.requireConfirmedInputsForDualFunding)
         val temporaryChannelId = if (dualFunded) {
           Helpers.dualFundedTemporaryChannelId(channelKeys)
         } else {
           randomBytes32()
         }
-        val init = INPUT_INIT_CHANNEL_INITIATOR(
-          temporaryChannelId = temporaryChannelId,
-          fundingAmount = c.fundingAmount,
-          dualFunded = dualFunded,
-          commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, channelType.commitmentFormat),
-          fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing)),
-          fundingTxFeeBudget_opt = c.fundingTxFeeBudget_opt,
-          pushAmount_opt = c.pushAmount_opt,
-          requireConfirmedInputs = requireConfirmedInputs,
-          requestFunding_opt = c.requestFunding_opt,
-          localChannelParams = localParams,
-          proposedCommitParams = nodeParams.channelConf.commitParams(c.fundingAmount, channelType, unlimitedMaxHtlcValueInFlight = false),
-          remote = d.peerConnection,
-          remoteInit = d.remoteInit,
-          channelFlags = c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags),
-          channelConfig = channelConfig,
-          channelType = channelType,
-          replyTo = replyTo
-        )
-        log.info(s"requesting a new channel with type=$channelType fundingAmount=${c.fundingAmount} dualFunded=$dualFunded pushAmount=${c.pushAmount_opt} fundingFeerate=${init.fundingTxFeerate} temporaryChannelId=$temporaryChannelId")
-        channel ! init
-        stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+        // We first check that this temporary_channel_id isn't already being used.
+        nodeParams.addChannelIdIfAbsent(temporaryChannelId, remoteNodeId) match {
+          case None =>
+            val channel = spawnChannel(channelKeys)
+            context.system.scheduler.scheduleOnce(c.timeout_opt.map(_.duration).getOrElse(nodeParams.channelConf.channelFundingTimeout), channel, Channel.TickChannelOpenTimeout)(context.dispatcher)
+            val requireConfirmedInputs = c.requireConfirmedInputsOverride_opt.getOrElse(nodeParams.channelConf.requireConfirmedInputsForDualFunding)
+            val init = INPUT_INIT_CHANNEL_INITIATOR(
+              temporaryChannelId = temporaryChannelId,
+              fundingAmount = c.fundingAmount,
+              dualFunded = dualFunded,
+              commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, channelType.commitmentFormat),
+              fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing)),
+              fundingTxFeeBudget_opt = c.fundingTxFeeBudget_opt,
+              pushAmount_opt = c.pushAmount_opt,
+              requireConfirmedInputs = requireConfirmedInputs,
+              requestFunding_opt = c.requestFunding_opt,
+              localChannelParams = localParams,
+              proposedCommitParams = nodeParams.channelConf.commitParams(c.fundingAmount, channelType, unlimitedMaxHtlcValueInFlight = false),
+              remote = d.peerConnection,
+              remoteInit = d.remoteInit,
+              channelFlags = c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags),
+              channelConfig = channelConfig,
+              channelType = channelType,
+              replyTo = replyTo
+            )
+            log.info(s"requesting a new channel with type=$channelType fundingAmount=${c.fundingAmount} dualFunded=$dualFunded pushAmount=${c.pushAmount_opt} fundingFeerate=${init.fundingTxFeerate} temporaryChannelId=$temporaryChannelId")
+            channel ! init
+            stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+          case Some(nodeId) =>
+            log.warning("temporary_channel_id={} already used with remoteNodeId={}: aborting local channel open", temporaryChannelId, nodeId)
+            replyTo ! OpenChannelResponse.Rejected("temporary_channel_id conflict")
+            stay()
+        }
 
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
-        d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
+        d.channels.get(TemporaryChannelId(open.temporaryChannelId)).orElse(d.channels.get(FinalChannelId(open.temporaryChannelId))) match {
           case None =>
             openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped, d.address)
             stay()
@@ -249,7 +258,7 @@ class Peer(val nodeParams: NodeParams,
         }
 
       case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
-        d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
+        d.channels.get(TemporaryChannelId(open.temporaryChannelId)).orElse(d.channels.get(FinalChannelId(open.temporaryChannelId))) match {
           case None if !Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding) =>
             log.info("rejecting open_channel2: dual funding is not supported")
             self ! Peer.OutgoingMessage(Error(open.temporaryChannelId, "dual funding is not supported"), d.peerConnection)
@@ -268,61 +277,76 @@ class Peer(val nodeParams: NodeParams,
 
       case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, addFunding_opt, localParams, peerConnection), d: ConnectedData) =>
         val temporaryChannelId = open.fold(_.temporaryChannelId, _.temporaryChannelId)
-        if (peerConnection == d.peerConnection) {
-          OnTheFlyFunding.validateOpen(nodeParams.onTheFlyFundingConfig, remoteNodeId, open, pendingOnTheFlyFunding, feeCredit.getOrElse(0 msat)) match {
-            case reject: OnTheFlyFunding.ValidationResult.Reject =>
-              log.warning("rejecting on-the-fly channel: {}", reject.cancel.toAscii)
-              self ! Peer.OutgoingMessage(reject.cancel, d.peerConnection)
-              cancelUnsignedOnTheFlyFunding(reject.paymentHashes)
-              context.system.eventStream.publish(ChannelAborted(ActorRef.noSender, remoteNodeId, temporaryChannelId))
-              stay()
-            case accept: OnTheFlyFunding.ValidationResult.Accept =>
-              val channelKeys = nodeParams.channelKeyManager.channelKeys(channelConfig, localParams.fundingKeyPath)
-              val channel = spawnChannel(channelKeys)
-              context.system.scheduler.scheduleOnce(nodeParams.channelConf.channelFundingTimeout, channel, Channel.TickChannelOpenTimeout)(context.dispatcher)
-              log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
-              open match {
-                case Left(open) =>
-                  val init = INPUT_INIT_CHANNEL_NON_INITIATOR(
-                    temporaryChannelId = open.temporaryChannelId,
-                    fundingContribution_opt = None,
-                    dualFunded = false,
-                    pushAmount_opt = None,
-                    requireConfirmedInputs = false,
-                    localChannelParams = localParams,
-                    proposedCommitParams = nodeParams.channelConf.commitParams(open.fundingSatoshis, channelType, unlimitedMaxHtlcValueInFlight = false),
-                    remote = d.peerConnection,
-                    remoteInit = d.remoteInit,
-                    channelConfig = channelConfig,
-                    channelType = channelType)
-                  channel ! init
-                  channel ! open
-                case Right(open) =>
-                  val init = INPUT_INIT_CHANNEL_NON_INITIATOR(
-                    temporaryChannelId = open.temporaryChannelId,
-                    fundingContribution_opt = addFunding_opt,
-                    dualFunded = true,
-                    pushAmount_opt = None,
-                    requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
-                    localChannelParams = localParams,
-                    proposedCommitParams = nodeParams.channelConf.commitParams(open.fundingAmount + addFunding_opt.map(_.fundingAmount).getOrElse(0 sat), channelType, unlimitedMaxHtlcValueInFlight = false),
-                    remote = d.peerConnection,
-                    remoteInit = d.remoteInit,
-                    channelConfig = channelConfig,
-                    channelType = channelType)
-                  channel ! init
-                  accept.useFeeCredit_opt match {
-                    case Some(useFeeCredit) => channel ! open.copy(tlvStream = TlvStream(open.tlvStream.records + ChannelTlv.UseFeeCredit(useFeeCredit)))
-                    case None => channel ! open
-                  }
-              }
-              fulfillOnTheFlyFundingHtlcs(accept.preimages)
-              stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
-          }
-        } else {
-          log.warning("ignoring open_channel request that reconnected during channel intercept, temporaryChannelId={}", temporaryChannelId)
-          context.system.eventStream.publish(ChannelAborted(ActorRef.noSender, remoteNodeId, temporaryChannelId))
-          stay()
+        // We first check that this temporary_channel_id isn't already being used.
+        nodeParams.addChannelIdIfAbsent(temporaryChannelId, remoteNodeId) match {
+          case None =>
+            // We also check our per-peer mapping for defense in-depth.
+            d.channels.get(TemporaryChannelId(temporaryChannelId)).orElse(d.channels.get(FinalChannelId(temporaryChannelId))) match {
+              case Some(_) =>
+                log.warning("ignoring open_channel with duplicate temporaryChannelId={}", temporaryChannelId)
+                stay()
+              case None if peerConnection != d.peerConnection =>
+                log.warning("ignoring open_channel request that reconnected during channel intercept, temporaryChannelId={}", temporaryChannelId)
+                context.system.eventStream.publish(ChannelAborted(ActorRef.noSender, remoteNodeId, temporaryChannelId))
+                nodeParams.removeChannelId(temporaryChannelId)
+                stay()
+              case None =>
+                OnTheFlyFunding.validateOpen(nodeParams.onTheFlyFundingConfig, remoteNodeId, open, pendingOnTheFlyFunding, feeCredit.getOrElse(0 msat)) match {
+                  case reject: OnTheFlyFunding.ValidationResult.Reject =>
+                    log.warning("rejecting on-the-fly channel: {}", reject.cancel.toAscii)
+                    self ! Peer.OutgoingMessage(reject.cancel, d.peerConnection)
+                    cancelUnsignedOnTheFlyFunding(reject.paymentHashes)
+                    context.system.eventStream.publish(ChannelAborted(ActorRef.noSender, remoteNodeId, temporaryChannelId))
+                    nodeParams.removeChannelId(temporaryChannelId)
+                    stay()
+                  case accept: OnTheFlyFunding.ValidationResult.Accept =>
+                    val channelKeys = nodeParams.channelKeyManager.channelKeys(channelConfig, localParams.fundingKeyPath)
+                    val channel = spawnChannel(channelKeys)
+                    context.system.scheduler.scheduleOnce(nodeParams.channelConf.channelFundingTimeout, channel, Channel.TickChannelOpenTimeout)(context.dispatcher)
+                    log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
+                    open match {
+                      case Left(open) =>
+                        val init = INPUT_INIT_CHANNEL_NON_INITIATOR(
+                          temporaryChannelId = open.temporaryChannelId,
+                          fundingContribution_opt = None,
+                          dualFunded = false,
+                          pushAmount_opt = None,
+                          requireConfirmedInputs = false,
+                          localChannelParams = localParams,
+                          proposedCommitParams = nodeParams.channelConf.commitParams(open.fundingSatoshis, channelType, unlimitedMaxHtlcValueInFlight = false),
+                          remote = d.peerConnection,
+                          remoteInit = d.remoteInit,
+                          channelConfig = channelConfig,
+                          channelType = channelType)
+                        channel ! init
+                        channel ! open
+                      case Right(open) =>
+                        val init = INPUT_INIT_CHANNEL_NON_INITIATOR(
+                          temporaryChannelId = open.temporaryChannelId,
+                          fundingContribution_opt = addFunding_opt,
+                          dualFunded = true,
+                          pushAmount_opt = None,
+                          requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
+                          localChannelParams = localParams,
+                          proposedCommitParams = nodeParams.channelConf.commitParams(open.fundingAmount + addFunding_opt.map(_.fundingAmount).getOrElse(0 sat), channelType, unlimitedMaxHtlcValueInFlight = false),
+                          remote = d.peerConnection,
+                          remoteInit = d.remoteInit,
+                          channelConfig = channelConfig,
+                          channelType = channelType)
+                        channel ! init
+                        accept.useFeeCredit_opt match {
+                          case Some(useFeeCredit) => channel ! open.copy(tlvStream = TlvStream(open.tlvStream.records + ChannelTlv.UseFeeCredit(useFeeCredit)))
+                          case None => channel ! open
+                        }
+                    }
+                    fulfillOnTheFlyFundingHtlcs(accept.preimages)
+                    stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+                }
+            }
+          case Some(nodeId) =>
+            log.warning("temporary_channel_id={} already used with remoteNodeId={}: aborting remote channel open", temporaryChannelId, nodeId)
+            // Note that we don't bother responding to our peer: they're buggy or malicious anyway.
+            stay()
         }
 
       case Event(cmd: ProposeOnTheFlyFunding, d: ConnectedData) if !d.remoteFeatures.hasFeature(Features.OnTheFlyFunding) =>
@@ -556,6 +580,9 @@ class Peer(val nodeParams: NodeParams,
           val lastRemoteFeatures = LastRemoteFeatures(d.remoteFeatures, d.remoteFeaturesWritten)
           // We only reconnect if our peer is not a mobile wallet, and we now have a channel with them.
           val autoReconnect = d.channels.nonEmpty && !d.remoteFeatures.hasFeature(Features.WakeUpNotificationClient)
+          // We stop tracking temporary_channel_ids on disconnection: channels that don't have a final channel_id yet
+          // will be aborted, and channels that do have one will use it from now on.
+          d.channels.collect { case (k: TemporaryChannelId, _) => k }.foreach(channelId => nodeParams.removeChannelId(channelId.id))
           goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) }, d.activeChannels, d.peerStorage, Some(lastRemoteFeatures), autoReconnect)
         }
 
@@ -565,6 +592,7 @@ class Peer(val nodeParams: NodeParams,
           val channelIds = d.channels.filter(_._2 == actor).keys
           log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
           val channels1 = d.channels -- channelIds
+          channelIds.foreach(channelId => nodeParams.removeChannelId(channelId.id))
           if (channels1.isEmpty) {
             log.info("that was the last open channel, closing the connection")
             context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))

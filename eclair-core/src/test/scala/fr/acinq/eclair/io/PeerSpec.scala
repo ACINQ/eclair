@@ -442,10 +442,63 @@ class PeerSpec extends FixtureSpec {
     channel.expectMsg(open)
 
     // open_channel messages with the same temporary channel id should simply be ignored
-    peerConnection.send(peer, open.copy(fundingSatoshis = 100000 sat, fundingPubkey = randomKey().publicKey))
+    val open1 = open.copy(fundingSatoshis = 100000 sat, fundingPubkey = randomKey().publicKey)
+    peerConnection.send(peer, open1)
     channel.expectNoMessage(100 millis)
     peerConnection.expectNoMessage(100 millis)
     assert(peer.stateData.channels.size == 1)
+
+    // when the channel transitions to a final channel id, we still disallow reusing the temporary channel id
+    channel.send(peer, ChannelIdAssigned(channel.ref, remoteNodeId, open.temporaryChannelId, randomBytes32()))
+    peerConnection.expectMsgType[PeerConnection.DoSync]
+    val open2 = open.copy(fundingSatoshis = 150000 sat, fundingPubkey = randomKey().publicKey)
+    peerConnection.send(peer, open2)
+    channel.expectNoMessage(100 millis)
+    peerConnection.expectNoMessage(100 millis)
+
+    // if the channel is aborted, the temporary channel id can be reused in another attempt
+    peerConnection.send(peer, ChannelTerminated(channel.ref))
+    peerConnection.send(peer, open2)
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR].temporaryChannelId == open.temporaryChannelId)
+    channel.expectMsg(open2)
+  }
+
+  test("don't spawn a channel that reuses an existing channel id") { f =>
+    import f._
+
+    val confirmedChannel = ChannelCodecsSpec.normal.withChannelKeys(nodeParams)
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(confirmedChannel))
+    channel.expectMsg(INPUT_RESTORED(confirmedChannel.channelData))
+    channel.expectMsgType[INPUT_RECONNECTED]
+
+    val open = createOpenChannelMessage(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()).copy(temporaryChannelId = confirmedChannel.channelId)
+    peerConnection.send(peer, open)
+    val open2 = createOpenDualFundedChannelMessage(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()).copy(temporaryChannelId = confirmedChannel.channelId)
+    peerConnection.send(peer, open2)
+    channel.expectNoMessage(100 millis)
+    peerConnection.expectNoMessage(100 millis)
+    assert(peer.stateData.channels.size == 1)
+  }
+
+  test("remove temporary_channel_id from the global map on disconnection") { f =>
+    import f._
+
+    val probe = TestProbe()
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)))
+    channel.expectMsgType[INPUT_RESTORED]
+    channel.expectMsgType[INPUT_RECONNECTED]
+
+    // peer receives an open_channel and spawns a non-initiator channel actor
+    val open = createOpenChannelMessage(ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    peerConnection.send(peer, open)
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR].temporaryChannelId == open.temporaryChannelId)
+    channel.expectMsg(open)
+    // the peer disconnects before transitioning to a final channel_id
+    peerConnection.send(peer, ConnectionDown(peerConnection.ref))
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.DISCONNECTED)
+    // the temporary channel id is removed from the global channels map
+    assert(nodeParams.removeChannelId(open.temporaryChannelId).isEmpty)
   }
 
   test("send error when receiving message for unknown channel") { f =>

@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, TxOut}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee._
@@ -487,7 +487,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
 object CommitmentsSpec {
 
-  def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isOpener: Boolean = true, announcement_opt: Option[ChannelAnnouncement] = None): Commitments = {
+  def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isOpener: Boolean = true, announcement_opt: Option[ChannelAnnouncement] = None, channelId: ByteVector32 = randomBytes32()): Commitments = {
     val channelReserve = (toLocal + toRemote).truncateToSatoshi * 0.01
     val localChannelParams = LocalChannelParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), Some(channelReserve), isOpener, isOpener, None, Features.empty)
     val remoteChannelParams = RemoteChannelParams(randomKey().publicKey, Some(channelReserve), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
@@ -502,7 +502,7 @@ object CommitmentsSpec {
       case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
     }
     Commitments(
-      ChannelParams(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localChannelParams, remoteChannelParams, ChannelFlags(announceChannel = announcement_opt.nonEmpty)),
+      ChannelParams(channelId, ChannelConfig.standard, ChannelFeatures(), localChannelParams, remoteChannelParams, ChannelFlags(announceChannel = announcement_opt.nonEmpty)),
       CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1),
       List(Commitment(0, 0, OutPoint(randomTxId(), 0), fundingTxOut.amount, remoteFundingPubKey, localFundingStatus, RemoteFundingStatus.Locked, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, commitParams, localCommit, commitParams, remoteCommit, None)),
       inactive = Nil,

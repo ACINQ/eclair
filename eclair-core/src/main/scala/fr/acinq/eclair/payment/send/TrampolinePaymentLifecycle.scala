@@ -133,7 +133,7 @@ object TrampolinePaymentLifecycle {
             val holdTimes = fulfill match {
               case HtlcResult.RemoteFulfill(updateFulfill) =>
                 updateFulfill.attribution_opt match {
-                  case Some(attribution) => Sphinx.Attribution.unwrap(attribution, outerOnionSecrets).holdTimes
+                  case Some(attribution) => Sphinx.SuccessPacket.decrypt(Some(attribution), outerOnionSecrets).holdTimes
                   case None => Nil
                 }
               case _: HtlcResult.OnChainFulfill => Nil
