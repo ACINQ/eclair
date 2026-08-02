@@ -24,9 +24,24 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
+import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
+
 package object eclair {
 
   val randomGen = new StrongRandom()
+
+  /**
+   * Restrict access to a file or directory to its owner, e.g. "rw-------" for a secret file or "rwx------" for a
+   * directory containing secrets. This is a no-op on file systems that don't support POSIX permissions (e.g. Windows),
+   * where access control is handled differently.
+   */
+  def setOwnerPermissions(path: Path, permissions: String): Unit =
+    try {
+      java.nio.file.Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(permissions))
+    } catch {
+      case _: UnsupportedOperationException => () // non-POSIX file system (e.g. Windows)
+    }
 
   def randomBytes(length: Int): ByteVector = {
     val buffer = new Array[Byte](length)

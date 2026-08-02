@@ -212,12 +212,16 @@ object NodeParams extends Logging {
 
   private def writeSeedToFile(path: File, seed: ByteVector): Unit = {
     Files.write(path.toPath, seed.toArray)
+    // Seed files derive the node identity key and all channel keys: they must never be readable by other local users.
+    setOwnerPermissions(path.toPath, "rw-------")
     logger.info(s"create new seed file: ${path.getCanonicalPath}")
   }
 
   private def migrateSeedFile(source: File, destination: File): Unit = {
     if (source.exists() && !destination.exists()) {
       Files.copy(source.toPath, destination.toPath)
+      // The copied file inherits default umask permissions, so we restrict it to its owner like a freshly created seed.
+      setOwnerPermissions(destination.toPath, "rw-------")
       logger.info(s"migrate seed file: ${source.getCanonicalPath} → ${destination.getCanonicalPath}")
     }
   }
