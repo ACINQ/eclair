@@ -778,13 +778,19 @@ case class ChannelUpdate(signature: ByteVector64,
 }
 
 object ChannelUpdate {
-  case class MessageFlags(dontForward: Boolean)
+  case class MessageFlags(flag7: Boolean, flag6: Boolean, flag5: Boolean, flag4: Boolean, flag3: Boolean, flag2: Boolean, dontForward: Boolean)
 
-  case class ChannelFlags(isEnabled: Boolean, isNode1: Boolean)
+  object MessageFlags {
+    def apply(dontForward: Boolean): MessageFlags = MessageFlags(flag7 = false, flag6 = false, flag5 = false, flag4 = false, flag3 = false, flag2 = false, dontForward)
+  }
+
+  case class ChannelFlags(flag7: Boolean, flag6: Boolean, flag5: Boolean, flag4: Boolean, flag3: Boolean, flag2: Boolean, isEnabled: Boolean, isNode1: Boolean)
 
   object ChannelFlags {
     /** for tests */
-    val DUMMY: ChannelFlags = ChannelFlags(isEnabled = true, isNode1 = true)
+    val DUMMY: ChannelFlags = ChannelFlags(flag7 = false, flag6 = false, flag5 = false, flag4 = false, flag3 = false, flag2 = false, isEnabled = true, isNode1 = true)
+
+    def apply(isEnabled: Boolean, isNode1: Boolean): ChannelFlags = ChannelFlags(flag7 = false, flag6 = false, flag5 = false, flag4 = false, flag3 = false, flag2 = false, isEnabled = isEnabled, isNode1 = isNode1)
   }
 }
 
