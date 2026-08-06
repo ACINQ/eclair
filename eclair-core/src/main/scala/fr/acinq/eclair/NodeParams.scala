@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
+import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly}
 import fr.acinq.eclair.io.{PeerConnection, PeerReadyNotifier}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.offer.OffersConfig
@@ -347,6 +347,8 @@ object NodeParams extends Logging {
       // v0.12.0
       "channel.mindepth-blocks" -> "channel.min-depth-blocks",
       "sync-whitelist" -> "router.sync.whitelist",
+      // v0.14.0
+      "onion-messages.relay-policy" -> "features.option_onion_messages, features.option_onion_messages_only_channels",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -515,10 +517,7 @@ object NodeParams extends Logging {
       case "stop" => UnhandledExceptionStrategy.Stop
     }
 
-    val onionMessageRelayPolicy: RelayPolicy = config.getString("onion-messages.relay-policy") match {
-      case "channels-only" => RelayChannelsOnly
-      case "relay-all" => RelayAll
-    }
+    val onionMessageRelayPolicy = if (features.hasFeature(Features.OnionMessages)) RelayAll else RelayChannelsOnly
 
     val purgeInvoicesInterval = if (config.getBoolean("purge-expired-invoices.enabled")) {
       Some(FiniteDuration(config.getDuration("purge-expired-invoices.interval").toMinutes, TimeUnit.MINUTES))

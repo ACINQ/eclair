@@ -613,7 +613,7 @@ class Peer(val nodeParams: NodeParams,
         OnionMessages.process(nodeParams.privateKey, msg) match {
           case OnionMessages.DropMessage(reason) =>
             log.info("dropping message from {}: {}", remoteNodeId.value.toHex, reason.toString)
-          case OnionMessages.SendMessage(nextNode, message) if nodeParams.features.hasFeature(Features.OnionMessages) =>
+          case OnionMessages.SendMessage(nextNode, message) if nodeParams.features.hasFeature(Features.OnionMessages) || nodeParams.features.hasFeature(Features.OnionMessagesChannelsOnly) =>
             val messageId = randomBytes32()
             log.info("relaying onion message with messageId={}", messageId)
             val relay = context.spawn(Behaviors.supervise(MessageRelay(nodeParams, switchboard, register, router)).onFailure(typed.SupervisorStrategy.stop), s"relay-message-$messageId")

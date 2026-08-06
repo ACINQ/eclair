@@ -4,7 +4,25 @@
 
 ## Major changes
 
-<insert changes>
+### Advertize when onion messages require channels
+
+We add support for the `option_onion_messages_only_channels` feature that was recently added to the BOLTs
+(see https://github.com/lightning/bolts/pull/1343 for more details), which lets us tell the network that
+we will only relay onion messages from peers with whom we already have channels.
+
+This was supported previously by setting your relay policy in `eclair.conf` to:
+
+```conf
+eclair.onion-messages.relay-policy = "channels-only"
+```
+
+This `relay-policy` field has been removed from the configuration. If you wish to only relay onion messages
+from peers with whom you have channels, you should set the corresponding features in your `eclair.conf`:
+
+```conf
+eclair.features.option_onion_messages = disabled
+eclair.features.option_onion_messages_only_channels = optional
+```
 
 ### Configuration changes
 
