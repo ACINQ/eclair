@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomKey, toLongId}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass, toLongId}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -69,7 +69,7 @@ class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFu
     val fundingTx = Transaction(
       version = 2,
       txIn = Seq(TxIn(OutPoint(randomTxId(), 3), Nil, 0)),
-      txOut = Seq(TxOut(100_000 sat, Script.pay2wsh(Scripts.multiSig2of2(localFundingPubKey, remoteFundingPubKey)))),
+      txOut = Seq(TxOut(TestConstants.fundingSatoshis, Script.pay2wsh(Scripts.multiSig2of2(localFundingPubKey, remoteFundingPubKey)))),
       lockTime = 0
     )
     val channelId = toLongId(fundingTx.txid, 0)
