@@ -33,6 +33,8 @@ object Monitoring {
     val OnionMessagesThrottled = Kamon.counter("onionmessages.throttled")
     val OnionMessagesNotRelayed = Kamon.counter("onionmessages.not-relayed")
 
+    val GossipQueriesThrottled = Kamon.counter("gossipqueries.throttled")
+
     val OpenChannelRequestsPending = Kamon.gauge("openchannelrequests.pending")
 
     val IncomingConnectionsNoChannels = Kamon.gauge("incomingconnections.nochannels")

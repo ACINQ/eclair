@@ -124,6 +124,7 @@ object EclairInternalsSerializer {
       ("maxRebroadcastDelay" | finiteDurationCodec) ::
       ("killIdleDelay" | finiteDurationCodec) ::
       ("maxOnionMessagesPerSecond" | int32) ::
+      ("maxGossipQueriesPerSecond" | int32) ::
       ("sendRemoteAddressInit" | bool(8)) ::
       ("maxNoChannels" | int32)).as[PeerConnection.Conf]
 

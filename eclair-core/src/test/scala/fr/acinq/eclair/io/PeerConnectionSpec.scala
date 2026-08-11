@@ -729,6 +729,48 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsg(message)
   }
 
+  test("rate limit channel range queries") { f =>
+    import f._
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    // A query_channel_range is tiny but forces us to scan our whole routing table, so we must not let a peer flood us.
+    val maxQueries = nodeParams.peerConnectionConf.maxGossipQueriesPerSecond
+    val queriesSent = 3 * maxQueries
+    val query = QueryChannelRange(nodeParams.chainHash, BlockHeight(0), Int.MaxValue.toLong, TlvStream.empty)
+    for (_ <- 1 to queriesSent) {
+      transport.send(peerConnection, query)
+    }
+    var queriesForwarded = 0
+    router.receiveWhile(100 millis) {
+      case Peer.PeerRoutingMessage(_, _, _: QueryChannelRange) => queriesForwarded = queriesForwarded + 1
+    }
+    assert(queriesForwarded == maxQueries)
+    // The queries that we dropped must still be acked, otherwise the transport would stop reading from the connection.
+    // The ones we forwarded are acked by the router, which is a probe in this test.
+    val acks = transport.receiveWhile(100 millis) { case ack: TransportHandler.ReadAck => ack }
+    assert(acks.size == queriesSent - maxQueries)
+    sleep(1000 millis)
+    transport.send(peerConnection, query)
+    router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, query))
+  }
+
+  test("ignore gossip queries for another chain") { f =>
+    import f._
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    assert(nodeParams.chainHash != Block.LivenetGenesisBlock.hash)
+    val queries = Seq(
+      QueryChannelRange(Block.LivenetGenesisBlock.hash, BlockHeight(0), 1000, TlvStream.empty),
+      ReplyChannelRange(Block.LivenetGenesisBlock.hash, BlockHeight(0), 1000, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), None, None),
+      QueryShortChannelIds(Block.LivenetGenesisBlock.hash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), TlvStream.empty),
+      ReplyShortChannelIdsEnd(Block.LivenetGenesisBlock.hash, 1),
+    )
+    queries.foreach(query => {
+      transport.send(peerConnection, query)
+      transport.expectMsg(TransportHandler.ReadAck(query))
+      transport.expectMsgType[Warning]
+    })
+    router.expectNoMessage(100 millis)
+  }
+
   test("filter private IP addresses") { () =>
     val testCases = Seq(
       NodeAddress.fromParts("127.0.0.1", 9735).get -> false,

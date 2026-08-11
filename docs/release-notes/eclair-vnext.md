@@ -8,7 +8,16 @@
 
 ### Configuration changes
 
-<insert changes>
+A `query_channel_range` message is a few dozen bytes to send, but answering one requires scanning our whole routing
+table and sending back megabytes of data. We now limit how many of them we accept from a given peer, which can be
+configured with:
+
+```conf
+eclair.router.sync.max-queries-per-second = 10
+```
+
+Honest peers only need to send a handful of `query_channel_range` per connection, so this shouldn't have any impact on
+normal synchronization.
 
 ### API changes
 
@@ -16,7 +25,9 @@
 
 ### Miscellaneous improvements and bug fixes
 
-<insert changes>
+- We now ignore gossip queries that are for another chain instead of answering them (#XXXX)
+- Answering channel range queries is much cheaper: we cache the timestamps and checksums of our channel updates instead
+  of recomputing them for the whole routing table on every incoming query (#XXXX)
 
 ## Verifying signatures
 

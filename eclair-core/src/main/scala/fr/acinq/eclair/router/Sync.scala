@@ -72,20 +72,28 @@ object Sync {
 
   def handleQueryChannelRange(channels: SortedMap[RealShortChannelId, PublicChannel], routerConf: RouterConf, origin: RemoteGossip, q: QueryChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    ctx.sender() ! TransportHandler.ReadAck(q)
-    Metrics.QueryChannelRange.Blocks.withoutTags().record(q.numberOfBlocks)
-    log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", q.firstBlock, q.numberOfBlocks, q.tlvStream)
-    // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-    val shortChannelIds: SortedSet[RealShortChannelId] = channels.keySet.filter(keep(q.firstBlock, q.numberOfBlocks, _))
-    log.info("replying with {} items for range=({}, {})", shortChannelIds.size, q.firstBlock, q.numberOfBlocks)
-    val chunks = split(shortChannelIds, q.firstBlock, q.numberOfBlocks, routerConf.syncConf.channelRangeChunkSize)
-    Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
-    chunks.zipWithIndex.foreach { case (chunk, i) =>
-      val syncComplete = i == chunks.size - 1
-      val reply = buildReplyChannelRange(chunk, syncComplete, q.chainHash, routerConf.syncConf.encodingType, q.queryFlags_opt, channels)
-      origin.peerConnection ! reply
-      Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.numberOfBlocks)
-      Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.shortChannelIds.array.size)
+    try {
+      Metrics.QueryChannelRange.Blocks.withoutTags().record(q.numberOfBlocks)
+      log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", q.firstBlock, q.numberOfBlocks, q.tlvStream)
+      // NB: we don't need to filter on [firstBlockNum, firstBlockNum + numberOfBlocks] here: `split` iterates in scid
+      // order, which is block height order, and only keeps ids inside that range. Filtering first would pointlessly
+      // build a copy of our whole routing table for every incoming query.
+      val chunks = split(channels.keySet, q.firstBlock, q.numberOfBlocks, routerConf.syncConf.channelRangeChunkSize)
+      log.info("replying with {} items in {} chunks for range=({}, {})", chunks.map(_.shortChannelIds.size).sum, chunks.size, q.firstBlock, q.numberOfBlocks)
+      Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
+      chunks.zipWithIndex.foreach { case (chunk, i) =>
+        val syncComplete = i == chunks.size - 1
+        val reply = buildReplyChannelRange(chunk, syncComplete, q.chainHash, routerConf.syncConf.encodingType, q.queryFlags_opt, channels)
+        origin.peerConnection ! reply
+        Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.numberOfBlocks)
+        Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.shortChannelIds.array.size)
+      }
+    } finally {
+      // NB: we only ack once we're done: acking earlier would let the peer keep sending queries while we're still
+      // answering the previous ones, which would defeat the transport-level back-pressure and fill up our mailbox.
+      // We ack in a `finally` because we must ack even if we failed to answer: the transport stops reading from the
+      // connection until we do, so skipping the ack would silently wedge that peer connection forever.
+      ctx.sender() ! TransportHandler.ReadAck(q)
     }
   }
 
@@ -161,34 +169,40 @@ object Sync {
 
   def handleQueryShortChannelIds(nodes: Map[PublicKey, NodeAnnouncement], channels: SortedMap[RealShortChannelId, PublicChannel], origin: RemoteGossip, q: QueryShortChannelIds)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    ctx.sender() ! TransportHandler.ReadAck(q)
 
     val flags = q.queryFlags_opt.map(_.array).getOrElse(List.empty[Long])
     var channelCount = 0
     var updateCount = 0
     var nodeCount = 0
 
-    processChannelQuery(nodes, channels,
-      q.shortChannelIds.array,
-      flags,
-      ca => {
-        channelCount = channelCount + 1
-        origin.peerConnection ! ca
-      },
-      cu => {
-        updateCount = updateCount + 1
-        origin.peerConnection ! cu
-      },
-      na => {
-        nodeCount = nodeCount + 1
-        origin.peerConnection ! na
-      }
-    )
-    Metrics.QueryShortChannelIds.Nodes.withoutTags().record(nodeCount)
-    Metrics.QueryShortChannelIds.ChannelAnnouncements.withoutTags().record(channelCount)
-    Metrics.QueryShortChannelIds.ChannelUpdates.withoutTags().record(updateCount)
-    log.debug("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", q.shortChannelIds.array.size, channelCount, updateCount, nodeCount)
-    origin.peerConnection ! ReplyShortChannelIdsEnd(q.chainHash, 1)
+    try {
+      processChannelQuery(nodes, channels,
+        q.shortChannelIds.array,
+        flags,
+        ca => {
+          channelCount = channelCount + 1
+          origin.peerConnection ! ca
+        },
+        cu => {
+          updateCount = updateCount + 1
+          origin.peerConnection ! cu
+        },
+        na => {
+          nodeCount = nodeCount + 1
+          origin.peerConnection ! na
+        }
+      )
+      Metrics.QueryShortChannelIds.Nodes.withoutTags().record(nodeCount)
+      Metrics.QueryShortChannelIds.ChannelAnnouncements.withoutTags().record(channelCount)
+      Metrics.QueryShortChannelIds.ChannelUpdates.withoutTags().record(updateCount)
+      log.debug("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", q.shortChannelIds.array.size, channelCount, updateCount, nodeCount)
+    } finally {
+      // NB: see handleQueryChannelRange, we only ack once we're done building the reply.
+      // We must terminate the query and ack it even if we failed to answer it, otherwise our peer would wait for a
+      // reply_short_channel_ids_end forever and the transport would stop reading from that connection.
+      origin.peerConnection ! ReplyShortChannelIdsEnd(q.chainHash, 1)
+      ctx.sender() ! TransportHandler.ReadAck(q)
+    }
   }
 
   def handleReplyShortChannelIdsEnd(d: Data, origin: RemoteGossip, r: ReplyShortChannelIdsEnd)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
@@ -217,7 +231,9 @@ object Sync {
   }
 
   /**
-   * Filters channels that we want to send to nodes asking for a channel range
+   * Whether a channel belongs to the range that a peer is asking for. [[split]] implements this by exploiting the fact
+   * that short channel ids are sorted by block height, so we don't call this on the hot path: it is kept as the
+   * reference definition of the range, which [[split]]'s output is checked against in tests.
    */
   def keep(firstBlock: BlockHeight, numberOfBlocks: Long, id: RealShortChannelId): Boolean = {
     val height = id.blockHeight
@@ -370,13 +386,10 @@ object Sync {
     }
   }
 
+  // NB: the result is cached in [[PublicChannel.digest]]: without that cache, answering a single query_channel_range
+  // for the whole routing table would re-serialize every channel_update we know.
   def getChannelDigestInfo(channels: SortedMap[RealShortChannelId, PublicChannel])(shortChannelId: RealShortChannelId): (ReplyChannelRangeTlv.Timestamps, ReplyChannelRangeTlv.Checksums) = {
-    val c = channels(shortChannelId)
-    val timestamp1 = c.update_1_opt.map(_.timestamp).getOrElse(0L unixsec)
-    val timestamp2 = c.update_2_opt.map(_.timestamp).getOrElse(0L unixsec)
-    val checksum1 = c.update_1_opt.map(getChecksum).getOrElse(0L)
-    val checksum2 = c.update_2_opt.map(getChecksum).getOrElse(0L)
-    (ReplyChannelRangeTlv.Timestamps(timestamp1 = timestamp1, timestamp2 = timestamp2), ReplyChannelRangeTlv.Checksums(checksum1 = checksum1, checksum2 = checksum2))
+    channels(shortChannelId).digest
   }
 
   def crc32c(data: ByteVector): Long = {

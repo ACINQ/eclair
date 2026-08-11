@@ -462,6 +462,30 @@ class RouterSpec extends BaseRouterSpec {
     assert(!StaleChannels.isStale(ann, Some(update1), Some(update2), currentBlockHeight))
   }
 
+  test("ack channel range queries only once we've replied") { fixture =>
+    import fixture._
+    val peerConnection = TestProbe()
+
+    {
+      val query = QueryChannelRange(nodeParams.chainHash, BlockHeight(0), Int.MaxValue.toLong, TlvStream.empty)
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, query))
+      // We must send our replies *before* acking the query: acking first releases the transport-level back-pressure,
+      // which would let a peer keep flooding us with queries while we're still busy answering the previous ones.
+      val reply = peerConnection.expectMsgType[ReplyChannelRange]
+      assert(reply.syncComplete == 1)
+      assert(reply.shortChannelIds.array.nonEmpty)
+      peerConnection.expectMsg(TransportHandler.ReadAck(query))
+    }
+
+    {
+      val query = QueryShortChannelIds(nodeParams.chainHash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(scid_ab)), TlvStream.empty)
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, query))
+      peerConnection.expectMsgType[ChannelAnnouncement]
+      peerConnection.fishForMessage() { case _: ReplyShortChannelIdsEnd => true; case _ => false }
+      peerConnection.expectMsg(TransportHandler.ReadAck(query))
+    }
+  }
+
   test("handle bad signature for ChannelAnnouncement") { fixture =>
     import fixture._
     val peerConnection = TestProbe()

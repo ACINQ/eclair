@@ -367,6 +367,8 @@ object NodeParams extends Logging {
     val watchSpentWindow = FiniteDuration(config.getDuration("router.watch-spent-window").getSeconds, TimeUnit.SECONDS)
     require(watchSpentWindow > 0.seconds, "router.watch-spent-window must be strictly greater than 0")
 
+    require(config.getInt("router.sync.max-queries-per-second") > 0, "router.sync.max-queries-per-second must be strictly greater than 0")
+
     val dustLimitSatoshis = Satoshi(config.getLong("channel.dust-limit-satoshis"))
     if (chainHash == Block.LivenetGenesisBlock.hash) {
       require(dustLimitSatoshis >= Channel.MIN_DUST_LIMIT, s"dust limit must be greater than ${Channel.MIN_DUST_LIMIT}")
@@ -681,6 +683,7 @@ object NodeParams extends Logging {
         maxRebroadcastDelay = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS), // it makes sense to not delay rebroadcast by more than the rebroadcast period
         killIdleDelay = FiniteDuration(config.getDuration("onion-messages.kill-transient-connection-after").getSeconds, TimeUnit.SECONDS),
         maxOnionMessagesPerSecond = config.getInt("onion-messages.max-per-peer-per-second"),
+        maxGossipQueriesPerSecond = config.getInt("router.sync.max-queries-per-second"),
         sendRemoteAddressInit = config.getBoolean("peer-connection.send-remote-address-init"),
         maxNoChannels = maxNoChannels,
       ),

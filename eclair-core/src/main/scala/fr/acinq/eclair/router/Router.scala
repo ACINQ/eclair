@@ -319,8 +319,8 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using Sync.handleSendChannelQuery(d, s)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d: Data) =>
-      val spentChannels = d.spentChannels.values.flatten.toSet
-      val channels = d.channels.filterNot { case (scid, _) => spentChannels.contains(scid) }
+      // NB: `--` only removes the (usually very few) spent channels, whereas `filterNot` would rebuild the whole map.
+      val channels = d.channels -- d.spentChannels.values.flatten
       Sync.handleQueryChannelRange(channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
       stay()
 
@@ -328,8 +328,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using Sync.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d: Data) =>
-      val spentChannels = d.spentChannels.values.flatten.toSet
-      val channels = d.channels.filterNot { case (scid, _) => spentChannels.contains(scid) }
+      val channels = d.channels -- d.spentChannels.values.flatten
       Sync.handleQueryShortChannelIds(d.nodes, channels, RemoteGossip(peerConnection, remoteNodeId), q)
       stay()
 
@@ -442,6 +441,20 @@ object Router {
     val nodeId1: PublicKey = ann.nodeId1
     val nodeId2: PublicKey = ann.nodeId2
     val shortChannelId: RealShortChannelId = ann.shortChannelId
+
+    /**
+     * Timestamps and checksums of our updates, used to answer gossip queries (see [[Sync.getChannelDigestInfo]]).
+     * Computing a checksum requires re-serializing a channel_update, which is expensive when done for the whole routing
+     * table on every incoming query, so we compute it lazily and cache it: this instance is replaced whenever one of
+     * the updates changes, which transparently invalidates the cache.
+     */
+    lazy val digest: (ReplyChannelRangeTlv.Timestamps, ReplyChannelRangeTlv.Checksums) = {
+      val timestamp1 = update_1_opt.map(_.timestamp).getOrElse(0L unixsec)
+      val timestamp2 = update_2_opt.map(_.timestamp).getOrElse(0L unixsec)
+      val checksum1 = update_1_opt.map(Sync.getChecksum).getOrElse(0L)
+      val checksum2 = update_2_opt.map(Sync.getChecksum).getOrElse(0L)
+      (ReplyChannelRangeTlv.Timestamps(timestamp1 = timestamp1, timestamp2 = timestamp2), ReplyChannelRangeTlv.Checksums(checksum1 = checksum1, checksum2 = checksum2))
+    }
 
     def isStale(currentBlockHeight: BlockHeight): Boolean = StaleChannels.isStale(ann, update_1_opt, update_2_opt, currentBlockHeight)
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (u.channelFlags.isNode1) ann.nodeId1 else ann.nodeId2
