@@ -759,7 +759,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           // We still watch the funding tx for confirmation even if we can use the zero-conf channel right away.
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepth), delay_opt = None)
           val shortIds = createShortIdAliases(d.channelId)
-          val channelReady = createChannelReady(shortIds, d.commitments)
+          val channelReady = createChannelReady(shortIds, commitments1)
           d.deferred.foreach(self ! _)
           invalidTxSigsReceived = Map.empty
           goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, shortIds) storing() sending channelReady
@@ -770,7 +770,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       acceptFundingTxConfirmed(w, d) match {
         case Right((commitments1, _)) =>
           val shortIds = createShortIdAliases(d.channelId)
-          val channelReady = createChannelReady(shortIds, d.commitments)
+          val channelReady = createChannelReady(shortIds, commitments1)
           reportRbfFailure(d.status, InvalidRbfTxConfirmed(d.channelId))
           val toSend = d.status match {
             case DualFundingStatus.WaitingForConfirmations | DualFundingStatus.RbfAborted => Seq(channelReady)
