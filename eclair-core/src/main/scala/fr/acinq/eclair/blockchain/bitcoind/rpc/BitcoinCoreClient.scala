@@ -66,7 +66,14 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
   //------------------------- TRANSACTIONS  -------------------------//
 
   def getTransaction(txid: TxId)(implicit ec: ExecutionContext): Future[Transaction] =
-    getRawTransaction(txid).map(raw => Transaction.read(raw))
+    getRawTransaction(txid).flatMap(raw => {
+      val tx = Transaction.read(raw)
+      if (tx.txid != txid) {
+        Future.failed(new RuntimeException(s"received transaction doesn't match the request: ${tx.txid} != $txid"))
+      } else {
+        Future.successful(tx)
+      }
+    })
 
   private def getRawTransaction(txid: TxId)(implicit ec: ExecutionContext): Future[String] =
     rpcClient.invoke("getrawtransaction", txid).collect {
@@ -83,7 +90,12 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
   /** Get the number of confirmations of a given transaction. */
   def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] =
     rpcClient.invoke("getrawtransaction", txid, 1 /* verbose output is needed to get the number of confirmations */)
-      .map(json => Some((json \ "confirmations").extractOrElse[Int](0)))
+      .flatMap(json => {
+        json \ "txid" match {
+          case JString(txid1) if TxId.fromValidHex(txid1) != txid => Future.failed(new RuntimeException(s"received transaction doesn't match the request: $txid1 != $txid"))
+          case _ => Future.successful(Some((json \ "confirmations").extractOrElse[Int](0)))
+        }
+      })
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None // Invalid or non-wallet transaction id (code: -5)
       }
@@ -487,8 +499,9 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
    * @return the transaction id (txid)
    */
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId] =
-    rpcClient.invoke("sendrawtransaction", tx.toString()).collect {
-      case JString(txid) => TxId.fromValidHex(txid)
+    rpcClient.invoke("sendrawtransaction", tx.toString()).flatMap {
+      case JString(txid) if TxId.fromValidHex(txid) == tx.txid => Future.successful(tx.txid)
+      case _ => Future.failed(new RuntimeException("failed to publish transaction or incorrect txid returned"))
     }.recoverWith {
       case JsonRPCError(Error(-27, _)) =>
         // "transaction already in block chain (code: -27)"
@@ -663,7 +676,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
       actualFeerate = Transactions.fee2rate(actualFees, signedTx.weight())
       maxFeerate = feeratePerKw * 1.5
       _ = require(actualFeerate < maxFeerate, s"actual feerate $actualFeerate is more than 50% above requested feerate $feeratePerKw")
-      txid <-  unlockIfFails(lockedOutputs)(publishTransaction(signedTx))
+      txid <- unlockIfFails(lockedOutputs)(publishTransaction(signedTx))
     } yield txid
   }
 
@@ -690,7 +703,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
       JBool(isMine) = addressInfo \ "ismine"
     } yield isMine
   }
-  
+
   //------------------------- MEMPOOL  -------------------------//
 
   def getMempool()(implicit ec: ExecutionContext): Future[Seq[Transaction]] =
@@ -753,7 +766,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         val JArray(txs) = json \ "tx"
         TxId.fromValidHex(txs(txIndex).extract[String])
       }.getOrElse(TxId(ByteVector32.Zeroes)))
-      tx <- getRawTransaction(txid)
+      tx <- getTransaction(txid)
       unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
       fundingTxStatus <- if (unspent) {
         Future.successful(UtxoStatus.Unspent)
@@ -761,7 +774,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         // if this returns true, it means that the spending tx is *not* in the blockchain
         isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map(res => UtxoStatus.Spent(spendingTxConfirmed = !res))
       }
-    } yield ValidateResult(c, Right((Transaction.read(tx), fundingTxStatus)))
+    } yield ValidateResult(c, Right((tx, fundingTxStatus)))
   } recover {
     case t: Throwable => ValidateResult(c, Left(t))
   }
