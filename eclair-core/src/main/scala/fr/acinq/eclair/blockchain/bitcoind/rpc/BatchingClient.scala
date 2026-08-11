@@ -37,32 +37,36 @@ class BatchingClient(rpcClient: BasicBitcoinJsonRPCClient) extends Actor with Ac
       // there is already a batch in flight, just add this request to the queue
       context become waiting(queue :+ Pending(request, sender()), processing)
 
-    case responses: Seq[JsonRPCResponse]@unchecked =>
+    case responses: Seq[JsonRPCResponse] @unchecked =>
       log.debug("got {} responses", responses.size)
-      // let's send back answers to the requestors
-      require(responses.size == processing.size, s"responses=${responses.size} != processing=${processing.size}")
-      responses.zip(processing).foreach {
-        case (JsonRPCResponse(result, None, _), Pending(_, requestor)) => requestor ! result
-        case (JsonRPCResponse(_, Some(error), _), Pending(_, requestor)) => requestor ! Status.Failure(JsonRPCError(error))
-      }
+      val keyedResponses = responses.map(r => r.id -> r).toMap
+      processing.foreach(pending => keyedResponses.get(pending.request.id) match {
+        case Some(response) => response.error match {
+          case None => pending.requestor ! response.result
+          case Some(error) => pending.requestor ! Status.Failure(JsonRPCError(error))
+        }
+        case None =>
+          log.warning("response missing for requestId={} method={}", pending.request.id, pending.request.method)
+          pending.requestor ! Status.Failure(new RuntimeException("no response from bitcoind"))
+      })
       process(queue)
 
     case s@Status.Failure(t) =>
-      log.error(t, s"got exception for batch of ${processing.size} requests")
-      // let's fail all requests
+      log.error(s"got exception for batch of ${processing.size} requests: ${t.getMessage}")
+      // We don't know what caused the failure at that point, and we cannot figure our which requests succeeded (if any)
+      // and which failed. We tell requestors that all requests in the batch have failed, but it may be misleading.
       processing.foreach { case Pending(_, requestor) => requestor ! s }
       process(queue)
   }
 
   def process(queue: Queue[Pending]): Unit = {
-    // do we have queued requests?
     if (queue.isEmpty) {
       log.debug("no more requests, going back to idle")
       context become receive
     } else {
       val (batch, rest) = queue.splitAt(BatchingClient.BATCH_SIZE)
       log.debug(s"sending {} request(s): {} (queue={})", batch.size, batch.groupBy(_.request.method).map(e => e._1 + "=" + e._2.size).mkString(" "), queue.size)
-      rpcClient.invoke(batch.map(_.request)) pipeTo self
+      rpcClient.invoke(batch.map(_.request)).pipeTo(self)
       context become waiting(rest, batch)
     }
   }
@@ -71,7 +75,7 @@ class BatchingClient(rpcClient: BasicBitcoinJsonRPCClient) extends Actor with Ac
 
 object BatchingClient {
 
-  val BATCH_SIZE = 50
+  private val BATCH_SIZE = 50
 
   case class Pending(request: JsonRPCRequest, requestor: ActorRef)
 

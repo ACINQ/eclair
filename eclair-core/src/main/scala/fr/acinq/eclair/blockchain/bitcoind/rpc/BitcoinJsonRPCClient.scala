@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.scalacompat.BlockHash
 import org.json4s.JsonAST.JValue
 
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.{ExecutionContext, Future}
 
 trait BitcoinJsonRPCClient {
@@ -30,9 +31,17 @@ trait BitcoinJsonRPCClient {
   // @formatter:on
 }
 
+case class JsonRPCRequest(jsonrpc: String = "1.0", id: String, method: String, params: Seq[Any])
+
+object JsonRPCRequest {
+  private val nextId = new AtomicLong(0)
+
+  /** Generate a unique request ID. */
+  def nextRequestId(): String = s"scala-client-${nextId.incrementAndGet()}"
+}
+
 // @formatter:off
-case class JsonRPCRequest(jsonrpc: String = "1.0", id: String = "scala-client", method: String, params: Seq[Any])
-case class Error(code: Int, message: String)
 case class JsonRPCResponse(result: JValue, error: Option[Error], id: String)
+case class Error(code: Int, message: String)
 case class JsonRPCError(error: Error) extends IOException(s"${error.message} (code: ${error.code})")
 // @formatter:on
