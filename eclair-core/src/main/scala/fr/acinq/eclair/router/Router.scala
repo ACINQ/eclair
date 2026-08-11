@@ -828,7 +828,7 @@ object Router {
    *                         [[ReplyShortChannelIdsEnd]] yet: we must only send one at a time, and we must ignore
    *                         [[ReplyShortChannelIdsEnd]] messages that don't answer one of our queries
    */
-  case class Syncing(remainingQueries: List[RoutingMessage], totalQueries: Int, queryInFlight: Boolean = false)
+  case class Syncing(remainingQueries: List[QueryShortChannelIds], totalQueries: Int, queryInFlight: Boolean = false)
 
   sealed trait RouterData {
     // @formatter:off

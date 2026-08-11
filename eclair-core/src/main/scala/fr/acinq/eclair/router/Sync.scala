@@ -545,8 +545,14 @@ object Sync {
           // we already have a pending query with this peer, add missing ids to our "sync" state
           (syncMap + (remoteNodeId -> current.copy(remainingQueries = current.remainingQueries ++ pending, totalQueries = current.totalQueries + pending.size)), None)
         } else {
-          // we don't have a pending query with this peer, let's send it
-          (syncMap + (remoteNodeId -> Syncing(rest, current.totalQueries + pending.size, queryInFlight = true)), Some(head))
+          // We don't have a pending query with this peer, let's send the next one and queue the rest.
+          // NB: `current.remainingQueries` should always be empty when we don't have a query in flight, but we pop from
+          // it instead of overwriting it, to make sure we can never silently drop queries.
+          val (next, remaining) = current.remainingQueries match {
+            case queued :: queuedRest => (queued, queuedRest ++ pending)
+            case Nil => (head, rest)
+          }
+          (syncMap + (remoteNodeId -> current.copy(remainingQueries = remaining, totalQueries = current.totalQueries + pending.size, queryInFlight = true)), Some(next))
         }
       case Nil =>
         // there is nothing to send
