@@ -486,6 +486,23 @@ class RouterSpec extends BaseRouterSpec {
     }
   }
 
+  test("ignore duplicate short_channel_ids in query_short_channel_ids") { fixture =>
+    import fixture._
+    val peerConnection = TestProbe()
+    // The spec doesn't forbid duplicates, but answering each of them would let a peer obtain a huge amplification
+    // factor by repeating the same scid: a single 65kB query would make us send back megabytes of announcements.
+    val query = QueryShortChannelIds(nodeParams.chainHash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List.fill(10)(scid_ab)), TlvStream.empty)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, query))
+    val sent = peerConnection.receiveWhile() {
+      case msg: ChannelAnnouncement => msg
+      case msg: ChannelUpdate => msg
+      case msg: NodeAnnouncement => msg
+    }
+    assert(sent.count(_.isInstanceOf[ChannelAnnouncement]) == 1)
+    assert(sent.count(_.isInstanceOf[ChannelUpdate]) == 2)
+    assert(sent.count(_.isInstanceOf[NodeAnnouncement]) == 2)
+  }
+
   test("handle bad signature for ChannelAnnouncement") { fixture =>
     import fixture._
     val peerConnection = TestProbe()

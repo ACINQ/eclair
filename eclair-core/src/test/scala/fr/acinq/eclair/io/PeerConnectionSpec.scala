@@ -771,6 +771,39 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     router.expectNoMessage(100 millis)
   }
 
+  test("only allow one pending query_short_channel_ids") { f =>
+    import f._
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    val query = QueryShortChannelIds(nodeParams.chainHash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(BlockHeight(42), 0, 0))), TlvStream.empty)
+    transport.send(peerConnection, query)
+    router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, query))
+    // BOLT 7: our peer must wait for reply_short_channel_ids_end before sending another query, otherwise it could
+    // pipeline queries that are each very expensive for us to answer.
+    transport.send(peerConnection, query)
+    transport.expectMsg(TransportHandler.ReadAck(query))
+    transport.expectMsgType[Warning]
+    router.expectNoMessage(100 millis)
+    // Once we've sent our reply_short_channel_ids_end, we accept a new query.
+    router.send(peerConnection, ReplyShortChannelIdsEnd(nodeParams.chainHash, 1))
+    transport.expectMsgType[ReplyShortChannelIdsEnd]
+    transport.send(peerConnection, query)
+    router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, query))
+  }
+
+  test("ignore query_short_channel_ids with invalid query flags") { f =>
+    import f._
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    val scids = List(RealShortChannelId(BlockHeight(42), 0, 0), RealShortChannelId(BlockHeight(43), 0, 0))
+    // BOLT 7: encoded_query_flags must decode to exactly one flag per short_channel_id. When flags are missing we send
+    // everything we have, so a peer could use a truncated flags list to maximize our reply.
+    val flags = QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(QueryShortChannelIdsTlv.QueryFlagType.INCLUDE_CHANNEL_ANNOUNCEMENT))
+    val query = QueryShortChannelIds(nodeParams.chainHash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, scids), TlvStream(flags))
+    transport.send(peerConnection, query)
+    transport.expectMsg(TransportHandler.ReadAck(query))
+    transport.expectMsgType[Warning]
+    router.expectNoMessage(100 millis)
+  }
+
   test("filter private IP addresses") { () =>
     val testCases = Seq(
       NodeAddress.fromParts("127.0.0.1", 9735).get -> false,

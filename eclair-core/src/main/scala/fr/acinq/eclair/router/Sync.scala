@@ -316,17 +316,20 @@ object Sync {
                                   onNode: NodeAnnouncement => Unit)(implicit log: LoggingAdapter): Unit = {
     import QueryShortChannelIdsTlv.QueryFlagType
 
-    // we loop over channel ids and query flag. We track node Ids for node announcement
-    // we've already sent to avoid sending them multiple times, as requested by the BOLTs
+    // We loop over channel ids and query flags. We track the ids we've already answered, and the node ids for node
+    // announcements we've already sent, to avoid sending them multiple times as requested by the BOLTs.
     @tailrec
-    def loop(ids: List[RealShortChannelId], flags: List[Long], numca: Int = 0, numcu: Int = 0, nodesSent: Set[PublicKey] = Set.empty[PublicKey]): (Int, Int, Int) = ids match {
-      case Nil => (numca, numcu, nodesSent.size)
+    def loop(ids: List[RealShortChannelId], flags: List[Long], idsSent: Set[RealShortChannelId] = Set.empty[RealShortChannelId], nodesSent: Set[PublicKey] = Set.empty[PublicKey]): Unit = ids match {
+      case Nil => ()
+      case head :: tail if idsSent.contains(head) =>
+        // The spec doesn't forbid duplicates, but answering them would let a peer get a large amplification factor by
+        // repeating the same scid: a single query is capped at 65kB, but our reply wouldn't be capped at all.
+        log.debug("ignoring duplicate shortChannelId={} in query_short_channel_ids", head)
+        loop(tail, flags.drop(1), idsSent, nodesSent)
       case head :: tail if !channels.contains(head) =>
         log.debug("received query for shortChannelId={} that we don't have", head)
-        loop(tail, flags.drop(1), numca, numcu, nodesSent)
+        loop(tail, flags.drop(1), idsSent + head, nodesSent)
       case head :: tail =>
-        val numca1 = numca
-        val numcu1 = numcu
         var sent1 = nodesSent
         val pc = channels(head)
         val flag_opt = flags.headOption
@@ -363,7 +366,7 @@ object Sync {
             sent1 = sent1 + pc.ann.nodeId2
           }
         }
-        loop(tail, flags.drop(1), numca1, numcu1, sent1)
+        loop(tail, flags.drop(1), idsSent + head, sent1)
     }
 
     loop(ids, flags)
