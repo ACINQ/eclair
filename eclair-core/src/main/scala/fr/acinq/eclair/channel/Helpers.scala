@@ -1209,9 +1209,13 @@ object Helpers {
         // In that case, we don't need to create a dedicated anchor transaction which avoids using wallet inputs.
         val useMainTxForAnchor = commitment.commitmentFormat match {
           case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => false
-          case ZeroFeeCommitmentFormat =>
-            val commitFee = Transactions.weight2fee(feerates.fastest, commitTx.weight())
-            mainTx_opt.exists(_.tx.txOut.map(_.amount).sum > commitFee)
+          case ZeroFeeCommitmentFormat => mainTx_opt match {
+            case Some(mainTx) =>
+              val packageWeight = commitTx.weight() + mainTx.expectedWeight + commitment.commitmentFormat.anchorInputWeight
+              val packageFee = Transactions.weight2fee(feerates.fastest, packageWeight)
+              mainTx.tx.txOut.map(_.amount).sum > packageFee + commitment.localCommitParams.dustLimit
+            case None => false
+          }
         }
         val spendAnchor = incomingHtlcs.nonEmpty || outgoingHtlcs.nonEmpty || spendAnchorWithoutHtlcs
         val anchorTx_opt = if (spendAnchor && !useMainTxForAnchor) {
