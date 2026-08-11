@@ -35,13 +35,10 @@ network.
 
 ### Miscellaneous improvements and bug fixes
 
-- We now ignore gossip queries that are for another chain instead of answering them (#XXXX)
-- Answering channel range queries is much cheaper: we cache the timestamps and checksums of our channel updates instead
-  of recomputing them for the whole routing table on every incoming query (#XXXX)
-- We ignore duplicate `short_channel_id`s in a `query_short_channel_ids`, and reject queries whose query flags don't
-  cover every `short_channel_id`, or that are sent before we've replied to the previous one (#XXXX)
-- We ignore `reply_short_channel_ids_end` messages that don't answer one of our queries: a peer could previously send us
-  one to make us drop our synchronization state and ignore the rest of its replies (#XXXX)
+- We now ignore gossip queries that are for another chain instead of answering them
+- Answering channel range queries is much cheaper: we cache the timestamps and checksums of our channel updates instead of recomputing them for the whole routing table on every incoming query
+- We ignore duplicate `short_channel_id`s in a `query_short_channel_ids`, and reject queries whose query flags don't cover every `short_channel_id`, or that are sent before we've replied to the previous one
+- We ignore `reply_short_channel_ids_end` messages that don't answer one of our queries: a peer could previously send us one to make us drop our synchronization state and ignore the rest of its replies
 
 ## Verifying signatures
 
