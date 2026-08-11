@@ -229,6 +229,20 @@ object OnTheFlyFunding {
     }
   }
 
+  private def paymentAlreadyRelayed(paymentHash: ByteVector32, commitments: Commitments): Boolean = {
+    val htlcsInCommitTxs = commitments.all.flatMap(_.localCommit.spec.htlcs.map(_.add)).toSet ++
+      commitments.all.flatMap(_.remoteCommit.spec.htlcs.map(_.add)).toSet ++
+      commitments.all.flatMap(_.nextRemoteCommit_opt).flatMap(_.spec.htlcs.map(_.add)).toSet
+    val areHtlcsBeingRelayed = commitments.changes.localChanges.all.exists {
+      case add: UpdateAddHtlc => add.paymentHash == paymentHash && add.fundingFee_opt.nonEmpty
+      case _ => false
+    }
+    val areHtlcsAlreadyRelayed = htlcsInCommitTxs.exists {
+      htlc => htlc.paymentHash == paymentHash && htlc.fundingFee_opt.nonEmpty
+    }
+    areHtlcsBeingRelayed || areHtlcsAlreadyRelayed
+  }
+
   /**
    * This actor relays HTLCs that were proposed with [[WillAddHtlc]] once funding is complete.
    * It verifies that this payment was not previously relayed, to protect against over-paying and paying multiple times.
@@ -279,7 +293,7 @@ object OnTheFlyFunding {
     private def checkChannelState(): Behavior[Command] = {
       cmd.channel ! CMD_GET_CHANNEL_INFO(context.messageAdapter[RES_GET_CHANNEL_INFO](r => WrappedChannelInfo(r.state, r.data)))
       Behaviors.receiveMessagePartial {
-        case WrappedChannelInfo(_, data: DATA_NORMAL) if paymentAlreadyRelayed(paymentHash, data) =>
+        case WrappedChannelInfo(_, data: DATA_NORMAL) if paymentAlreadyRelayed(paymentHash, data.commitments) =>
           context.log.warn("payment is already being relayed, waiting for it to be settled")
           Behaviors.stopped
         case WrappedChannelInfo(_, data: DATA_NORMAL) =>
@@ -295,13 +309,6 @@ object OnTheFlyFunding {
         case WrappedChannelInfo(state, _) =>
           cmd.replyTo ! RelayFailed(paymentHash, ChannelNotAvailable(state))
           Behaviors.stopped
-      }
-    }
-
-    private def paymentAlreadyRelayed(paymentHash: ByteVector32, data: DATA_NORMAL): Boolean = {
-      data.commitments.changes.localChanges.all.exists {
-        case add: UpdateAddHtlc => add.paymentHash == paymentHash && add.fundingFee_opt.nonEmpty
-        case _ => false
       }
     }
 

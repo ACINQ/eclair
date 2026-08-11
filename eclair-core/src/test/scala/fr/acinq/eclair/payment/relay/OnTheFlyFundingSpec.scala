@@ -31,6 +31,7 @@ import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.io.{Peer, PeerConnection, PendingChannelsRateLimiter}
+import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilli, ToMilliSatoshiConversion, UInt64, randomBytes, randomBytes32, randomKey, randomLong}
@@ -164,10 +165,15 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       assert(failed.map(_.message.id).toSet == incomingHtlcs.map(_.id).toSet)
     }
 
-    def makeChannelData(htlcMinimum: MilliSatoshi = 1 msat, localChanges: LocalChanges = LocalChanges(Nil, Nil, Nil)): DATA_NORMAL = {
+    def makeChannelData(htlcMinimum: MilliSatoshi = 1 msat, localChanges: LocalChanges = LocalChanges(Nil, Nil, Nil), crossSignedHtlcs: Seq[(UpdateAddHtlc, Origin)] = Nil): DATA_NORMAL = {
       val commitments = CommitmentsSpec.makeCommitments(500_000_000 msat, 500_000_000 msat, nodeParams.nodeId, remoteNodeId, announcement_opt = None)
-        .modify(_.active).apply(_.map(_.modify(_.remoteCommitParams.htlcMinimum).setTo(htlcMinimum)))
+        .modify(_.active).apply(_.map(_
+          .modify(_.remoteCommitParams.htlcMinimum).setTo(htlcMinimum)
+          .modify(_.localCommit.spec.htlcs).using(_ ++ crossSignedHtlcs.map { case (add, _) => OutgoingHtlc(add) })
+          .modify(_.remoteCommit.spec.htlcs).using(_ ++ crossSignedHtlcs.map { case (add, _) => IncomingHtlc(add) })
+        ))
         .modify(_.changes.localChanges).setTo(localChanges)
+        .modify(_.originChannels).setTo(crossSignedHtlcs.map { case (add, origin) => add.id -> origin }.toMap)
       DATA_NORMAL(commitments, ShortIdAliases(Alias(42), None), None, null, SpliceStatus.NoSplice, None, None, None)
     }
   }
@@ -1154,6 +1160,37 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     channel.expectNoMessage(100 millis)
 
     verifyFulfilledUpstream(upstream, preimage)
+    register.expectNoMessage(100 millis)
+  }
+
+  test("don't relay payments that have already been relayed") { f =>
+    import f._
+
+    // We create a channel, that can later be spliced.
+    connect(peer)
+    val channelId = openChannel(250_000 sat)
+
+    // We relay an on-the-fly payment.
+    val upstream = upstreamChannel(50_000_000 msat, expiryIn, paymentHash)
+    proposeFunding(50_000_000 msat, expiryOut, paymentHash, upstream)
+    val fees = LiquidityAds.Fees(1000 sat, 1000 sat)
+    val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(paymentHash :: Nil), channelId, fees, fundingTxIndex = 1)
+    peer ! ChannelReadyForPayments(channel.ref, remoteNodeId, channelId, purchase.txId, fundingTxIndex = 1)
+    channel.expectMsgType[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, channelId, channel.ref, NORMAL, makeChannelData())
+    val cmd = channel.expectMsgType[CMD_ADD_HTLC]
+    cmd.replyTo ! RES_SUCCESS(cmd, channelId)
+    val htlc = UpdateAddHtlc(channelId, randomHtlcId(), cmd.amount, paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextPathKey_opt, cmd.reputationScore.accountable, cmd.fundingFee_opt)
+    channel.expectNoMessage(100 millis)
+
+    // On restart, the HTLC has been fully cross-signed: it isn't part of our local changes anymore, it only appears in
+    // our commitments. We must still detect it, otherwise we would relay the same payment twice.
+    val peerAfterRestart = TestFSMRef(new Peer(nodeParams, remoteNodeId, new DummyOnChainWallet(), FakeChannelFactory(remoteNodeId, channel), TestProbe().ref, register.ref, TestProbe().ref, TestProbe().ref))
+    peerAfterRestart ! Peer.Init(Set.empty, nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId))
+    connect(peerAfterRestart)
+    peerAfterRestart ! ChannelReadyForPayments(channel.ref, remoteNodeId, channelId, purchase.txId, fundingTxIndex = 1)
+    val channelData = makeChannelData(crossSignedHtlcs = Seq(htlc -> Origin.Cold(Upstream.Cold(upstream))))
+    channel.expectMsgType[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, channelId, channel.ref, NORMAL, channelData)
+    channel.expectNoMessage(100 millis)
     register.expectNoMessage(100 millis)
   }
 
