@@ -160,7 +160,9 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
       handleDownstreamFulfill(brokenHtlcs, o, remoteNodeId, htlc, fulfill.paymentPreimage)
 
     case RES_ADD_SETTLED(o: Origin.Cold, remoteNodeId, htlc, fail: HtlcResult.Fail) =>
-      if (htlc.fundingFee_opt.nonEmpty) {
+      // Note that an on-chain failure guarantees that our peer cannot claim that HTLC anymore. At that point, we must
+      // fail upstream, otherwise the upstream channels will force-close when their own HTLCs reach their expiry.
+      if (htlc.fundingFee_opt.nonEmpty && !fail.isInstanceOf[HtlcResult.OnChainFail]) {
         log.info("htlc #{} from channelId={} failed downstream by {} but has a pending on-the-fly funding", htlc.id, htlc.channelId, remoteNodeId)
         // We don't fail upstream: we haven't been paid our funding fee yet, so we will try relaying again.
       } else {
