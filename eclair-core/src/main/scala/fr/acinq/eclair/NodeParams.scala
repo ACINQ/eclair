@@ -697,6 +697,7 @@ object NodeParams extends Logging {
           encodingType = EncodingType.UNCOMPRESSED,
           channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
           channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
+          maxQueriesPerSync = config.getInt("router.sync.max-queries-per-sync"),
           peerLimit = config.getInt("router.sync.peer-limit"),
           whitelist = config.getStringList("router.sync.whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
         ),

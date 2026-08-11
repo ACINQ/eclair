@@ -315,6 +315,65 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     assert(!router.stateData.asInstanceOf[Data].sync.contains(remoteNodeId))
   }
 
+  test("ignore unsolicited reply_short_channel_ids_end") {
+    val params = TestConstants.Alice.nodeParams
+    val router = TestFSMRef(new Router(params, TestProbe().ref))
+    router ! Router.Init(SortedMap.empty, Nil, None)
+    val peerConnection = TestProbe()
+    peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
+    val sender = TestProbe()
+    sender.ignoreMsg { case _: TransportHandler.ReadAck => true }
+    val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
+
+    // we start a sync with that peer, but haven't sent any query_short_channel_ids yet
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = true, None))
+    sender.expectMsgType[QueryChannelRange]
+    sender.expectMsgType[GossipTimestampFilter]
+    assert(router.stateData.asInstanceOf[Data].sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
+
+    // a reply_short_channel_ids_end that doesn't answer any of our queries must not terminate our sync
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ReplyShortChannelIdsEnd(params.chainHash, 1)))
+    peerConnection.expectNoMessage(100 millis)
+    assert(router.stateData.asInstanceOf[Data].sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
+  }
+
+  test("limit the number of queries queued during a sync") {
+    val params = TestConstants.Alice.nodeParams
+    val router = TestFSMRef(new Router(params, TestProbe().ref))
+    router ! Router.Init(SortedMap.empty, Nil, None)
+    val peerConnection = TestProbe()
+    peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
+    val sender = TestProbe()
+    sender.ignoreMsg { case _: TransportHandler.ReadAck => true }
+    val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
+
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = true, None))
+    val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, _) = sender.expectMsgType[QueryChannelRange]
+    sender.expectMsgType[GossipTimestampFilter]
+
+    // Our peer floods us with reply_channel_range messages full of channels that don't exist: it decides when the sync
+    // ends, so without a limit it can make us buffer an unbounded number of queries and run out of memory.
+    val maxQueries = params.routerConf.syncConf.maxQueriesPerSync
+    val chunkSize = params.routerConf.syncConf.channelQueryChunkSize
+    // Each reply exhausts the whole budget on its own, so the second one must be entirely ignored.
+    val scidsPerReply = maxQueries * chunkSize
+    for (i <- 0 until 2) {
+      val scids = (0 until scidsPerReply).map(j => RealShortChannelId(BlockHeight(1 + i * scidsPerReply + j), 0, 0)).toList
+      val reply = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 0, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, scids), None, None)
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, reply))
+    }
+    peerConnection.expectMsgType[QueryShortChannelIds] // we send the first query right away
+    // Make sure the router has processed both replies before we look at its state.
+    sender.send(router, Router.GetRoutingState)
+    sender.expectMsgType[Router.RoutingState]
+
+    val Some(sync) = router.stateData.asInstanceOf[Data].sync.get(remoteNodeId)
+    assert(sync.totalQueries == maxQueries)
+    assert(sync.remainingQueries.size == maxQueries - 1) // we already sent the first query
+    // We must not send anything else until our peer answers the query that is in flight.
+    peerConnection.expectNoMessage(100 millis)
+  }
+
   test("sync progress") {
 
     def req = QueryShortChannelIds(Block.RegtestGenesisBlock.hash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(42))), TlvStream.empty)

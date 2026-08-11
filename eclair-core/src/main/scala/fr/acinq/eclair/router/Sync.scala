@@ -151,10 +151,25 @@ object Sync {
           QueryShortChannelIds(r.chainHash, EncodedShortChannelIds(encoding, chunk.map(_.shortChannelId)), flags)
         }
 
-        // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
+        // We update our sync data to this node (there may be multiple channel range responses and we can only query one
+        // set of ids at a time). Our peer decides when the sync ends, so we must bound the number of queries we're
+        // willing to buffer for it: it could otherwise send us an endless stream of channel ids that don't exist and
+        // make us run out of memory.
+        val budget = (routerConf.syncConf.maxQueriesPerSync - currentSync.totalQueries).max(0)
+        val queryCount = (shortChannelIdAndFlags.size + routerConf.syncConf.channelQueryChunkSize - 1) / routerConf.syncConf.channelQueryChunkSize
+        if (queryCount > budget) {
+          // NB: we only warn when we cross the limit: once the budget is spent, a peer that keeps sending us replies
+          // would otherwise flood our logs.
+          if (budget > 0) {
+            log.warning("peer sent too many channel ids during sync (max={}), ignoring the extra ones", routerConf.syncConf.maxQueriesPerSync)
+          } else {
+            log.debug("ignoring {} queries from peer: sync budget is exhausted", queryCount)
+          }
+        }
         val replies = shortChannelIdAndFlags
           .grouped(routerConf.syncConf.channelQueryChunkSize)
           .map(buildQuery)
+          .take(budget)
           .toList
 
         val (sync1, replynow_opt) = addToSync(d.sync, currentSync, origin.nodeId, replies)
@@ -209,9 +224,9 @@ object Sync {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender() ! TransportHandler.ReadAck(r)
     // do we have more channels to request from this peer?
-    val sync1 = d.sync.get(origin.nodeId) match {
-      case Some(sync) =>
-        sync.remainingQueries match {
+    d.sync.get(origin.nodeId) match {
+      case Some(sync) if sync.queryInFlight =>
+        val sync1 = sync.remainingQueries match {
           case nextRequest :: rest =>
             log.debug(s"asking for the next slice of short_channel_ids (remaining=${sync.remainingQueries.size}/${sync.totalQueries})")
             origin.peerConnection ! nextRequest
@@ -222,12 +237,17 @@ object Sync {
             log.info(s"sync complete (total=${sync.totalQueries})")
             d.sync - origin.nodeId
         }
-      case _ => d.sync
+        val progress = syncProgress(sync1)
+        ctx.system.eventStream.publish(progress)
+        ctx.self ! progress
+        d.copy(sync = sync1)
+      case _ =>
+        // NB: we can't correlate a reply_short_channel_ids_end with a specific query, so the best we can do is ignore
+        // the ones that don't answer a query we're waiting for. Otherwise a peer could send us one right after
+        // answering our query_channel_range, which would make us drop our sync state and ignore the rest of its replies.
+        log.debug("received unsolicited reply_short_channel_ids_end")
+        d
     }
-    val progress = syncProgress(sync1)
-    ctx.system.eventStream.publish(progress)
-    ctx.self ! progress
-    d.copy(sync = sync1)
   }
 
   /**
@@ -521,12 +541,12 @@ object Sync {
       case head :: rest =>
         // they may send back several reply_channel_range messages for a single query_channel_range query, and we must not
         // send another query_short_channel_ids query if they're still processing one
-        if (current.started) {
+        if (current.queryInFlight) {
           // we already have a pending query with this peer, add missing ids to our "sync" state
-          (syncMap + (remoteNodeId -> Syncing(current.remainingQueries ++ pending, current.totalQueries + pending.size)), None)
+          (syncMap + (remoteNodeId -> current.copy(remainingQueries = current.remainingQueries ++ pending, totalQueries = current.totalQueries + pending.size)), None)
         } else {
           // we don't have a pending query with this peer, let's send it
-          (syncMap + (remoteNodeId -> Syncing(rest, pending.size)), Some(head))
+          (syncMap + (remoteNodeId -> Syncing(rest, current.totalQueries + pending.size, queryInFlight = true)), Some(head))
         }
       case Nil =>
         // there is nothing to send

@@ -220,6 +220,7 @@ object TestConstants {
           encodingType = EncodingType.UNCOMPRESSED,
           channelRangeChunkSize = 20,
           channelQueryChunkSize = 5,
+          maxQueriesPerSync = 2000,
           peerLimit = 10,
           whitelist = Set.empty
         ),
@@ -444,6 +445,7 @@ object TestConstants {
           encodingType = EncodingType.UNCOMPRESSED,
           channelRangeChunkSize = 20,
           channelQueryChunkSize = 5,
+          maxQueriesPerSync = 2000,
           peerLimit = 20,
           whitelist = Set.empty
         ),

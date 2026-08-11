@@ -393,10 +393,12 @@ object Router {
                       encodingType: EncodingType,
                       channelRangeChunkSize: Int,
                       channelQueryChunkSize: Int,
+                      maxQueriesPerSync: Int,
                       peerLimit: Int,
                       whitelist: Set[PublicKey]) {
     require(channelRangeChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel range chunk size exceeds the size of a lightning message")
     require(channelQueryChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel query chunk size exceeds the size of a lightning message")
+    require(maxQueriesPerSync > 0, "max queries per sync must be strictly greater than 0")
   }
 
   case class RouterConf(watchSpentWindow: FiniteDuration,
@@ -822,10 +824,11 @@ object Router {
   /**
    * @param remainingQueries remaining queries to send, the next one will be popped after we receive a [[ReplyShortChannelIdsEnd]]
    * @param totalQueries     total number of *queries* (not channels) that will be sent during this syncing session
+   * @param queryInFlight    true if we sent a [[QueryShortChannelIds]] for which we haven't received a
+   *                         [[ReplyShortChannelIdsEnd]] yet: we must only send one at a time, and we must ignore
+   *                         [[ReplyShortChannelIdsEnd]] messages that don't answer one of our queries
    */
-  case class Syncing(remainingQueries: List[RoutingMessage], totalQueries: Int) {
-    def started: Boolean = totalQueries > 0
-  }
+  case class Syncing(remainingQueries: List[RoutingMessage], totalQueries: Int, queryInFlight: Boolean = false)
 
   sealed trait RouterData {
     // @formatter:off

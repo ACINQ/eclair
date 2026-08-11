@@ -19,6 +19,16 @@ eclair.router.sync.max-queries-per-second = 10
 Honest peers only need to send a handful of `query_channel_range` per connection, so this shouldn't have any impact on
 normal synchronization.
 
+Our peers decide when a routing table synchronization ends, so we now bound the number of `query_short_channel_ids` that
+we're willing to buffer for a given peer, which can be configured with:
+
+```conf
+eclair.router.sync.max-queries-per-sync = 2000
+```
+
+At the default `channel-query-chunk-size` this covers 200 000 channels, which is several times the current size of the
+network.
+
 ### API changes
 
 <insert changes>
@@ -30,6 +40,8 @@ normal synchronization.
   of recomputing them for the whole routing table on every incoming query (#XXXX)
 - We ignore duplicate `short_channel_id`s in a `query_short_channel_ids`, and reject queries whose query flags don't
   cover every `short_channel_id`, or that are sent before we've replied to the previous one (#XXXX)
+- We ignore `reply_short_channel_ids_end` messages that don't answer one of our queries: a peer could previously send us
+  one to make us drop our synchronization state and ignore the rest of its replies (#XXXX)
 
 ## Verifying signatures
 
