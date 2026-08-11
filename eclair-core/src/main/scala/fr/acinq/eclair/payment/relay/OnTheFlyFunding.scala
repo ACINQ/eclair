@@ -214,11 +214,15 @@ object OnTheFlyFunding {
       (requestFunding.fees(feerate, isChannelCreation).total.toMilliSatoshi, None)
     }
     val cancelAmountTooLow = CancelOnTheFlyFunding(channelId, paymentHashes, s"requested amount is too low to relay HTLCs: ${requestFunding.requestedAmount} < $totalPaymentAmount")
+    val cancelMultipleHash = CancelOnTheFlyFunding(channelId, paymentHashes, s"request batches ${paymentHashes.size} distinct payments: we only support funding a single payment_hash")
+    val cancelDuplicateHash = CancelOnTheFlyFunding(channelId, paymentHashes, s"request contains the same payment_hash multiple times: ${paymentHashes.mkString(",")}")
     val cancelFeesTooLow = CancelOnTheFlyFunding(channelId, paymentHashes, s"htlc amount is too low to pay liquidity fees: $availableAmountForFees < $feesOwed")
     val cancelDisabled = CancelOnTheFlyFunding(channelId, paymentHashes, "payments paid with future HTLCs are currently disabled")
     requestFunding.paymentDetails match {
       case PaymentDetails.FromChannelBalance => ValidationResult.Accept(Set.empty, None)
       case _ if requestFunding.requestedAmount.toMilliSatoshi < totalPaymentAmount => ValidationResult.Reject(cancelAmountTooLow, paymentHashes.toSet)
+      case _ if paymentHashes.toSet.size != paymentHashes.size => ValidationResult.Reject(cancelDuplicateHash, paymentHashes.toSet)
+      case _ if paymentHashes.size > 1 => ValidationResult.Reject(cancelMultipleHash, paymentHashes.toSet)
       case _: PaymentDetails.FromChannelBalanceForFutureHtlc => ValidationResult.Accept(Set.empty, useFeeCredit_opt)
       case _: PaymentDetails.FromFutureHtlc if !cfg.isFromFutureHtlcAllowed(remoteNodeId) => ValidationResult.Reject(cancelDisabled, paymentHashes.toSet)
       case _: PaymentDetails.FromFutureHtlc if availableAmountForFees < feesOwed => ValidationResult.Reject(cancelFeesTooLow, paymentHashes.toSet)
