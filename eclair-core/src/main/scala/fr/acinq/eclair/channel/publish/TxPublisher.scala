@@ -310,8 +310,9 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
               // sense to retry.
               run(pending2, retryNextBlock, channelContext)
             case TxRejectedReason.UnknownTxFailure =>
-              // We don't automatically retry unknown failures, they should be investigated manually.
-              run(pending2, retryNextBlock, channelContext)
+              // We automatically retry unknown failures to ensure that we don't skip time-sensitive transactions if
+              // bitcoind adds a new failure message that isn't caught by our parser.
+              run(pending2, retryNextBlock ++ rejectedAttempts.map(_.cmd), channelContext)
           }
       }
 

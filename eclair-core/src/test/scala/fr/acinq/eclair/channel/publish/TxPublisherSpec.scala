@@ -33,7 +33,6 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import scodec.bits.ByteVector
 
 import java.util.UUID
 import scala.concurrent.duration.DurationInt
@@ -359,8 +358,10 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     txPublisher ! TxRejected(attempt.id, cmd, UnknownTxFailure)
     attempt.actor.expectMsg(FinalTxPublisher.Stop)
 
-    // We don't retry, even after a new block has been found:
+    // We retry after a new block has been found:
     system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
+    val attempt2 = factory.expectMsgType[FinalTxPublisherSpawned]
+    assert(attempt2.actor.expectMsgType[FinalTxPublisher.Publish].cmd == cmd)
     factory.expectNoMessage(100 millis)
   }
 
