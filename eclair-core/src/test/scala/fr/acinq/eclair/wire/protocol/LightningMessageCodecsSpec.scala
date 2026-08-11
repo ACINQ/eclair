@@ -491,7 +491,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
         LiquidityAds.FundingRate(100_000 sat, 500_000 sat, 550, 100, 5_000 sat, 1000 sat),
         LiquidityAds.FundingRate(500_000 sat, 5_000_000 sat, 1100, 75, 0 sat, 1500 sat),
       ),
-      Set(LiquidityAds.PaymentType.FromChannelBalance)
+      paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalance)
     )
     val nodeKey = PrivateKey(hex"57ac961f1b80ebfb610037bf9c96c6333699bde42257919a53974811c34649e3")
     val nodeAnn = Announcements.makeNodeAnnouncement(nodeKey, "LN-Liquidity", Color(42, 117, 87), Nil, Features.empty, TimestampSecond(1713171401), Some(willFundRates))
@@ -531,7 +531,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
         ByteVector32.fromValidHex("80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734"),
         ByteVector32.fromValidHex("d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47"),
       )
-      val willFundRates1 = willFundRates.copy(paymentTypes = Set(LiquidityAds.PaymentType.FromFutureHtlc))
+      val willFundRates1 = LiquidityAds.WillFundRates(fundingRates = willFundRates.fundingRates, paymentTypes = Set(LiquidityAds.PaymentType.FromFutureHtlc))
       val Some(request) = LiquidityAds.requestFunding(500_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHashes), willFundRates1)
       val open = defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(request)))
       val openBin = hex"fd053b 5e 000000000007a120 000186a00007a1200226006400001388000003e8 804080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47"
@@ -547,7 +547,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
         ByteVector32.fromValidHex("80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734"),
         ByteVector32.fromValidHex("d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47"),
       )
-      val willFundRates1 = willFundRates.copy(paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc))
+      val willFundRates1 = LiquidityAds.WillFundRates(fundingRates = willFundRates.fundingRates, paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc))
       val Some(request) = LiquidityAds.requestFunding(500_000 sat, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(paymentHashes), willFundRates1)
       val open = defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(request)))
       val openBin = hex"fd053b 5e 000000000007a120 000186a00007a1200226006400001388000003e8 824080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47"
@@ -560,9 +560,16 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   }
 
   test("decode unknown liquidity ads payment types") {
-    val fundingRate = LiquidityAds.FundingRate(100_000 sat, 500_000 sat, 550, 100, 5_000 sat, 0 sat)
+    val fundingRates = LiquidityAds.WillFundRates(
+      fundingRates = LiquidityAds.FundingRate(100_000 sat, 500_000 sat, 550, 100, 5_000 sat, 0 sat) :: Nil,
+      paymentTypes = Set(
+        LiquidityAds.PaymentType.FromChannelBalance,
+        LiquidityAds.PaymentType.Unknown(75),
+        LiquidityAds.PaymentType.Unknown(211),
+      )
+    )
     val testCases = Map(
-      hex"0001 000186a00007a120022600640000138800000000 001b 080000000000000000000000000000000008000000000000000001" -> LiquidityAds.WillFundRates(fundingRate :: Nil, Set(LiquidityAds.PaymentType.FromChannelBalance, LiquidityAds.PaymentType.Unknown(75), LiquidityAds.PaymentType.Unknown(211))),
+      hex"0001 000186a00007a120022600640000138800000000 001b 080000000000000000000000000000000008000000000000000001" -> fundingRates,
     )
     for ((encoded, expected) <- testCases) {
       val decoded = LiquidityAds.Codecs.willFundRates.decode(encoded.bits)
