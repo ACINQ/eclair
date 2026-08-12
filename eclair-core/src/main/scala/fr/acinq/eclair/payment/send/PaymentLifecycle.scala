@@ -203,24 +203,29 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(UnreadableRemoteFailure(request.amount, Nil, e, startedAt = d.sentAt, failedAt = now, htlcFailure.holdTimes))).increment()
         failure
     }) match {
-      case res@Right(Sphinx.DecryptedFailurePacket(_, index, failureMessage)) =>
-        // We have discovered some liquidity information with this payment: we update the router accordingly.
-        val stoppedRoute = route.stopAt(index)
-        if (stoppedRoute.hops.length > 1) {
-          router ! Router.RouteCouldRelay(stoppedRoute)
-        }
-        failureMessage match {
-          case TemporaryChannelFailure(update_opt, _) =>
-            val failingHop = route.hops(index)
-            val isLiquidityIssue = update_opt match {
-              // If the relay parameters have changed, it's not necessarily a liquidity issue.
-              case Some(update) => HopRelayParams.areSame(failingHop.params, HopRelayParams.FromAnnouncement(update), ignoreHtlcSize = true)
-              case None => true
-            }
-            if (isLiquidityIssue) {
-              router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
-            }
-          case _ => // other errors should not be used for liquidity issues
+      case res@Right(Sphinx.DecryptedFailurePacket(nodeId, index, failureMessage)) =>
+        val isRecipient = nodeId == recipient.nodeId || route.finalHop_opt.collect { case h: NodeHop => h.nodeId }.contains(nodeId)
+        if (!isRecipient && index >= 1 && index < route.hops.length) {
+          // We have discovered some liquidity information with this payment: we update the router accordingly.
+          val stoppedRoute = route.stopAt(index)
+          if (stoppedRoute.hops.length > 1) {
+            router ! Router.RouteCouldRelay(stoppedRoute)
+          }
+          failureMessage match {
+            case TemporaryChannelFailure(update_opt, _) =>
+              val failingHop = route.hops(index)
+              val isLiquidityIssue = update_opt match {
+                // If the relay parameters have changed, it's not necessarily a liquidity issue.
+                case Some(update) => HopRelayParams.areSame(failingHop.params, HopRelayParams.FromAnnouncement(update), ignoreHtlcSize = true)
+                case None => true
+              }
+              if (isLiquidityIssue) {
+                router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
+              }
+            case _ => // other errors should not be used for liquidity issues
+          }
+        } else if (!isRecipient) {
+          log.warning("ignoring failure with invalid route position: node={} index={} hops={}", nodeId, index, route.hops.length)
         }
         res
       case res => res
