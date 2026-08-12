@@ -26,6 +26,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.io.PeerDisconnected
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.router.Router._
@@ -372,6 +373,42 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     assert(sync.remainingQueries.size == maxQueries - 1) // we already sent the first query
     // We must not send anything else until our peer answers the query that is in flight.
     peerConnection.expectNoMessage(100 millis)
+  }
+
+  test("forget sync state when the peer disconnects") {
+    val params = TestConstants.Alice.nodeParams
+    val router = TestFSMRef(new Router(params, TestProbe().ref))
+    router ! Router.Init(SortedMap.empty, Nil, None)
+    val peerConnection = TestProbe()
+    peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
+    val sender = TestProbe()
+    sender.ignoreMsg { case _: TransportHandler.ReadAck => true }
+    val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
+
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = true, None))
+    val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, _) = sender.expectMsgType[QueryChannelRange]
+    sender.expectMsgType[GossipTimestampFilter]
+
+    // Our peer sends us more channel ids than we can query at once, so we queue the remaining queries.
+    val scids = (0 until 2 * params.routerConf.syncConf.channelQueryChunkSize).map(i => RealShortChannelId(BlockHeight(1 + i), 0, 0)).toList
+    val reply = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 0, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, scids), None, None)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, reply))
+    peerConnection.expectMsgType[QueryShortChannelIds]
+    assert(router.stateData.asInstanceOf[Data].sync.get(remoteNodeId).map(_.remainingQueries.size).contains(1))
+
+    // The queries we haven't sent yet will never be answered on that connection: we must not keep them around.
+    // NB: the router receives that event by subscribing to the event stream, we send it directly to avoid interfering
+    // with the other routers running in parallel in this suite.
+    sender.send(router, PeerDisconnected(sender.ref, remoteNodeId))
+    awaitCond(!router.stateData.asInstanceOf[Data].sync.contains(remoteNodeId))
+
+    // Our peer cannot resume that sync: it must start a new one when it reconnects.
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ReplyShortChannelIdsEnd(params.chainHash, 1)))
+    peerConnection.expectNoMessage(100 millis)
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = false, None))
+    sender.expectMsgType[QueryChannelRange]
+    sender.expectMsgType[GossipTimestampFilter]
+    assert(router.stateData.asInstanceOf[Data].sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
   }
 
   test("sync progress") {

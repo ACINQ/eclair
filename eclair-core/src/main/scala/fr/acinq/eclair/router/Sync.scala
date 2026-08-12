@@ -251,6 +251,24 @@ object Sync {
   }
 
   /**
+   * When a peer disconnects, we forget the sync state we were keeping for it: the queries we hadn't sent yet will never
+   * be answered on that connection, so keeping them around only wastes memory. It also ensures that a peer cannot make
+   * us keep sync state forever by starting a sync and disconnecting, and that we accept a fresh sync when it reconnects.
+   */
+  def handlePeerDisconnected(d: Data, nodeId: PublicKey)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+    d.sync.get(nodeId) match {
+      case Some(sync) =>
+        log.debug("peer disconnected during sync, forgetting {}/{} pending queries", sync.remainingQueries.size, sync.totalQueries)
+        val sync1 = d.sync - nodeId
+        val progress = syncProgress(sync1)
+        ctx.system.eventStream.publish(progress)
+        ctx.self ! progress
+        d.copy(sync = sync1)
+      case None => d
+    }
+  }
+
+  /**
    * Whether a channel belongs to the range that a peer is asking for. [[split]] implements this by exploiting the fact
    * that short channel ids are sorted by block height, so we don't call this on the hot path: it is kept as the
    * reference definition of the range, which [[split]]'s output is checked against in tests.

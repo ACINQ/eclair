@@ -30,6 +30,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.io.PeerDisconnected
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.BlindedPathsResolver.ResolvedPath
@@ -67,6 +68,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
       context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
       context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
+      context.system.eventStream.subscribe(self, classOf[PeerDisconnected])
       context.system.eventStream.publish(SubscriptionsComplete(this.getClass))
 
       startTimerWithFixedDelay(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval)
@@ -335,6 +337,9 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d: Data) =>
       stay() using Sync.handleReplyShortChannelIdsEnd(d, RemoteGossip(peerConnection, remoteNodeId), r)
 
+    case Event(e: PeerDisconnected, d: Data) =>
+      stay() using Sync.handlePeerDisconnected(d, e.nodeId)
+
     case Event(RouteCouldRelay(route), d: Data) =>
       stay() using d.copy(graphWithBalances = d.graphWithBalances.routeCouldRelay(route))
 
@@ -356,6 +361,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       case lcu: LocalChannelUpdate => (Some(lcu.remoteNodeId), Some(lcu.channelId))
       case lcd: LocalChannelDown => (Some(lcd.remoteNodeId), Some(lcd.channelId))
       case abc: AvailableBalanceChanged => (Some(abc.commitments.remoteNodeId), Some(abc.channelId))
+      case pd: PeerDisconnected => (Some(pd.nodeId), None)
       case _ => (None, None)
     }
     Logs.mdc(category_opt, remoteNodeId_opt = remoteNodeId_opt, channelId_opt = channelId_opt, nodeAlias_opt = Some(nodeParams.alias))
