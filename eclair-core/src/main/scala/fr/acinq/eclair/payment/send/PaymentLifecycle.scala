@@ -249,7 +249,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             }
             RemoteFailure(request.amount, route.fullRoute, e, startedAt = d.sentAt, failedAt = now)
           case Left(e@Sphinx.CannotDecryptFailurePacket(unwrapped, _)) =>
-            log.warning(s"cannot parse returned error ${fail.reason.toHex} with sharedSecrets=$sharedSecrets: unwrapped=$unwrapped")
+            log.warning(s"cannot parse returned error ${fail.reason.toHex}: unwrapped=$unwrapped")
             UnreadableRemoteFailure(request.amount, route.fullRoute, e, startedAt = d.sentAt, failedAt = now, htlcFailure.holdTimes)
         }
         log.warning(s"too many failed attempts, failing the payment")
