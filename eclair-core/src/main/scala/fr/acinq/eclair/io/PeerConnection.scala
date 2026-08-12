@@ -367,6 +367,12 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             Metrics.GossipQueriesThrottled.withoutTags().increment()
             d.transport ! TransportHandler.ReadAck(msg)
             stay()
+          case _: QueryShortChannelIds if !gossipQueriesRateLimiter.tryAcquire() =>
+            // same reasoning as for query_channel_range
+            log.debug("rate-limiting query_channel_range")
+            Metrics.GossipQueriesThrottled.withoutTags().increment()
+            d.transport ! TransportHandler.ReadAck(msg)
+            stay()
           case q: QueryShortChannelIds if q.queryFlags_opt.exists(_.array.size != q.shortChannelIds.array.size) =>
             // BOLT 7: `encoded_query_flags` must decode to exactly one flag per `short_channel_id`. We must reject those
             // queries, because a missing flag means "send everything you have" for the corresponding channel.
