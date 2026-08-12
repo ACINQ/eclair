@@ -61,12 +61,14 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
     require(rpcClient.wallet.contains(keyManager.walletName), s"eclair-backed bitcoin wallet mismatch: eclair-signer.conf uses wallet=${keyManager.walletName}, but eclair.conf uses wallet=${rpcClient.wallet.getOrElse("")}")
   }
 
-  val useEclairSigner = onChainKeyManager_opt.nonEmpty
+  val useEclairSigner: Boolean = onChainKeyManager_opt.nonEmpty
 
   //------------------------- TRANSACTIONS  -------------------------//
 
   def getTransaction(txid: TxId)(implicit ec: ExecutionContext): Future[Transaction] =
-    getRawTransaction(txid).flatMap(raw => {
+    rpcClient.invoke("getrawtransaction", txid).collect {
+      case JString(raw) => raw
+    }.flatMap(raw => {
       val tx = Transaction.read(raw)
       if (tx.txid != txid) {
         Future.failed(new RuntimeException(s"received transaction doesn't match the request: ${tx.txid} != $txid"))
@@ -74,11 +76,6 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         Future.successful(tx)
       }
     })
-
-  private def getRawTransaction(txid: TxId)(implicit ec: ExecutionContext): Future[String] =
-    rpcClient.invoke("getrawtransaction", txid).collect {
-      case JString(raw) => raw
-    }
 
   def getTransactionMeta(txid: TxId)(implicit ec: ExecutionContext): Future[GetTxWithMetaResponse] =
     for {
@@ -119,6 +116,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
       JInt(height) = json \ "height"
       JArray(txs) = json \ "tx"
       index = txs.indexOf(JString(txid.value.toHex))
+      _ = require(index >= 0, "transaction not found in block: bitcoin core may be malicious")
     } yield (BlockHeight(height.toInt), index)
 
   /**
@@ -255,7 +253,6 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
       val JDecimal(fee) = json \ "fee"
       val fundedTx = Transaction.read(hex)
       val changePos_opt = if (changePos >= 0) Some(changePos.intValue) else None
-
       val walletInputs = fundedTx.txIn.map(_.outPoint).toSet -- tx.txIn.map(_.outPoint).toSet
       val addedOutputs = fundedTx.txOut.size - tx.txOut.size
       val feeSat = toSatoshi(fee)
@@ -264,7 +261,6 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         require(addedOutputs == 0 || changePos >= 0, "change output added, but position not returned")
         require(options.changePosition.isEmpty || changePos_opt.isEmpty || changePos_opt == options.changePosition, "change output added at wrong position")
         feeBudget_opt.foreach(feeBudget => require(feeSat <= feeBudget, s"mining fee is higher than budget ($feeSat > $feeBudget)"))
-
         FundTransactionResponse(fundedTx, feeSat, changePos_opt)
       } match {
         case Success(response) => Future.successful(response)
@@ -500,7 +496,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
    */
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId] =
     rpcClient.invoke("sendrawtransaction", tx.toString()).flatMap {
-      case JString(txid) if TxId.fromValidHex(txid) == tx.txid => Future.successful(tx.txid)
+      case JString(txid) if Try(TxId.fromValidHex(txid)).toOption.contains(tx.txid) => Future.successful(tx.txid)
       case _ => Future.failed(new RuntimeException("failed to publish transaction or incorrect txid returned"))
     }.recoverWith {
       case JsonRPCError(Error(-27, _)) =>
@@ -508,7 +504,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         Future.successful(tx.txid)
       case e@JsonRPCError(Error(-25, _)) =>
         // "missing inputs (code: -25)": it may be that the tx has already been published and its output spent.
-        getRawTransaction(tx.txid).map(_ => tx.txid).recoverWith { case _ => Future.failed(e) }
+        getTransaction(tx.txid).map(_ => tx.txid).recoverWith { case _ => Future.failed(e) }
     }
 
   /**
