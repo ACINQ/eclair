@@ -1099,7 +1099,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val preimage = randomBytes32()
     val paymentHash = Crypto.sha256(preimage)
     val upstream = upstreamChannel(11_000_000 msat, expiryIn, paymentHash)
-    proposeFunding(10_000_000 msat, expiryOut, paymentHash, upstream)
+    val willAdd = proposeFunding(10_000_000 msat, expiryOut, paymentHash, upstream)
     val fees = LiquidityAds.Fees(10_000 sat, 5_000 sat)
     val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(List(paymentHash)), fees = fees)
 
@@ -1114,7 +1114,8 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     awaitCond(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
 
     // When we retry relaying the HTLC, our peer fulfills it: we re-enable from_future_htlc.
-    peer ! OnTheFlyFunding.PaymentRelayer.RelaySuccess(purchase.channelId, paymentHash, preimage, fees.total.toMilliSatoshi)
+    val proposal = OnTheFlyFunding.Proposal(willAdd, upstream, Nil)
+    peer ! OnTheFlyFunding.PaymentRelayer.RelaySuccess(purchase.channelId, paymentHash, preimage, fees.total.toMilliSatoshi, proposal :: Nil)
     awaitCond(nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
   }
 
@@ -1230,6 +1231,70 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val channelData = makeChannelData(crossSignedHtlcs = Seq(htlc -> Origin.Cold(Upstream.Cold(upstream))))
     channel.expectMsgType[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, channelId, channel.ref, NORMAL, channelData)
     channel.expectNoMessage(100 millis)
+    register.expectNoMessage(100 millis)
+  }
+
+  test("fulfill upstream when preimage is received after the htlc expiry") { f =>
+    import f._
+
+    connect(peer)
+
+    // We relay an on-the-fly payment.
+    val upstream = upstreamChannel(50_000_000 msat, expiryIn, paymentHash)
+    proposeFunding(50_000_000 msat, expiryOut, paymentHash, upstream)
+    val fees = LiquidityAds.Fees(1000 sat, 1000 sat)
+    val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash :: Nil), fees = fees)
+    peer ! ChannelReadyForPayments(channel.ref, remoteNodeId, purchase.channelId, purchase.txId, fundingTxIndex = 0)
+    channel.expectMsgType[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, purchase.channelId, channel.ref, NORMAL, makeChannelData())
+    val cmd = channel.expectMsgType[CMD_ADD_HTLC]
+    cmd.replyTo ! RES_SUCCESS(cmd, purchase.channelId)
+    val htlc = UpdateAddHtlc(purchase.channelId, randomHtlcId(), cmd.amount, paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextPathKey_opt, cmd.reputationScore.accountable, cmd.fundingFee_opt)
+    channel.expectNoMessage(100 millis)
+
+    // Our peer doesn't settle that HTLC: when it reaches its expiry, we force-close the channel and stop tracking the
+    // payment. The HTLC has been cross-signed, so we must not fail the upstream HTLCs.
+    peer ! CurrentBlockHeight(expiryOut.blockHeight)
+    assert(register.expectMsgType[Register.Forward[CMD_FORCECLOSE]].channelId == purchase.channelId)
+    val channelInfo = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
+    assert(channelInfo.channelId == purchase.channelId)
+    channelInfo.message.replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, purchase.channelId, ActorRef.noSender, NORMAL, makeChannelData(crossSignedHtlcs = Seq(htlc -> cmd.origin)))
+    register.expectNoMessage(100 millis)
+    awaitCond(nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId).isEmpty, interval = 100 millis)
+
+    // Our peer claims that HTLC on-chain by revealing the preimage: even though we've stopped tracking that payment,
+    // we must fulfill the upstream HTLCs, otherwise we've paid our peer without being paid ourselves.
+    cmd.replyTo ! RES_ADD_SETTLED(cmd.origin, remoteNodeId, htlc, HtlcResult.OnChainFulfill(preimage))
+    verifyFulfilledUpstream(upstream, preimage)
+    register.expectNoMessage(100 millis)
+  }
+
+  test("fulfill upstream when fulfill races the htlc expiry") { f =>
+    import f._
+
+    connect(peer)
+
+    // We relay an on-the-fly payment.
+    val upstream = upstreamChannel(50_000_000 msat, expiryIn, paymentHash)
+    proposeFunding(50_000_000 msat, expiryOut, paymentHash, upstream)
+    val fees = LiquidityAds.Fees(1000 sat, 1000 sat)
+    val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash :: Nil), fees = fees)
+    peer ! ChannelReadyForPayments(channel.ref, remoteNodeId, purchase.channelId, purchase.txId, fundingTxIndex = 0)
+    channel.expectMsgType[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, purchase.channelId, channel.ref, NORMAL, makeChannelData())
+    val cmd = channel.expectMsgType[CMD_ADD_HTLC]
+    cmd.replyTo ! RES_SUCCESS(cmd, purchase.channelId)
+    val htlc = UpdateAddHtlc(purchase.channelId, randomHtlcId(), cmd.amount, paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextPathKey_opt, cmd.reputationScore.accountable, cmd.fundingFee_opt)
+    channel.expectNoMessage(100 millis)
+
+    // We reach the HTLC expiry and stop tracking the payment.
+    peer ! CurrentBlockHeight(expiryOut.blockHeight)
+    assert(register.expectMsgType[Register.Forward[CMD_FORCECLOSE]].channelId == purchase.channelId)
+    val channelInfo = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
+    channelInfo.message.replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, purchase.channelId, ActorRef.noSender, NORMAL, makeChannelData(crossSignedHtlcs = Seq(htlc -> cmd.origin)))
+    awaitCond(nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId).isEmpty, interval = 100 millis)
+
+    // Our peer had actually fulfilled that HTLC off-chain, racing our expiry: we must fulfill the upstream HTLCs.
+    cmd.replyTo ! RES_ADD_SETTLED(cmd.origin, remoteNodeId, htlc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(purchase.channelId, htlc.id, preimage)))
+    verifyFulfilledUpstream(upstream, preimage)
     register.expectNoMessage(100 millis)
   }
 

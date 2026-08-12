@@ -259,7 +259,7 @@ object OnTheFlyFunding {
     private case class WrappedHtlcSettled(result: RES_ADD_SETTLED[Origin.Hot, HtlcResult]) extends Command
 
     sealed trait RelayResult
-    case class RelaySuccess(channelId: ByteVector32, paymentHash: ByteVector32, preimage: ByteVector32, fees: MilliSatoshi) extends RelayResult
+    case class RelaySuccess(channelId: ByteVector32, paymentHash: ByteVector32, preimage: ByteVector32, fees: MilliSatoshi, proposed: Seq[Proposal]) extends RelayResult
     case class RelayFailed(paymentHash: ByteVector32, failure: RelayFailure) extends RelayResult
 
     sealed trait RelayFailure
@@ -305,7 +305,7 @@ object OnTheFlyFunding {
               // We have already received the preimage for that payment, but we probably restarted before removing the
               // on-the-fly funding proposal from our DB. We must not relay the payment again, otherwise we will pay
               // the next node twice.
-              cmd.replyTo ! RelaySuccess(channelId, paymentHash, preimage, cmd.status.remainingFees)
+              cmd.replyTo ! RelaySuccess(channelId, paymentHash, preimage, cmd.status.remainingFees, cmd.proposed)
               Behaviors.stopped
             case None => relay(data)
           }
@@ -361,7 +361,7 @@ object OnTheFlyFunding {
         Behaviors.receiveMessagePartial {
           case WrappedHtlcSettled(settled) =>
             settled.result match {
-              case fulfill: HtlcResult.Fulfill => cmd.replyTo ! RelaySuccess(channelId, paymentHash, fulfill.paymentPreimage, cmd.status.remainingFees)
+              case fulfill: HtlcResult.Fulfill => cmd.replyTo ! RelaySuccess(channelId, paymentHash, fulfill.paymentPreimage, cmd.status.remainingFees, cmd.proposed)
               case fail: HtlcResult.Fail => cmd.replyTo ! RelayFailed(paymentHash, RemoteFailure(fail))
             }
             waitForSettlement(remaining - 1)
