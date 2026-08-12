@@ -7,10 +7,10 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.channel.ChannelReadyForPayments
-import fr.acinq.eclair.{Logs, NodeParams}
 import fr.acinq.eclair.io.IncomingConnectionsTracker.Command
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.Peer.{Disconnect, DisconnectResponse}
+import fr.acinq.eclair.{Logs, NodeParams}
 
 /**
  * A singleton actor that limits the total number of incoming connections from peers that do not have channels with us.
@@ -32,11 +32,10 @@ import fr.acinq.eclair.io.Peer.{Disconnect, DisconnectResponse}
  * create a continuous stream of incoming connections with random nodeIds, which forces us to constantly disconnect old
  * connections before they have the opportunity to open a channel. This can be fixed by adding a TCP rate-limiter that
  * rejects connections based on IP addresses, which forces the attacker to own a lot of IP addresses.
-*/
+ */
 object IncomingConnectionsTracker {
   // @formatter:off
   sealed trait Command
-
   case class TrackIncomingConnection(remoteNodeId: PublicKey) extends Command
   private[io] case class ForgetIncomingConnection(remoteNodeId: PublicKey) extends Command
   private[io] case class CountIncomingConnections(replyTo: ActorRef[Int]) extends Command
@@ -54,6 +53,7 @@ object IncomingConnectionsTracker {
 }
 
 private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: ActorRef[Disconnect], context: ActorContext[Command]) {
+
   import IncomingConnectionsTracker._
 
   private def tracking(incomingConnections: Map[PublicKey, TimestampMillis]): Behavior[Command] = {
@@ -62,17 +62,16 @@ private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: Ac
       case TrackIncomingConnection(remoteNodeId) =>
         if (nodeParams.routerConf.syncConf.whitelist.contains(remoteNodeId)) {
           Behaviors.same
+        } else if (incomingConnections.contains(remoteNodeId)) {
+          Behaviors.same
+        } else if (incomingConnections.size >= nodeParams.peerConnectionConf.maxNoChannels) {
+          Metrics.IncomingConnectionsDisconnected.withoutTags().increment()
+          val oldest = incomingConnections.minBy(_._2)._1
+          context.log.warn(s"disconnecting peer=$oldest, too many incoming connections from peers without channels.")
+          switchboard ! Disconnect(oldest, Some(context.system.ignoreRef[DisconnectResponse]))
+          tracking(incomingConnections + (remoteNodeId -> System.currentTimeMillis()) - oldest)
         } else {
-          if (incomingConnections.size >= nodeParams.peerConnectionConf.maxNoChannels) {
-            Metrics.IncomingConnectionsDisconnected.withoutTags().increment()
-            val oldest = incomingConnections.minBy(_._2)._1
-            context.log.warn(s"disconnecting peer=$oldest, too many incoming connections from peers without channels.")
-            switchboard ! Disconnect(oldest, Some(context.system.ignoreRef[DisconnectResponse]))
-            tracking(incomingConnections + (remoteNodeId -> System.currentTimeMillis()) - oldest)
-          }
-          else {
-            tracking(incomingConnections + (remoteNodeId -> System.currentTimeMillis()))
-          }
+          tracking(incomingConnections + (remoteNodeId -> System.currentTimeMillis()))
         }
       case ForgetIncomingConnection(remoteNodeId) => tracking(incomingConnections - remoteNodeId)
       case CountIncomingConnections(replyTo) =>

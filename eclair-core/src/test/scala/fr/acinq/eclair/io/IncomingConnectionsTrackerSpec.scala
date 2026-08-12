@@ -56,6 +56,22 @@ class IncomingConnectionsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFac
     assert(switchboard.expectMessageType[Disconnect].nodeId === connection2)
   }
 
+  test("keep a replacement connection tracked when the oldest node reconnects") { _ =>
+    val nodeParams1 = nodeParams.copy(peerConnectionConf = nodeParams.peerConnectionConf.copy(maxNoChannels = 1))
+    val switchboard = TestProbe[Disconnect]()
+    val tracker = testKit.spawn(IncomingConnectionsTracker(nodeParams1, switchboard.ref))
+    val count = TestProbe[Int]()
+
+    tracker ! IncomingConnectionsTracker.TrackIncomingConnection(connection1)
+    tracker ! IncomingConnectionsTracker.TrackIncomingConnection(connection1)
+
+    // Re-authenticating the same node replaces its previous connection. It must not trigger a
+    // node-wide disconnect or remove that node from the tracker.
+    switchboard.expectNoMessage(100 millis)
+    tracker ! IncomingConnectionsTracker.CountIncomingConnections(count.ref)
+    count.expectMessage(1)
+  }
+
   test("stop tracking a node that disconnects and free space for a new node connection") { f =>
     import f._
 
