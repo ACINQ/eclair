@@ -18,7 +18,6 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Protocol}
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.{DecryptionError, EncryptionError, InvalidCounter}
-import grizzled.slf4j.Logging
 import org.bouncycastle.crypto.engines.ChaCha7539Engine
 import org.bouncycastle.crypto.params.{KeyParameter, ParametersWithIV}
 import scodec.bits.ByteVector
@@ -91,7 +90,7 @@ object ChaCha20 {
  *
  * This what we should be using (see BOLT #8)
  */
-object ChaCha20Poly1305 extends Logging {
+object ChaCha20Poly1305 {
 
   // @formatter:off
   abstract class ChaCha20Poly1305Error(msg: String) extends RuntimeException(msg)
@@ -112,7 +111,6 @@ object ChaCha20Poly1305 extends Logging {
     val polykey = ChaCha20.encrypt(ByteVector32.Zeroes, key, nonce)
     val ciphertext = ChaCha20.encrypt(plaintext, key, nonce, 1)
     val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN), Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN))
-    logger.debug(s"encrypt($key, $nonce, $aad, $plaintext) = ($ciphertext, $tag)")
     (ciphertext, tag)
   }
 
@@ -129,11 +127,10 @@ object ChaCha20Poly1305 extends Logging {
     val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN), Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN))
     if (tag != mac) throw InvalidMac()
     val plaintext = ChaCha20.decrypt(ciphertext, key, nonce, 1)
-    logger.debug(s"decrypt($key, $nonce, $aad, $ciphertext, $mac) = $plaintext")
     plaintext
   }
 
-  def pad16(data: ByteVector): ByteVector =
+  private def pad16(data: ByteVector): ByteVector =
     if (data.size % 16 == 0)
       ByteVector.empty
     else
