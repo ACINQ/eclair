@@ -354,9 +354,8 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           case SyncMessage(chainHash) if chainHash != d.chainHash =>
             // We must never answer gossip queries for another chain: we would leak our routing table to nodes that
             // aren't even on our network, and let them use us as an amplifier.
-            log.warning("received {} for chain {}, we're on {}", getSimpleClassName(msg), chainHash, d.chainHash)
+            log.debug("received {} for chain {}, we're on {}", getSimpleClassName(msg), chainHash, d.chainHash)
             d.transport ! TransportHandler.ReadAck(msg)
-            d.transport ! Warning(s"invalid chain ($chainHash)")
             stay()
           case _: QueryChannelRange if !gossipQueriesRateLimiter.tryAcquire() =>
             // A query_channel_range is a few dozen bytes to send, but answering one requires scanning our whole routing
@@ -371,17 +370,15 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           case q: QueryShortChannelIds if q.queryFlags_opt.exists(_.array.size != q.shortChannelIds.array.size) =>
             // BOLT 7: `encoded_query_flags` must decode to exactly one flag per `short_channel_id`. We must reject those
             // queries, because a missing flag means "send everything you have" for the corresponding channel.
-            log.warning("received query_short_channel_ids with {} flags for {} ids", q.queryFlags_opt.map(_.array.size), q.shortChannelIds.array.size)
+            log.debug("received query_short_channel_ids with {} flags for {} ids", q.queryFlags_opt.map(_.array.size), q.shortChannelIds.array.size)
             d.transport ! TransportHandler.ReadAck(msg)
-            d.transport ! Warning("invalid query_short_channel_ids: query flags don't match short channel ids")
             stay()
           case _: QueryShortChannelIds if d.queryShortChannelIdsPending =>
             // BOLT 7: our peer must not send another query_short_channel_ids until we've sent them the
             // reply_short_channel_ids_end for the previous one. Answering a query is expensive, so we don't let them
             // pipeline queries: the spec explicitly allows us to reject those.
-            log.warning("received query_short_channel_ids while the previous one is still pending")
+            log.debug("received query_short_channel_ids while the previous one is still pending")
             d.transport ! TransportHandler.ReadAck(msg)
-            d.transport ! Warning("still processing your previous query_short_channel_ids")
             stay()
           case _: QueryShortChannelIds =>
             // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox

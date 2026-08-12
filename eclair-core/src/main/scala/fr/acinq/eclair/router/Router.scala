@@ -320,7 +320,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d: Data) =>
       // NB: `--` only removes the (usually very few) spent channels, whereas `filterNot` would rebuild the whole map.
-      val channels = d.channels -- d.spentChannels.values.flatten
+      val channels = d.channels -- d.spentChannels.values.flatten.toSet
       Sync.handleQueryChannelRange(channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
       stay()
 
@@ -328,7 +328,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using Sync.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d: Data) =>
-      val channels = d.channels -- d.spentChannels.values.flatten
+      val channels = d.channels -- d.spentChannels.values.flatten.toSet
       Sync.handleQueryShortChannelIds(d.nodes, channels, RemoteGossip(peerConnection, remoteNodeId), q)
       stay()
 
