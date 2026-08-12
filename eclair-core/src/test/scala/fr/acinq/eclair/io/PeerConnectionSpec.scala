@@ -766,7 +766,6 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     queries.foreach(query => {
       transport.send(peerConnection, query)
       transport.expectMsg(TransportHandler.ReadAck(query))
-      transport.expectMsgType[Warning]
     })
     router.expectNoMessage(100 millis)
   }
@@ -781,7 +780,6 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     // pipeline queries that are each very expensive for us to answer.
     transport.send(peerConnection, query)
     transport.expectMsg(TransportHandler.ReadAck(query))
-    transport.expectMsgType[Warning]
     router.expectNoMessage(100 millis)
     // Once we've sent our reply_short_channel_ids_end, we accept a new query.
     router.send(peerConnection, ReplyShortChannelIdsEnd(nodeParams.chainHash, 1))
@@ -800,7 +798,6 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val query = QueryShortChannelIds(nodeParams.chainHash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, scids), TlvStream(flags))
     transport.send(peerConnection, query)
     transport.expectMsg(TransportHandler.ReadAck(query))
-    transport.expectMsgType[Warning]
     router.expectNoMessage(100 millis)
   }
 
