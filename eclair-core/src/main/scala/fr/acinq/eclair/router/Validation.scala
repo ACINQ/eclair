@@ -340,6 +340,10 @@ object Validation {
       log.debug("ignoring {} (duplicate)", n)
       remoteOrigins.foreach(sendDecision(_, GossipDecision.Duplicate(n)))
       d
+    } else if (n.fundingRates_opt.exists(f => f.fundingRates.isEmpty || f.encodedPaymentTypes.isEmpty)) {
+      log.warning("missing funding rates for node_announcement from node_id={}", n.nodeId)
+      remoteOrigins.foreach(sendDecision(_, GossipDecision.InvalidSignature(n)))
+      d
     } else if (!Announcements.checkSig(n)) {
       log.warning("bad signature for {}", n)
       remoteOrigins.foreach(sendDecision(_, GossipDecision.InvalidSignature(n)))

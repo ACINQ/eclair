@@ -95,6 +95,7 @@ object LiquidityAds {
   sealed trait PaymentType {
     // @formatter:off
     def rfcName: String
+    def bitIndex: Int
     override def toString: String = rfcName
     // @formatter:on
   }
@@ -105,13 +106,25 @@ object LiquidityAds {
   object PaymentType {
     // @formatter:off
     /** Fees are transferred from the buyer's channel balance to the seller's during the interactive-tx construction. */
-    case object FromChannelBalance extends PaymentType { override val rfcName: String = "from_channel_balance" }
+    case object FromChannelBalance extends PaymentType {
+      override val rfcName: String = "from_channel_balance"
+      override val bitIndex: Int = 0
+    }
     /** Fees will be deducted from future HTLCs that will be relayed to the buyer. */
-    case object FromFutureHtlc extends OnTheFlyFundingPaymentType { override val rfcName: String = "from_future_htlc" }
+    case object FromFutureHtlc extends OnTheFlyFundingPaymentType {
+      override val rfcName: String = "from_future_htlc"
+      override val bitIndex: Int = 128
+    }
     /** Fees will be deducted from future HTLCs that will be relayed to the buyer, but the preimage is revealed immediately. */
-    case object FromFutureHtlcWithPreimage extends OnTheFlyFundingPaymentType { override val rfcName: String = "from_future_htlc_with_preimage" }
+    case object FromFutureHtlcWithPreimage extends OnTheFlyFundingPaymentType {
+      override val rfcName: String = "from_future_htlc_with_preimage"
+      override val bitIndex: Int = 129
+    }
     /** Similar to [[FromChannelBalance]] but expects HTLCs to be relayed after funding. */
-    case object FromChannelBalanceForFutureHtlc extends OnTheFlyFundingPaymentType { override val rfcName: String = "from_channel_balance_for_future_htlc" }
+    case object FromChannelBalanceForFutureHtlc extends OnTheFlyFundingPaymentType {
+      override val rfcName: String = "from_channel_balance_for_future_htlc"
+      override val bitIndex: Int = 130
+    }
     /** Sellers may support unknown payment types, which we must ignore. */
     case class Unknown(bitIndex: Int) extends PaymentType { override val rfcName: String = s"unknown_$bitIndex" }
     // @formatter:on
@@ -132,7 +145,14 @@ object LiquidityAds {
   }
 
   /** Sellers offer various rates and payment options. */
-  case class WillFundRates(fundingRates: List[FundingRate], paymentTypes: Set[PaymentType]) {
+  case class WillFundRates(fundingRates: List[FundingRate], encodedPaymentTypes: ByteVector) {
+    val paymentTypes: Set[PaymentType] = Set(
+      if (WillFundRates.hasPaymentType(PaymentType.FromChannelBalance.bitIndex, encodedPaymentTypes)) Some(PaymentType.FromChannelBalance) else None,
+      if (WillFundRates.hasPaymentType(PaymentType.FromFutureHtlc.bitIndex, encodedPaymentTypes)) Some(PaymentType.FromFutureHtlc) else None,
+      if (WillFundRates.hasPaymentType(PaymentType.FromFutureHtlcWithPreimage.bitIndex, encodedPaymentTypes)) Some(PaymentType.FromFutureHtlcWithPreimage) else None,
+      if (WillFundRates.hasPaymentType(PaymentType.FromChannelBalanceForFutureHtlc.bitIndex, encodedPaymentTypes)) Some(PaymentType.FromChannelBalanceForFutureHtlc) else None,
+    ).flatten
+
     def validateRequest(nodeKey: PrivateKey, channelId: ByteVector32, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, request: RequestFunding, isChannelCreation: Boolean, feeCreditUsed_opt: Option[MilliSatoshi]): Either[ChannelException, WillFundPurchase] = {
       if (!paymentTypes.contains(request.paymentDetails.paymentType)) {
         Left(InvalidLiquidityAdsPaymentType(channelId, request.paymentDetails.paymentType, paymentTypes))
@@ -152,6 +172,27 @@ object LiquidityAds {
     }
 
     def findRate(requestedAmount: Satoshi): Option[FundingRate] = fundingRates.find(r => r.minAmount <= requestedAmount && requestedAmount <= r.maxAmount)
+  }
+
+  object WillFundRates {
+    def apply(fundingRates: List[FundingRate], paymentTypes: Set[PaymentType]): WillFundRates = {
+      val indexes = paymentTypes.map(_.bitIndex)
+      // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to
+      // bytes *before* setting bits.
+      var buf = BitVector.fill(indexes.max + 1)(high = false).bytes.bits
+      indexes.foreach { i => buf = buf.set(i) }
+      val encoded = buf.reverse.bytes
+      WillFundRates(fundingRates, encoded)
+    }
+
+    private def hasPaymentType(bitIndex: Int, encoded: ByteVector): Boolean = {
+      if (bitIndex < encoded.size * 8) {
+        val offset = bitIndex % 8
+        (encoded.get(encoded.size - 1 - (bitIndex / 8)) & (0x01 << offset)) != 0
+      } else {
+        false
+      }
+    }
   }
 
   def validateRequest(nodeKey: PrivateKey, channelId: ByteVector32, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, isChannelCreation: Boolean, request_opt: Option[RequestFunding], rates_opt: Option[WillFundRates], feeCreditUsed_opt: Option[MilliSatoshi]): Either[ChannelException, Option[WillFundPurchase]] = {
@@ -281,34 +322,9 @@ object LiquidityAds {
         ("signature" | bytes64)
       ).as[WillFund]
 
-    private val paymentTypes: Codec[Set[PaymentType]] = bytes.xmap(
-      f = { bytes =>
-        bytes.bits.toIndexedSeq.reverse.zipWithIndex.collect {
-          case (true, 0) => PaymentType.FromChannelBalance
-          case (true, 128) => PaymentType.FromFutureHtlc
-          case (true, 129) => PaymentType.FromFutureHtlcWithPreimage
-          case (true, 130) => PaymentType.FromChannelBalanceForFutureHtlc
-          case (true, idx) => PaymentType.Unknown(idx)
-        }.toSet
-      },
-      g = { paymentTypes =>
-        val indexes = paymentTypes.collect {
-          case PaymentType.FromChannelBalance => 0
-          case PaymentType.FromFutureHtlc => 128
-          case PaymentType.FromFutureHtlcWithPreimage => 129
-          case PaymentType.FromChannelBalanceForFutureHtlc => 130
-          case PaymentType.Unknown(idx) => idx
-        }
-        // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to bytes *before* setting bits.
-        var buf = BitVector.fill(indexes.max + 1)(high = false).bytes.bits
-        indexes.foreach { i => buf = buf.set(i) }
-        buf.reverse.bytes
-      }
-    )
-
     val willFundRates: Codec[WillFundRates] = (
       ("fundingRates" | listOfN(uint16, fundingRate)) ::
-        ("paymentTypes" | variableSizeBytes(uint16, paymentTypes))
+        ("paymentTypes" | variableSizeBytes(uint16, bytes))
       ).as[WillFundRates]
   }
 
