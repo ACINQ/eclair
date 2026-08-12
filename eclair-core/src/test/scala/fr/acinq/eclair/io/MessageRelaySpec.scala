@@ -116,6 +116,14 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     assert(peer.expectMessageType[Peer.RelayOnionMessage].msg == message)
   }
 
+  test("does not wake up wallet nodes when peer wake-up is disabled") { f =>
+    import f._
+
+    val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
+    relay ! RelayMessage(randomBytes32(), randomKey().publicKey, Right(EncodedNodeId.WithPublicKey.Wallet(bobId)), message, RelayChannelsOnly, None)
+    peerReadyManager.expectNoMessage(100 millis)
+  }
+
   test("can't open new connection") { f =>
     import f._
 
@@ -220,7 +228,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     relay ! RelayMessage(messageId, randomKey().publicKey, Right(EncodedNodeId.ShortChannelIdDir(isNode1 = false, scid)), message, RelayAll, None)
 
     val getNodeId = router.expectMessageType[Router.GetNodeId]
-    assert(getNodeId.isNode1 == false)
+    assert(!getNodeId.isNode1)
     assert(getNodeId.shortChannelId == scid)
     getNodeId.replyTo ! Some(bobId)
 
@@ -239,7 +247,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     relay ! RelayMessage(messageId, randomKey().publicKey, Right(EncodedNodeId.ShortChannelIdDir(isNode1 = true, scid)), message, RelayAll, None)
 
     val getNodeId = router.expectMessageType[Router.GetNodeId]
-    assert(getNodeId.isNode1 == true)
+    assert(getNodeId.isNode1)
     assert(getNodeId.shortChannelId == scid)
     getNodeId.replyTo ! Some(aliceId)
 
@@ -266,7 +274,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     relay ! RelayMessage(messageId, randomKey().publicKey, Right(EncodedNodeId(aliceId)), message, RelayAll, None)
 
     val getNodeId = router.expectMessageType[Router.GetNodeId]
-    assert(getNodeId.isNode1 == false)
+    assert(!getNodeId.isNode1)
     assert(getNodeId.shortChannelId == RealShortChannelId(123L))
     getNodeId.replyTo ! Some(aliceId)
 

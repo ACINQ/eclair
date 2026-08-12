@@ -146,9 +146,16 @@ private class MessageRelay(nodeParams: NodeParams,
             waitForConnection(msg, nodeId)
         }
       case EncodedNodeId.WithPublicKey.Wallet(nodeId) =>
-        val notifier = context.spawnAnonymous(PeerReadyNotifier(nodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout))))
-        notifier ! PeerReadyNotifier.NotifyWhenPeerReady(context.messageAdapter(WrappedPeerReadyResult))
-        waitForWalletNodeUp(msg, nodeId)
+        if (nodeParams.peerWakeUpConfig.enabled) {
+          val notifier = context.spawnAnonymous(PeerReadyNotifier(nodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout))))
+          notifier ! PeerReadyNotifier.NotifyWhenPeerReady(context.messageAdapter(WrappedPeerReadyResult))
+          waitForWalletNodeUp(msg, nodeId)
+        } else {
+          Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.ConnectionFailure).increment()
+          log.info("could not wake up {}: peer wake-up is disabled", nodeId)
+          replyTo_opt.foreach(_ ! Disconnected(messageId))
+          Behaviors.stopped
+        }
     }
   }
 
