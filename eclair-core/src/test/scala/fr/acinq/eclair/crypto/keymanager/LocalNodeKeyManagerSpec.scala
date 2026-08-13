@@ -25,10 +25,20 @@ import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 import java.io.File
-import java.nio.file.Files
+import java.nio.file.attribute.{PosixFileAttributeView, PosixFilePermissions}
+import java.nio.file.{Files, Path}
 
 
 class LocalNodeKeyManagerSpec extends AnyFunSuite {
+  /** Returns the POSIX permissions of the given file, or `None` on file systems that don't support them (e.g. Windows). */
+  private def posixPermissions(path: Path): Option[String] = {
+    if (Files.getFileStore(path).supportsFileAttributeView(classOf[PosixFileAttributeView])) {
+      Some(PosixFilePermissions.toString(Files.getPosixFilePermissions(path)))
+    } else {
+      None
+    }
+  }
+
   test("generate the same node id from the same seed") {
     // if this test breaks it means that we will generate a different node id  from
     // the same seed, which could be a problem during an upgrade
@@ -61,6 +71,34 @@ class LocalNodeKeyManagerSpec extends AnyFunSuite {
 
     val nodeSeedContent = ByteVector(Files.readAllBytes(nodeSeedDatFile.toPath))
     assert(seed == nodeSeedContent)
+  }
+
+  test("create seed files with owner-only permissions") {
+    val datadir = new File(TestUtils.newIntegrationTmpDir(), "seed-permissions")
+    datadir.mkdirs()
+
+    val Seeds(_, _) = NodeParams.getSeeds(datadir)
+
+    val nodeSeedFile = new File(datadir, "node_seed.dat")
+    val channelSeedFile = new File(datadir, "channel_seed.dat")
+    assert(nodeSeedFile.exists())
+    assert(channelSeedFile.exists())
+    // On POSIX file systems the freshly generated seeds must not be readable by other users, otherwise a local user
+    // could steal the node's funds. On non-POSIX file systems (e.g. Windows) we can't assert anything here.
+    for (seedFile <- Seq(nodeSeedFile, channelSeedFile)) {
+      posixPermissions(seedFile.toPath).foreach(permissions => assert(permissions == "rw-------"))
+    }
+  }
+
+  test("restrict permissions of migrated seed file") {
+    val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
+    val seedDatFile = TestUtils.createSeedFile("seed.dat", seed.toArray)
+
+    val Seeds(_, _) = NodeParams.getSeeds(seedDatFile.getParentFile)
+
+    val nodeSeedFile = new File(seedDatFile.getParentFile, "node_seed.dat")
+    assert(nodeSeedFile.exists())
+    posixPermissions(nodeSeedFile.toPath).foreach(permissions => assert(permissions == "rw-------"))
   }
 
   test("generate a signature from a digest") {

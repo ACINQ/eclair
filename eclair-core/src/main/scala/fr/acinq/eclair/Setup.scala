@@ -96,6 +96,9 @@ class Setup(val datadir: File,
   system.spawn(Behaviors.supervise(NotificationsLogger()).onFailure(typed.SupervisorStrategy.restart), "notifications-logger")
 
   datadir.mkdirs()
+  // The datadir holds sensitive files (seeds, eclair.conf with rpc/api passwords): restrict it to its owner so that
+  // other local users cannot read its contents, even if individual files were created with a permissive umask.
+  setOwnerPermissions(datadir.toPath, "rwx------")
   val config = system.settings.config.getConfig("eclair")
   val Seeds(nodeSeed, channelSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
   val chain = config.getString("chain")
@@ -109,6 +112,7 @@ class Setup(val datadir: File,
 
   val chaindir = new File(datadir, chain)
   chaindir.mkdirs()
+  setOwnerPermissions(chaindir.toPath, "rwx------")
   val nodeKeyManager = LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
   val channelKeyManager = LocalChannelKeyManager(channelSeed, NodeParams.hashFromChain(chain))
 
