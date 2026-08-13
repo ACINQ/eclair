@@ -28,7 +28,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, InitFeature, Logs, TimestampMilli, TimestampSecond, getSimpleClassName}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -62,6 +62,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
   val incomingRateLimiter: RateLimiter = new RateLimiter(conf.maxOnionMessagesPerSecond)
   val outgoingRateLimiter: RateLimiter = new RateLimiter(conf.maxOnionMessagesPerSecond)
+  val gossipQueriesRateLimiter: RateLimiter = new RateLimiter(conf.maxGossipQueriesPerSecond)
 
   startWith(BEFORE_AUTH, Nothing)
 
@@ -225,6 +226,8 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         msg match {
           // If we send any channel management message to this peer, the connection should be persistent.
           case _: ChannelMessage if !d.isPersistent => stay() using d.copy(isPersistent = true)
+          // We're done answering their query_short_channel_ids: they may now send us another one.
+          case _: ReplyShortChannelIdsEnd => stay() using d.copy(queryShortChannelIdsPending = false)
           case _ => stay()
         }
 
@@ -343,14 +346,55 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             // this is actually for the channel
             d.transport ! TransportHandler.ReadAck(msg)
             d.peer ! msg
+            stay()
           case _: ChannelAnnouncement | _: ChannelUpdate | _: NodeAnnouncement if d.behavior.ignoreNetworkAnnouncement =>
             // this peer is currently under embargo!
             d.transport ! TransportHandler.ReadAck(msg)
+            stay()
+          case SyncMessage(chainHash) if chainHash != d.chainHash =>
+            // We must never answer gossip queries for another chain: we would leak our routing table to nodes that
+            // aren't even on our network, and let them use us as an amplifier.
+            log.debug("received {} for chain {}, we're on {}", getSimpleClassName(msg), chainHash, d.chainHash)
+            d.transport ! TransportHandler.ReadAck(msg)
+            stay()
+          case _: QueryChannelRange if !gossipQueriesRateLimiter.tryAcquire() =>
+            // A query_channel_range is a few dozen bytes to send, but answering one requires scanning our whole routing
+            // table and sending back megabytes of data, so a peer flooding us with those could easily saturate our
+            // router. Peers only need to send a handful of them per connection, so we can safely throttle them.
+            // NB: we don't log a warning here: this fires precisely when we're being flooded, so it would turn into a
+            // log flood of its own. The metric below is what should be monitored.
+            log.debug("rate-limiting query_channel_range")
+            Metrics.GossipQueriesThrottled.withoutTags().increment()
+            d.transport ! TransportHandler.ReadAck(msg)
+            stay()
+          case _: QueryShortChannelIds if !gossipQueriesRateLimiter.tryAcquire() =>
+            // same reasoning as for query_channel_range
+            log.debug("rate-limiting query_channel_range")
+            Metrics.GossipQueriesThrottled.withoutTags().increment()
+            d.transport ! TransportHandler.ReadAck(msg)
+            stay()
+          case q: QueryShortChannelIds if q.queryFlags_opt.exists(_.array.size != q.shortChannelIds.array.size) =>
+            // BOLT 7: `encoded_query_flags` must decode to exactly one flag per `short_channel_id`. We must reject those
+            // queries, because a missing flag means "send everything you have" for the corresponding channel.
+            log.debug("received query_short_channel_ids with {} flags for {} ids", q.queryFlags_opt.map(_.array.size), q.shortChannelIds.array.size)
+            d.transport ! TransportHandler.ReadAck(msg)
+            stay()
+          case _: QueryShortChannelIds if d.queryShortChannelIdsPending =>
+            // BOLT 7: our peer must not send another query_short_channel_ids until we've sent them the
+            // reply_short_channel_ids_end for the previous one. Answering a query is expensive, so we don't let them
+            // pipeline queries: the spec explicitly allows us to reject those.
+            log.debug("received query_short_channel_ids while the previous one is still pending")
+            d.transport ! TransportHandler.ReadAck(msg)
+            stay()
+          case _: QueryShortChannelIds =>
+            // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
+            router ! Peer.PeerRoutingMessage(self, d.remoteNodeId, msg)
+            stay() using d.copy(queryShortChannelIdsPending = true)
           case _ =>
             // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
             router ! Peer.PeerRoutingMessage(self, d.remoteNodeId, msg)
+            stay()
         }
-        stay()
 
       case Event(msg: LightningMessage, d: ConnectedData) =>
         // We immediately acknowledge all other messages.
@@ -656,8 +700,23 @@ object PeerConnection {
                   maxRebroadcastDelay: FiniteDuration,
                   killIdleDelay: FiniteDuration,
                   maxOnionMessagesPerSecond: Int,
+                  maxGossipQueriesPerSecond: Int,
                   sendRemoteAddressInit: Boolean,
                   maxNoChannels: Int)
+
+  /**
+   * Gossip sync messages, which all carry a chain hash. Unlike gossip announcements, which we validate and may ignore,
+   * we answer those directly, so we must make sure that they are for the chain we're running on.
+   */
+  object SyncMessage {
+    def unapply(msg: RoutingMessage): Option[BlockHash] = msg match {
+      case q: QueryChannelRange => Some(q.chainHash)
+      case r: ReplyChannelRange => Some(r.chainHash)
+      case q: QueryShortChannelIds => Some(q.chainHash)
+      case r: ReplyShortChannelIdsEnd => Some(r.chainHash)
+      case _ => None
+    }
+  }
 
   // @formatter:off
 
@@ -678,6 +737,9 @@ object PeerConnection {
                            expectedPong_opt: Option[ExpectedPong] = None,
                            commitSigBatch_opt: Option[PendingCommitSigBatch] = None,
                            legacyCommitSigBatch_opt: Option[PendingCommitSigBatch] = None,
+                           // set while we're answering a query_short_channel_ids: our peer must wait for our
+                           // reply_short_channel_ids_end before sending us another one
+                           queryShortChannelIdsPending: Boolean = false,
                            isPersistent: Boolean) extends Data with HasTransport
 
   case class PendingCommitSigBatch(channelId: ByteVector32, batchSize: Int, received: Seq[CommitSig])

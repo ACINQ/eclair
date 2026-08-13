@@ -206,6 +206,7 @@ object TestConstants {
         maxRebroadcastDelay = 5 seconds,
         killIdleDelay = 1 seconds,
         maxOnionMessagesPerSecond = 10,
+        maxGossipQueriesPerSecond = 10,
         sendRemoteAddressInit = true,
         maxNoChannels = 250,
       ),
@@ -219,6 +220,7 @@ object TestConstants {
           encodingType = EncodingType.UNCOMPRESSED,
           channelRangeChunkSize = 20,
           channelQueryChunkSize = 5,
+          maxQueriesPerSync = 2000,
           peerLimit = 10,
           whitelist = Set.empty
         ),
@@ -429,6 +431,7 @@ object TestConstants {
         maxRebroadcastDelay = 5 seconds,
         killIdleDelay = 10 seconds,
         maxOnionMessagesPerSecond = 10,
+        maxGossipQueriesPerSecond = 10,
         sendRemoteAddressInit = true,
         maxNoChannels = 250,
       ),
@@ -442,6 +445,7 @@ object TestConstants {
           encodingType = EncodingType.UNCOMPRESSED,
           channelRangeChunkSize = 20,
           channelQueryChunkSize = 5,
+          maxQueriesPerSync = 2000,
           peerLimit = 20,
           whitelist = Set.empty
         ),

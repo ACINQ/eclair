@@ -100,6 +100,7 @@ object EclairInternalsSerializer {
       ("encodingType" | discriminated[EncodingType].by(uint8).typecase(0, provide(EncodingType.UNCOMPRESSED))) ::
       ("channelRangeChunkSize" | int32) ::
       ("channelQueryChunkSize" | int32) ::
+      ("maxQueriesPerSync" | int32) ::
       ("peerLimit" | int32) ::
       ("whitelist" | listOfN(uint16, publicKey).xmap[Set[PublicKey]](_.toSet, _.toList))).as[Router.SyncConf]
 
@@ -124,6 +125,7 @@ object EclairInternalsSerializer {
       ("maxRebroadcastDelay" | finiteDurationCodec) ::
       ("killIdleDelay" | finiteDurationCodec) ::
       ("maxOnionMessagesPerSecond" | int32) ::
+      ("maxGossipQueriesPerSecond" | int32) ::
       ("sendRemoteAddressInit" | bool(8)) ::
       ("maxNoChannels" | int32)).as[PeerConnection.Conf]
 
