@@ -35,22 +35,21 @@ import scala.util.Try
 case class TorException(private val msg: String) extends RuntimeException(s"Tor error: $msg")
 
 /**
-  * Created by rorp
-  *
-  * Specification: https://gitweb.torproject.org/torspec.git/tree/control-spec.txt
-  *
-  * @param authentication      Tor controller auth mechanism (password or safecookie)
-  * @param privateKeyPath      path to a file that contains a Tor private key
-  * @param virtualPort         port for the public hidden service (typically 9735)
-  * @param targets             address of our protected server (format [host:]port), 127.0.0.1:[[virtualPort]] if empty
-  * @param onionAdded          a Promise to track creation of the endpoint
-  */
+ * Created by rorp
+ *
+ * Specification: https://gitweb.torproject.org/torspec.git/tree/control-spec.txt
+ *
+ * @param authentication Tor controller auth mechanism (password or safecookie)
+ * @param privateKeyPath path to a file that contains a Tor private key
+ * @param virtualPort    port for the public hidden service (typically 9735)
+ * @param targets        address of our protected server (format [host:]port), 127.0.0.1:[[virtualPort]] if empty
+ * @param onionAdded     a Promise to track creation of the endpoint
+ */
 class TorProtocolHandler(authentication: Authentication,
                          privateKeyPath: Path,
                          virtualPort: Int,
                          targets: Seq[String],
-                         onionAdded: Option[Promise[NodeAddress]]
-                        ) extends Actor with Stash with ActorLogging {
+                         onionAdded: Option[Promise[NodeAddress]]) extends Actor with Stash with ActorLogging {
 
   import TorProtocolHandler._
 
@@ -158,15 +157,19 @@ class TorProtocolHandler(authentication: Authentication,
   }
 
   private def computeClientHash(serverHash: ByteVector, serverNonce: ByteVector, clientNonce: ByteVector, cookieFile: Path): ByteVector = {
-    if (serverHash.length != 32)
+    if (serverHash.length != 32) {
       throw TorException("invalid server hash length")
-    if (serverNonce.length != 32)
+    }
+    if (serverNonce.length != 32) {
       throw TorException("invalid server nonce length")
+    }
 
     val cookie = ByteVector.view(Files.readAllBytes(cookieFile))
+    if (cookie.length != 32) {
+      throw TorException("invalid server cookie length")
+    }
 
     val message = cookie ++ clientNonce ++ serverNonce
-
     val computedServerHash = hmacSHA256(ServerKey, message)
     if (computedServerHash != serverHash) {
       throw TorException("unexpected server hash")
