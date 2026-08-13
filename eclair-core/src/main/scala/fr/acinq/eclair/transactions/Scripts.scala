@@ -247,8 +247,9 @@ object Scripts {
 
   /** Extract the payment preimage from from a fulfilled offered htlc. */
   def extractPreimageFromClaimHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
-    case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
-    case ScriptWitness(Seq(_, paymentPreimage, _, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
+    case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // segwit v0
+    case ScriptWitness(Seq(_, paymentPreimage, _, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // taproot
+    case ScriptWitness(Seq(_, paymentPreimage, _, _, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // taproot with annex
   }
 
   /** Extract payment preimages from a (potentially batched) claim HTLC transaction's witnesses. */

@@ -435,6 +435,42 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     extractPreimageFromClaimHtlcSuccess(f)
   }
 
+  test("recv WatchOutputSpentTriggered (extract preimage from Claim-HTLC-success tx with annex, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+
+    // Alice sends an htlc to Bob.
+    val (preimage, htlc) = addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    // Bob has the preimage, but Alice force-closes before receiving it.
+    bob ! CMD_FULFILL_HTLC(htlc.id, preimage, None)
+    bob2alice.expectMsgType[UpdateFulfillHtlc] // ignored
+    val (lcp, _) = localClose(alice, alice2blockchain, htlcTimeoutCount = 1)
+
+    // Bob claims the htlc output from Alice's commit tx using its preimage.
+    bob ! WatchFundingSpentTriggered(lcp.commitTx)
+    bob2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
+    bob2blockchain.expectFinalTxPublished("remote-main")
+    val claimHtlcSuccessTx = bob2blockchain.expectReplaceableTxPublished[ClaimHtlcSuccessTx].sign()
+    assert(claimHtlcSuccessTx.txIn.map(_.outPoint).toSet == lcp.htlcOutputs)
+    // Bob includes an annex in its witness (the signature will be incorrect but we don't check it here).
+    val annexWitness = claimHtlcSuccessTx.txIn.head.witness.copy(stack = claimHtlcSuccessTx.txIn.head.witness.stack :+ ByteVector.fromValidHex("50deadbeef"))
+    val claimHtlcSuccessTxWithAnnex = claimHtlcSuccessTx.updateWitness(0, annexWitness)
+
+    // Alice extracts the preimage and forwards it upstream.
+    alice ! WatchOutputSpentTriggered(htlc.amountMsat.truncateToSatoshi, claimHtlcSuccessTxWithAnnex)
+    inside(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFulfill]]) { fulfill =>
+      assert(fulfill.htlc == htlc)
+      assert(fulfill.result.paymentPreimage == preimage)
+      assert(fulfill.origin == alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id))
+    }
+
+    // The Claim-HTLC-success transaction confirms: nothing to do, preimage has already been relayed.
+    alice2blockchain.expectWatchTxConfirmed(claimHtlcSuccessTx.txid)
+    alice ! WatchTxConfirmedTriggered(alice.nodeParams.currentBlockHeight, 6, claimHtlcSuccessTx)
+    alice2blockchain.expectNoMessage(100 millis)
+    alice2relayer.expectNoMessage(100 millis)
+  }
+
   private def extractPreimageFromHtlcSuccess(f: FixtureParam): Unit = {
     import f._
 

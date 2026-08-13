@@ -688,9 +688,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // HTLC failures are not relayed upstream, as we will retry until we reach the HTLC timeout.
     sender.send(relayer, buildForwardFail(htlc_bc(0).add, Upstream.Cold.Channel(htlc_ab(0).add, a)))
     sender.send(relayer, buildForwardFail(htlc_bc(0).add, upstreamChannel))
-    sender.send(relayer, buildForwardOnChainFail(htlc_bc(0).add, upstreamChannel))
     sender.send(relayer, buildForwardFail(htlc_bc(1).add, upstreamTrampoline))
-    sender.send(relayer, buildForwardOnChainFail(htlc_bc(1).add, upstreamTrampoline))
     register.expectNoMessage(100 millis)
 
     // HTLC fulfills are relayed upstream as soon as available.
@@ -704,6 +702,39 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     assert(fulfill2.channelId == channelId_ab_1)
     assert(fulfill2.message.id == 2)
     assert(fulfill2.message.r == preimage2)
+    register.expectNoMessage(100 millis)
+  }
+
+  test("relay on-chain htlc-fail for on-the-fly funding") { f =>
+    import f._
+
+    // Upstream HTLCs that were relayed after completing on-the-fly funding.
+    val htlc_ab = Seq(
+      buildHtlcIn(1, channelId_ab_1, paymentHash1), // channel relayed
+      buildHtlcIn(2, channelId_ab_1, paymentHash2), // trampoline relayed
+    )
+    val htlc_bc = Seq(
+      buildHtlcOut(1, channelId_bc_1, paymentHash1).modify(_.add.tlvStream).setTo(TlvStream(UpdateAddHtlcTlv.FundingFeeTlv(LiquidityAds.FundingFee(2500 msat, TxId(randomBytes32()))))),
+      buildHtlcOut(2, channelId_bc_1, paymentHash2).modify(_.add.tlvStream).setTo(TlvStream(UpdateAddHtlcTlv.FundingFeeTlv(LiquidityAds.FundingFee(1500 msat, TxId(randomBytes32()))))),
+    )
+
+    val upstreamChannel = Upstream.Cold.Channel(htlc_ab(0).add, a)
+    val upstreamTrampoline = Upstream.Cold.Trampoline(Upstream.Cold.Channel(htlc_ab(1).add, a) :: Nil)
+    val data_ab = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab, Map.empty)
+    val data_bc = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc, Map(1L -> Origin.Cold(upstreamChannel), 2L -> Origin.Cold(upstreamTrampoline)))
+
+    val (relayer, _) = f.createRelayer(nodeParams)
+    relayer ! PostRestartHtlcCleaner.Init(Seq(data_ab, data_bc).map(_.withChannelKeys(nodeParams)))
+
+    // An on-chain failure guarantees that our peer cannot claim that HTLC anymore, so we fail the upstream HTLCs.
+    sender.send(relayer, buildForwardOnChainFail(htlc_bc(0).add, upstreamChannel))
+    val fail1 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
+    assert(fail1.channelId == channelId_ab_1)
+    assert(fail1.message.id == 1)
+    sender.send(relayer, buildForwardOnChainFail(htlc_bc(1).add, upstreamTrampoline))
+    val fail2 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
+    assert(fail2.channelId == channelId_ab_1)
+    assert(fail2.message.id == 2)
     register.expectNoMessage(100 millis)
   }
 

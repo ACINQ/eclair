@@ -20,17 +20,17 @@ import akka.actor.Cancellable
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, StashBuffer}
 import akka.actor.typed.{ActorRef, Behavior}
-import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment.Monitoring.Metrics
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.wire.protocol.LiquidityAds.PaymentDetails
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{CltvExpiry, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, ToMilliSatoshiConversion}
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -99,7 +99,7 @@ object OnTheFlyFunding {
     def maxFees(htlcMinimum: MilliSatoshi): MilliSatoshi = (htlc.amount - htlcMinimum).max(0 msat)
 
     /** Create commands to fail all upstream HTLCs. */
-    def createFailureCommands(failure_opt: Option[FailureReason])(implicit log: LoggingAdapter): Seq[(ByteVector32, CMD_FAIL_HTLC)] = upstream match {
+    def createFailureCommands(failure_opt: Option[FailureReason]): Seq[(ByteVector32, CMD_FAIL_HTLC)] = upstream match {
       case _: Upstream.Local => Nil
       case u: Upstream.Hot.Channel =>
         // Note that even in the Bolt12 case, we relay the downstream failure instead of sending back invalid_onion_blinding.
@@ -116,11 +116,10 @@ object OnTheFlyFunding {
               // the BOLTs to better handle those cases.
               Sphinx.FailurePacket.decrypt(f.packet, f.attribution_opt, onionSharedSecrets).failure match {
                 case Left(Sphinx.CannotDecryptFailurePacket(_, _)) =>
-                  log.warning("couldn't decrypt downstream on-the-fly funding failure")
+                  FailureReason.LocalFailure(TemporaryNodeFailure())
                 case Right(f) =>
-                  log.warning("downstream on-the-fly funding failure: {}", f.failureMessage.message)
+                  FailureReason.LocalFailure(TemporaryNodeFailure())
               }
-              FailureReason.LocalFailure(TemporaryNodeFailure())
             case _: FailureReason.LocalFailure => f
           }
           case None => FailureReason.LocalFailure(UnknownNextPeer())
@@ -144,15 +143,15 @@ object OnTheFlyFunding {
 
   /** A set of funding proposals for a given payment. */
   case class Pending(proposed: Seq[Proposal], status: Status) {
-    val paymentHash = proposed.head.htlc.paymentHash
-    val expiry = proposed.map(_.htlc.expiry).min
-    val amountOut = proposed.map(_.htlc.amount).sum
+    val paymentHash: ByteVector32 = proposed.head.htlc.paymentHash
+    val expiry: CltvExpiry = proposed.map(_.htlc.expiry).min
+    val amountOut: MilliSatoshi = proposed.map(_.htlc.amount).sum
 
     /** Maximum fees that can be collected from this HTLC set. */
     def maxFees(htlcMinimum: MilliSatoshi): MilliSatoshi = proposed.map(_.maxFees(htlcMinimum)).sum
 
     /** Create commands to fail all upstream HTLCs. */
-    def createFailureCommands(implicit log: LoggingAdapter): Seq[(ByteVector32, CMD_FAIL_HTLC)] = proposed.flatMap(_.createFailureCommands(None))
+    def createFailureCommands(): Seq[(ByteVector32, CMD_FAIL_HTLC)] = proposed.flatMap(_.createFailureCommands(None))
 
     /** Create commands to fulfill all upstream HTLCs. */
     def createFulfillCommands(preimage: ByteVector32): Seq[(ByteVector32, CMD_FULFILL_HTLC)] = proposed.flatMap(_.createFulfillCommands(preimage))
@@ -215,11 +214,15 @@ object OnTheFlyFunding {
       (requestFunding.fees(feerate, isChannelCreation).total.toMilliSatoshi, None)
     }
     val cancelAmountTooLow = CancelOnTheFlyFunding(channelId, paymentHashes, s"requested amount is too low to relay HTLCs: ${requestFunding.requestedAmount} < $totalPaymentAmount")
+    val cancelMultipleHash = CancelOnTheFlyFunding(channelId, paymentHashes, s"request batches ${paymentHashes.size} distinct payments: we only support funding a single payment_hash")
+    val cancelDuplicateHash = CancelOnTheFlyFunding(channelId, paymentHashes, s"request contains the same payment_hash multiple times: ${paymentHashes.mkString(",")}")
     val cancelFeesTooLow = CancelOnTheFlyFunding(channelId, paymentHashes, s"htlc amount is too low to pay liquidity fees: $availableAmountForFees < $feesOwed")
     val cancelDisabled = CancelOnTheFlyFunding(channelId, paymentHashes, "payments paid with future HTLCs are currently disabled")
     requestFunding.paymentDetails match {
       case PaymentDetails.FromChannelBalance => ValidationResult.Accept(Set.empty, None)
       case _ if requestFunding.requestedAmount.toMilliSatoshi < totalPaymentAmount => ValidationResult.Reject(cancelAmountTooLow, paymentHashes.toSet)
+      case _ if paymentHashes.toSet.size != paymentHashes.size => ValidationResult.Reject(cancelDuplicateHash, paymentHashes.toSet)
+      case _ if paymentHashes.size > 1 => ValidationResult.Reject(cancelMultipleHash, paymentHashes.toSet)
       case _: PaymentDetails.FromChannelBalanceForFutureHtlc => ValidationResult.Accept(Set.empty, useFeeCredit_opt)
       case _: PaymentDetails.FromFutureHtlc if !cfg.isFromFutureHtlcAllowed(remoteNodeId) => ValidationResult.Reject(cancelDisabled, paymentHashes.toSet)
       case _: PaymentDetails.FromFutureHtlc if availableAmountForFees < feesOwed => ValidationResult.Reject(cancelFeesTooLow, paymentHashes.toSet)
@@ -227,6 +230,20 @@ object OnTheFlyFunding {
       case _: PaymentDetails.FromFutureHtlcWithPreimage if availableAmountForFees < feesOwed => ValidationResult.Reject(cancelFeesTooLow, paymentHashes.toSet)
       case p: PaymentDetails.FromFutureHtlcWithPreimage => ValidationResult.Accept(p.preimages.toSet, useFeeCredit_opt)
     }
+  }
+
+  private def paymentAlreadyRelayed(paymentHash: ByteVector32, commitments: Commitments): Boolean = {
+    val htlcsInCommitTxs = commitments.all.flatMap(_.localCommit.spec.htlcs.map(_.add)).toSet ++
+      commitments.all.flatMap(_.remoteCommit.spec.htlcs.map(_.add)).toSet ++
+      commitments.all.flatMap(_.nextRemoteCommit_opt).flatMap(_.spec.htlcs.map(_.add)).toSet
+    val areHtlcsBeingRelayed = commitments.changes.localChanges.all.exists {
+      case add: UpdateAddHtlc => add.paymentHash == paymentHash && add.fundingFee_opt.nonEmpty
+      case _ => false
+    }
+    val areHtlcsAlreadyRelayed = htlcsInCommitTxs.exists {
+      htlc => htlc.paymentHash == paymentHash && htlc.fundingFee_opt.nonEmpty
+    }
+    areHtlcsBeingRelayed || areHtlcsAlreadyRelayed
   }
 
   /**
@@ -242,7 +259,7 @@ object OnTheFlyFunding {
     private case class WrappedHtlcSettled(result: RES_ADD_SETTLED[Origin.Hot, HtlcResult]) extends Command
 
     sealed trait RelayResult
-    case class RelaySuccess(channelId: ByteVector32, paymentHash: ByteVector32, preimage: ByteVector32, fees: MilliSatoshi) extends RelayResult
+    case class RelaySuccess(channelId: ByteVector32, paymentHash: ByteVector32, preimage: ByteVector32, fees: MilliSatoshi, proposed: Seq[Proposal]) extends RelayResult
     case class RelayFailed(paymentHash: ByteVector32, failure: RelayFailure) extends RelayResult
 
     sealed trait RelayFailure
@@ -279,7 +296,7 @@ object OnTheFlyFunding {
     private def checkChannelState(): Behavior[Command] = {
       cmd.channel ! CMD_GET_CHANNEL_INFO(context.messageAdapter[RES_GET_CHANNEL_INFO](r => WrappedChannelInfo(r.state, r.data)))
       Behaviors.receiveMessagePartial {
-        case WrappedChannelInfo(_, data: DATA_NORMAL) if paymentAlreadyRelayed(paymentHash, data) =>
+        case WrappedChannelInfo(_, data: DATA_NORMAL) if paymentAlreadyRelayed(paymentHash, data.commitments) =>
           context.log.warn("payment is already being relayed, waiting for it to be settled")
           Behaviors.stopped
         case WrappedChannelInfo(_, data: DATA_NORMAL) =>
@@ -288,20 +305,13 @@ object OnTheFlyFunding {
               // We have already received the preimage for that payment, but we probably restarted before removing the
               // on-the-fly funding proposal from our DB. We must not relay the payment again, otherwise we will pay
               // the next node twice.
-              cmd.replyTo ! RelaySuccess(channelId, paymentHash, preimage, cmd.status.remainingFees)
+              cmd.replyTo ! RelaySuccess(channelId, paymentHash, preimage, cmd.status.remainingFees, cmd.proposed)
               Behaviors.stopped
             case None => relay(data)
           }
         case WrappedChannelInfo(state, _) =>
           cmd.replyTo ! RelayFailed(paymentHash, ChannelNotAvailable(state))
           Behaviors.stopped
-      }
-    }
-
-    private def paymentAlreadyRelayed(paymentHash: ByteVector32, data: DATA_NORMAL): Boolean = {
-      data.commitments.changes.localChanges.all.exists {
-        case add: UpdateAddHtlc => add.paymentHash == paymentHash && add.fundingFee_opt.nonEmpty
-        case _ => false
       }
     }
 
@@ -351,7 +361,7 @@ object OnTheFlyFunding {
         Behaviors.receiveMessagePartial {
           case WrappedHtlcSettled(settled) =>
             settled.result match {
-              case fulfill: HtlcResult.Fulfill => cmd.replyTo ! RelaySuccess(channelId, paymentHash, fulfill.paymentPreimage, cmd.status.remainingFees)
+              case fulfill: HtlcResult.Fulfill => cmd.replyTo ! RelaySuccess(channelId, paymentHash, fulfill.paymentPreimage, cmd.status.remainingFees, cmd.proposed)
               case fail: HtlcResult.Fail => cmd.replyTo ! RelayFailed(paymentHash, RemoteFailure(fail))
             }
             waitForSettlement(remaining - 1)
@@ -359,6 +369,84 @@ object OnTheFlyFunding {
       }
     }
 
+  }
+
+  /**
+   * This actor closes an on-the-fly funded channel for which our peer didn't correctly pay the fees.
+   * This happens when fees must be paid with HTLCs relayed after the channel funding, which the peer ignores until
+   * they reach their expiry. We must close that channel and fail the upstream HTLCs if they hadn't been relayed yet.
+   */
+  object ChannelCloserHtlcTimeout {
+    // @formatter:off
+    sealed trait Command
+    case class CloseChannel(register: akka.actor.ActorRef) extends Command
+    private case class WrappedChannelInfo(state: ChannelState, data: ChannelData) extends Command
+    private case object ChannelNotFound extends Command
+    // @formatter:on
+
+    def apply(nodeParams: NodeParams, remoteNodeId: PublicKey, expired: OnTheFlyFunding.Pending, status: OnTheFlyFunding.Status.Funded): Behavior[Command] =
+      Behaviors.setup { context =>
+        Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(status.channelId), paymentHash_opt = Some(expired.paymentHash))) {
+          Behaviors.receiveMessagePartial {
+            case cmd: CloseChannel => new ChannelCloserHtlcTimeout(nodeParams, expired, status, cmd.register, context).start()
+          }
+        }
+      }
+  }
+
+  class ChannelCloserHtlcTimeout private(nodeParams: NodeParams,
+                                         expired: OnTheFlyFunding.Pending,
+                                         status: OnTheFlyFunding.Status.Funded,
+                                         register: akka.actor.ActorRef,
+                                         context: ActorContext[ChannelCloserHtlcTimeout.Command]) {
+
+    import ChannelCloserHtlcTimeout._
+
+    def start(): Behavior[Command] = {
+      context.log.warn("force-closing channel with expired funded will_add_htlc")
+      // We start by closing the channel, which ensures that HTLCs cannot be relayed anymore.
+      register ! Register.Forward(
+        context.messageAdapter[Register.ForwardFailure[CMD_FORCECLOSE]](_ => ChannelNotFound),
+        status.channelId,
+        CMD_FORCECLOSE(akka.actor.ActorRef.noSender)
+      )
+      // Then we check if HTLCs had already been relayed to decide whether to fail upstream immediately or not.
+      register ! Register.Forward(
+        context.messageAdapter[Register.ForwardFailure[CMD_GET_CHANNEL_INFO]](_ => ChannelNotFound),
+        status.channelId,
+        CMD_GET_CHANNEL_INFO(context.messageAdapter[RES_GET_CHANNEL_INFO](r => WrappedChannelInfo(r.state, r.data)))
+      )
+      Behaviors.receiveMessagePartial {
+        case WrappedChannelInfo(_, data: ChannelDataWithCommitments) =>
+          if (!paymentAlreadyRelayed(expired.paymentHash, data.commitments)) {
+            context.log.info("payment hasn't been relayed downstream: failing the corresponding upstream payments")
+            // The payment hasn't been relayed to the downstream channel, it won't be relayed anymore since we've closed
+            // that channel. We thus need to fail the corresponding upstream payments to ensure that they don't close
+            // when the payments will timeout on their end. If the payment has been relayed to the downstream channel,
+            // the upstream payments will automatically be failed when the HTLC-timeout transaction confirms (or, if
+            // our peer publishes their HTLC-sucess, we will fulfill the upstream payments).
+            expired.createFailureCommands().foreach {
+              case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd)
+            }
+          }
+          Behaviors.stopped
+        case WrappedChannelInfo(state, _) =>
+          context.log.warn("expired channel in state={}: failing the corresponding upstream payments", state)
+          // If the channel doesn't have commitments, the HTLCs cannot have been relayed. It is thus safe to fail them.
+          expired.createFailureCommands().foreach {
+            case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd)
+          }
+          Behaviors.stopped
+        case ChannelNotFound =>
+          context.log.warn("cannot find channel actor (probably already closed): failing the corresponding upstream payments")
+          // If we cannot find the channel, the HTLCs cannot be claimed by our peer anymore, so it's safe to fail the
+          // corresponding upstream HTLCs.
+          expired.createFailureCommands().foreach {
+            case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd)
+          }
+          Behaviors.stopped
+      }
+    }
   }
 
   object Codecs {

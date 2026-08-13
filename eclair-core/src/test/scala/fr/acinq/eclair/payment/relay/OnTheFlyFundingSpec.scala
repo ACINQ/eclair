@@ -31,6 +31,7 @@ import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.io.{Peer, PeerConnection, PendingChannelsRateLimiter}
+import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilli, ToMilliSatoshiConversion, UInt64, randomBytes, randomBytes32, randomKey, randomLong}
@@ -164,10 +165,15 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       assert(failed.map(_.message.id).toSet == incomingHtlcs.map(_.id).toSet)
     }
 
-    def makeChannelData(htlcMinimum: MilliSatoshi = 1 msat, localChanges: LocalChanges = LocalChanges(Nil, Nil, Nil)): DATA_NORMAL = {
+    def makeChannelData(htlcMinimum: MilliSatoshi = 1 msat, localChanges: LocalChanges = LocalChanges(Nil, Nil, Nil), crossSignedHtlcs: Seq[(UpdateAddHtlc, Origin)] = Nil): DATA_NORMAL = {
       val commitments = CommitmentsSpec.makeCommitments(500_000_000 msat, 500_000_000 msat, nodeParams.nodeId, remoteNodeId, announcement_opt = None)
-        .modify(_.active).apply(_.map(_.modify(_.remoteCommitParams.htlcMinimum).setTo(htlcMinimum)))
+        .modify(_.active).apply(_.map(_
+          .modify(_.remoteCommitParams.htlcMinimum).setTo(htlcMinimum)
+          .modify(_.localCommit.spec.htlcs).using(_ ++ crossSignedHtlcs.map { case (add, _) => OutgoingHtlc(add) })
+          .modify(_.remoteCommit.spec.htlcs).using(_ ++ crossSignedHtlcs.map { case (add, _) => IncomingHtlc(add) })
+        ))
         .modify(_.changes.localChanges).setTo(localChanges)
+        .modify(_.originChannels).setTo(crossSignedHtlcs.map { case (add, origin) => add.id -> origin }.toMap)
       DATA_NORMAL(commitments, ShortIdAliases(Alias(42), None), None, null, SpliceStatus.NoSplice, None, None, None)
     }
   }
@@ -389,7 +395,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       upstreamChannel(60_000_000 msat, CltvExpiry(560), paymentHash2),
     )
     proposeFunding(40_000_000 msat, CltvExpiry(515), paymentHash2, upstream2.head)
-    signLiquidityPurchase(100_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash2 :: Nil))
+    val funded2 = signLiquidityPurchase(100_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash2 :: Nil))
     proposeExtraFunding(50_000_000 msat, CltvExpiry(525), paymentHash2, upstream2.last)
     register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
 
@@ -400,23 +406,47 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       upstreamChannel(45_000_000 msat, CltvExpiry(560), paymentHash3),
     ))
     proposeFunding(100_000_000 msat, CltvExpiry(512), paymentHash3, upstream3)
-    signLiquidityPurchase(100_000 sat, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(paymentHash3 :: Nil))
+    val funded3 = signLiquidityPurchase(100_000 sat, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(paymentHash3 :: Nil))
 
     // A fourth funding is proposed coming from a trampoline payment.
     val paymentHash4 = randomBytes32()
     val upstream4 = Upstream.Hot.Trampoline(List(upstreamChannel(60_000_000 msat, CltvExpiry(560), paymentHash4)))
     proposeFunding(50_000_000 msat, CltvExpiry(516), paymentHash4, upstream4)
 
-    // The first three proposals reach their CLTV expiry (the extra htlc was already failed).
+    // The first three proposals reach their CLTV expiry.
     peer ! CurrentBlockHeight(BlockHeight(515))
-    val fwds = (0 until 5).map(_ => register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]])
+    // We immediately fail the upstream HTLCs for the first proposal, which hasn't been funded yet.
+    val fails = (0 until 2).map(_ => register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]])
+    assert(fails.map { f => (f.channelId, f.message.id) }.toSet == Set(
+      (upstream1.head.add.channelId, upstream1.head.add.id),
+      (upstream1.last.add.channelId, upstream1.last.add.id),
+    ))
+    fails.foreach(f => assert(f.message.reason == FailureReason.LocalFailure(UnknownNextPeer())))
+    fails.foreach(f => assert(f.message.commit))
+    // We force-close the two channels that have been funded, and then query their state to see if HTLCs have already
+    // been relayed (the extra htlc was already failed).
+    val cmds = (0 until 4).map(_ => register.expectMsgType[Register.Forward[Command]])
+    val closeCmds = cmds.collect { case cmd if cmd.message.isInstanceOf[CMD_FORCECLOSE] => cmd }
+    assert(closeCmds.map(_.channelId).toSet == Set(funded2.channelId, funded3.channelId))
+    val channelInfo = cmds.collect { case cmd if cmd.message.isInstanceOf[CMD_GET_CHANNEL_INFO] => cmd }
+    assert(channelInfo.map(_.channelId).toSet == Set(funded2.channelId, funded3.channelId))
     register.expectNoMessage(100 millis)
-    fwds.foreach(fwd => {
-      assert(fwd.message.reason == FailureReason.LocalFailure(UnknownNextPeer()))
-      assert(fwd.message.commit)
+    channelInfo.foreach(i => i.channelId match {
+      case funded2.channelId =>
+        // The HTLC has already been relayed downstream, so we don't fail the upstream HTLC and just close the channel.
+        val fundingFee = LiquidityAds.FundingFee(funded2.purchase.fees.total.toMilliSatoshi, funded2.txId)
+        val relayedHtlc = UpdateAddHtlc(funded2.channelId, 73, 40_000_000 msat, paymentHash2, CltvExpiry(515), TestConstants.emptyOnionPacket, TlvStream(UpdateAddHtlcTlv.FundingFeeTlv(fundingFee)))
+        val channelData = makeChannelData(crossSignedHtlcs = (relayedHtlc, Origin.Hot(ActorRef.noSender, upstream2.head)) :: Nil)
+        i.message.asInstanceOf[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, i.channelId, ActorRef.noSender, NORMAL, channelData)
+        register.expectNoMessage(100 millis)
+      case _ =>
+        // The HTLC was *not* relayed downstream: we close the channel and fail the upstream HTLC.
+        val channelData = makeChannelData()
+        i.message.asInstanceOf[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, i.channelId, ActorRef.noSender, NORMAL, channelData)
+        val fails = (0 until 2).map(_ => register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]])
+        assert(fails.map { f => (f.channelId, f.message.id) }.toSet == upstream3.received.map { u => (u.add.channelId, u.add.id) }.toSet)
+        register.expectNoMessage(100 millis)
     })
-    assert(fwds.map(_.channelId).toSet == (upstream1 ++ upstream2.slice(0, 1) ++ upstream3.received).map(_.add.channelId).toSet)
-    assert(fwds.map(_.message.id).toSet == (upstream1 ++ upstream2.slice(0, 1) ++ upstream3.received).map(_.add.id).toSet)
     awaitCond(nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId).isEmpty, interval = 100 millis)
   }
 
@@ -473,22 +503,26 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // A first funding proposal is signed.
     val upstream1 = upstreamChannel(60_000_000 msat, CltvExpiry(560))
     proposeFunding(50_000_000 msat, CltvExpiry(520), upstream1.add.paymentHash, upstream1)
-    signLiquidityPurchase(75_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(upstream1.add.paymentHash :: Nil))
+    val funded1 = signLiquidityPurchase(75_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(upstream1.add.paymentHash :: Nil))
 
     // A second funding proposal is signed.
     val upstream2 = upstreamChannel(60_000_000 msat, CltvExpiry(560))
     proposeFunding(50_000_000 msat, CltvExpiry(525), upstream2.add.paymentHash, upstream2)
-    signLiquidityPurchase(80_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(upstream2.add.paymentHash :: Nil))
+    val funded2 = signLiquidityPurchase(80_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(upstream2.add.paymentHash :: Nil))
 
     // We don't fail signed proposals on disconnection.
     disconnect()
     register.expectNoMessage(100 millis)
 
-    // But if a funding proposal reaches its CLTV expiry, we fail it.
+    // But if a funding proposal reaches its CLTV expiry, we fail it and close the downstream channel.
     peer ! CurrentBlockHeight(BlockHeight(522))
-    val fwd1 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
-    assert(fwd1.channelId == upstream1.add.channelId)
-    assert(fwd1.message.id == upstream1.add.id)
+    assert(register.expectMsgType[Register.Forward[CMD_FORCECLOSE]].channelId == funded1.channelId)
+    val fwd1 = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
+    assert(fwd1.channelId == funded1.channelId)
+    fwd1.message.replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, funded1.channelId, ActorRef.noSender, NORMAL, makeChannelData())
+    val fail1 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
+    assert(fail1.channelId == upstream1.add.channelId)
+    assert(fail1.message.id == upstream1.add.id)
     register.expectNoMessage(100 millis)
     // We still have one pending proposal, so we don't stop.
     probe.expectNoMessage(100 millis)
@@ -500,10 +534,17 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     // The last funding proposal reaches its CLTV expiry.
     peerAfterRestart ! CurrentBlockHeight(BlockHeight(525))
-    val fwd2 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
-    assert(fwd2.channelId == upstream2.add.channelId)
-    assert(fwd2.message.id == upstream2.add.id)
+    assert(register.expectMsgType[Register.Forward[CMD_FORCECLOSE]].channelId == funded2.channelId)
+    val fwd2 = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
+    assert(fwd2.channelId == funded2.channelId)
+    fwd2.message.replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, funded2.channelId, ActorRef.noSender, NORMAL, makeChannelData())
+    val fail2 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
+    assert(fail2.channelId == upstream2.add.channelId)
+    assert(fail2.message.id == upstream2.add.id)
     register.expectNoMessage(100 millis)
+    probe.expectNoMessage(100 millis)
+    // After one more block, we stop the actor.
+    peerAfterRestart ! CurrentBlockHeight(BlockHeight(526))
     probe.expectTerminated(peerAfterRestart.ref)
   }
 
@@ -1058,7 +1099,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val preimage = randomBytes32()
     val paymentHash = Crypto.sha256(preimage)
     val upstream = upstreamChannel(11_000_000 msat, expiryIn, paymentHash)
-    proposeFunding(10_000_000 msat, expiryOut, paymentHash, upstream)
+    val willAdd = proposeFunding(10_000_000 msat, expiryOut, paymentHash, upstream)
     val fees = LiquidityAds.Fees(10_000 sat, 5_000 sat)
     val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(List(paymentHash)), fees = fees)
 
@@ -1073,7 +1114,8 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     awaitCond(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
 
     // When we retry relaying the HTLC, our peer fulfills it: we re-enable from_future_htlc.
-    peer ! OnTheFlyFunding.PaymentRelayer.RelaySuccess(purchase.channelId, paymentHash, preimage, fees.total.toMilliSatoshi)
+    val proposal = OnTheFlyFunding.Proposal(willAdd, upstream, Nil)
+    peer ! OnTheFlyFunding.PaymentRelayer.RelaySuccess(purchase.channelId, paymentHash, preimage, fees.total.toMilliSatoshi, proposal :: Nil)
     awaitCond(nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
   }
 
@@ -1131,9 +1173,13 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     peer ! ChannelReadyForPayments(channel.ref, remoteNodeId, purchase.channelId, purchase.txId, fundingTxIndex = 0)
     channel.expectNoMessage(100 millis)
     peer ! CurrentBlockHeight(BlockHeight(TestConstants.defaultBlockHeight))
-    val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
-    assert(fwd.channelId == upstream.add.channelId)
-    assert(fwd.message.id == upstream.add.id)
+    assert(register.expectMsgType[Register.Forward[CMD_FORCECLOSE]].channelId == purchase.channelId)
+    val fwd = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
+    assert(fwd.channelId == purchase.channelId)
+    fwd.message.replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, purchase.channelId, ActorRef.noSender, NORMAL, makeChannelData())
+    val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
+    assert(fail.channelId == upstream.add.channelId)
+    assert(fail.message.id == upstream.add.id)
     awaitCond(nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId).isEmpty, interval = 100 millis)
   }
 
@@ -1153,6 +1199,101 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     channel.expectMsgType[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, purchase.channelId, channel.ref, NORMAL, makeChannelData())
     channel.expectNoMessage(100 millis)
 
+    verifyFulfilledUpstream(upstream, preimage)
+    register.expectNoMessage(100 millis)
+  }
+
+  test("don't relay payments that have already been relayed") { f =>
+    import f._
+
+    // We create a channel, that can later be spliced.
+    connect(peer)
+    val channelId = openChannel(250_000 sat)
+
+    // We relay an on-the-fly payment.
+    val upstream = upstreamChannel(50_000_000 msat, expiryIn, paymentHash)
+    proposeFunding(50_000_000 msat, expiryOut, paymentHash, upstream)
+    val fees = LiquidityAds.Fees(1000 sat, 1000 sat)
+    val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(paymentHash :: Nil), channelId, fees, fundingTxIndex = 1)
+    peer ! ChannelReadyForPayments(channel.ref, remoteNodeId, channelId, purchase.txId, fundingTxIndex = 1)
+    channel.expectMsgType[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, channelId, channel.ref, NORMAL, makeChannelData())
+    val cmd = channel.expectMsgType[CMD_ADD_HTLC]
+    cmd.replyTo ! RES_SUCCESS(cmd, channelId)
+    val htlc = UpdateAddHtlc(channelId, randomHtlcId(), cmd.amount, paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextPathKey_opt, cmd.reputationScore.accountable, cmd.fundingFee_opt)
+    channel.expectNoMessage(100 millis)
+
+    // On restart, the HTLC has been fully cross-signed: it isn't part of our local changes anymore, it only appears in
+    // our commitments. We must still detect it, otherwise we would relay the same payment twice.
+    val peerAfterRestart = TestFSMRef(new Peer(nodeParams, remoteNodeId, new DummyOnChainWallet(), FakeChannelFactory(remoteNodeId, channel), TestProbe().ref, register.ref, TestProbe().ref, TestProbe().ref))
+    peerAfterRestart ! Peer.Init(Set.empty, nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId))
+    connect(peerAfterRestart)
+    peerAfterRestart ! ChannelReadyForPayments(channel.ref, remoteNodeId, channelId, purchase.txId, fundingTxIndex = 1)
+    val channelData = makeChannelData(crossSignedHtlcs = Seq(htlc -> Origin.Cold(Upstream.Cold(upstream))))
+    channel.expectMsgType[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, channelId, channel.ref, NORMAL, channelData)
+    channel.expectNoMessage(100 millis)
+    register.expectNoMessage(100 millis)
+  }
+
+  test("fulfill upstream when preimage is received after the htlc expiry") { f =>
+    import f._
+
+    connect(peer)
+
+    // We relay an on-the-fly payment.
+    val upstream = upstreamChannel(50_000_000 msat, expiryIn, paymentHash)
+    proposeFunding(50_000_000 msat, expiryOut, paymentHash, upstream)
+    val fees = LiquidityAds.Fees(1000 sat, 1000 sat)
+    val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash :: Nil), fees = fees)
+    peer ! ChannelReadyForPayments(channel.ref, remoteNodeId, purchase.channelId, purchase.txId, fundingTxIndex = 0)
+    channel.expectMsgType[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, purchase.channelId, channel.ref, NORMAL, makeChannelData())
+    val cmd = channel.expectMsgType[CMD_ADD_HTLC]
+    cmd.replyTo ! RES_SUCCESS(cmd, purchase.channelId)
+    val htlc = UpdateAddHtlc(purchase.channelId, randomHtlcId(), cmd.amount, paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextPathKey_opt, cmd.reputationScore.accountable, cmd.fundingFee_opt)
+    channel.expectNoMessage(100 millis)
+
+    // Our peer doesn't settle that HTLC: when it reaches its expiry, we force-close the channel and stop tracking the
+    // payment. The HTLC has been cross-signed, so we must not fail the upstream HTLCs.
+    peer ! CurrentBlockHeight(expiryOut.blockHeight)
+    assert(register.expectMsgType[Register.Forward[CMD_FORCECLOSE]].channelId == purchase.channelId)
+    val channelInfo = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
+    assert(channelInfo.channelId == purchase.channelId)
+    channelInfo.message.replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, purchase.channelId, ActorRef.noSender, NORMAL, makeChannelData(crossSignedHtlcs = Seq(htlc -> cmd.origin)))
+    register.expectNoMessage(100 millis)
+    awaitCond(nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId).isEmpty, interval = 100 millis)
+
+    // Our peer claims that HTLC on-chain by revealing the preimage: even though we've stopped tracking that payment,
+    // we must fulfill the upstream HTLCs, otherwise we've paid our peer without being paid ourselves.
+    cmd.replyTo ! RES_ADD_SETTLED(cmd.origin, remoteNodeId, htlc, HtlcResult.OnChainFulfill(preimage))
+    verifyFulfilledUpstream(upstream, preimage)
+    register.expectNoMessage(100 millis)
+  }
+
+  test("fulfill upstream when fulfill races the htlc expiry") { f =>
+    import f._
+
+    connect(peer)
+
+    // We relay an on-the-fly payment.
+    val upstream = upstreamChannel(50_000_000 msat, expiryIn, paymentHash)
+    proposeFunding(50_000_000 msat, expiryOut, paymentHash, upstream)
+    val fees = LiquidityAds.Fees(1000 sat, 1000 sat)
+    val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash :: Nil), fees = fees)
+    peer ! ChannelReadyForPayments(channel.ref, remoteNodeId, purchase.channelId, purchase.txId, fundingTxIndex = 0)
+    channel.expectMsgType[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, purchase.channelId, channel.ref, NORMAL, makeChannelData())
+    val cmd = channel.expectMsgType[CMD_ADD_HTLC]
+    cmd.replyTo ! RES_SUCCESS(cmd, purchase.channelId)
+    val htlc = UpdateAddHtlc(purchase.channelId, randomHtlcId(), cmd.amount, paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextPathKey_opt, cmd.reputationScore.accountable, cmd.fundingFee_opt)
+    channel.expectNoMessage(100 millis)
+
+    // We reach the HTLC expiry and stop tracking the payment.
+    peer ! CurrentBlockHeight(expiryOut.blockHeight)
+    assert(register.expectMsgType[Register.Forward[CMD_FORCECLOSE]].channelId == purchase.channelId)
+    val channelInfo = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
+    channelInfo.message.replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, purchase.channelId, ActorRef.noSender, NORMAL, makeChannelData(crossSignedHtlcs = Seq(htlc -> cmd.origin)))
+    awaitCond(nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId).isEmpty, interval = 100 millis)
+
+    // Our peer had actually fulfilled that HTLC off-chain, racing our expiry: we must fulfill the upstream HTLCs.
+    cmd.replyTo ! RES_ADD_SETTLED(cmd.origin, remoteNodeId, htlc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(purchase.channelId, htlc.id, preimage)))
     verifyFulfilledUpstream(upstream, preimage)
     register.expectNoMessage(100 millis)
   }
