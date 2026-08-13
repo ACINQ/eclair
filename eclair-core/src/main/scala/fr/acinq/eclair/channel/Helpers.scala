@@ -128,6 +128,10 @@ object Helpers {
       return Left(ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis))
     }
 
+    // BOLT #2: The receiving node MUST fail the channel if channel_reserve_satoshis is less than dust_limit_satoshis.
+    if (nodeParams.channelConf.dustLimit > open.channelReserveSatoshis) return Left(ChannelReserveBelowOurDustLimit(open.temporaryChannelId, open.channelReserveSatoshis, nodeParams.channelConf.dustLimit))
+    if (open.dustLimitSatoshis > open.fundingSatoshis * nodeParams.channelConf.reserveToFundingRatio) return Left(DustLimitAboveOurChannelReserve(open.temporaryChannelId, open.dustLimitSatoshis, open.fundingSatoshis * nodeParams.channelConf.reserveToFundingRatio))
+
     val channelType = ChannelTypes.areCompatible(open.temporaryChannelId, localFeatures, open.channelType_opt) match {
       case Left(f) => return Left(f)
       case Right(proposedChannelType) => proposedChannelType
