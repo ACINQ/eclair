@@ -432,6 +432,9 @@ object InteractiveTxBuilder {
               if (fundingParams.fundingAmount < fundingParams.dustLimit) {
                 replyTo ! LocalFailure(FundingAmountTooLow(channelParams.channelId, fundingParams.fundingAmount, fundingParams.dustLimit))
                 Behaviors.stopped
+              } else if (fundingParams.fundingAmount > nodeParams.channelConf.maxFundingSatoshis) {
+                replyTo ! LocalFailure(FundingAmountTooHigh(channelParams.channelId, fundingParams.fundingAmount, nodeParams.channelConf.maxFundingSatoshis))
+                Behaviors.stopped
               } else if (nextLocalBalance < 0.msat || nextRemoteBalance < 0.msat) {
                 replyTo ! LocalFailure(InvalidFundingBalances(channelParams.channelId, fundingParams.fundingAmount, nextLocalBalance, nextRemoteBalance))
                 Behaviors.stopped

@@ -87,6 +87,7 @@ object Channel {
                          maxReserveToFundingRatio: Double,
                          minFundingPublicSatoshis: Satoshi,
                          minFundingPrivateSatoshis: Satoshi,
+                         maxFundingSatoshis: Satoshi,
                          toRemoteDelay: CltvExpiryDelta,
                          maxToLocalDelay: CltvExpiryDelta,
                          minDepth: Int,
