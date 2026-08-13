@@ -193,7 +193,11 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
         case _ => None
       }
     })
-    val expiry = CltvExpiry(nodeParams.currentBlockHeight) + CltvExpiryDelta(36)
+    val minFinalExpiryDelta = cmd.invoice match {
+      case invoice: Bolt11Invoice => invoice.minFinalCltvExpiryDelta
+      case _ => CltvExpiryDelta(42)
+    }
+    val expiry = CltvExpiry(nodeParams.currentBlockHeight + 1) + minFinalExpiryDelta
     if (filtered.isEmpty) {
       context.log.warn("no usable channel with trampoline node {}", cmd.trampolineNodeId)
       cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("no usable channel with trampoline node")) :: Nil, startedAt, settledAt = TimestampMilli.now())
