@@ -601,6 +601,7 @@ object NodeParams extends Logging {
         maxReserveToFundingRatio = config.getDouble("channel.max-reserve-to-funding-ratio"),
         minFundingPublicSatoshis = Satoshi(config.getLong("channel.min-public-funding-satoshis")),
         minFundingPrivateSatoshis = Satoshi(config.getLong("channel.min-private-funding-satoshis")),
+        maxFundingSatoshis = Satoshi(config.getLong("channel.max-funding-satoshis")),
         toRemoteDelay = offeredCLTV,
         maxToLocalDelay = maxToLocalCLTV,
         minDepth = config.getInt("channel.min-depth-blocks"),
