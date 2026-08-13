@@ -80,15 +80,18 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
           }
         case Some(CURRENT_VERSION) =>
           // We clean up channels that contain an invalid channel update (e.g. missing htlc_maximum_msat).
-          statement.executeQuery("SELECT short_channel_id, channel_update_1, channel_update_2 FROM network.public_channels").map(rs => {
-            val shortChannelId = rs.getLong("short_channel_id")
-            val validChannelUpdate1 = rs.getBitVectorOpt("channel_update_1").forall(channelUpdateCodec.decode(_).isSuccessful)
-            val validChannelUpdate2 = rs.getBitVectorOpt("channel_update_2").forall(channelUpdateCodec.decode(_).isSuccessful)
-            (shortChannelId, validChannelUpdate1 && validChannelUpdate2)
-          }).collect {
-            case (scid, false) =>
-              logger.warn(s"removing channel update with scid=$scid from the network DB (update cannot be decoded)")
-              statement.executeUpdate(s"DELETE FROM network.public_channels WHERE short_channel_id=$scid")
+          val invalidChannels = statement.executeQuery("SELECT short_channel_id, channel_update_1, channel_update_2 FROM network.public_channels")
+            .map { rs =>
+              val shortChannelId = rs.getLong("short_channel_id")
+              val validChannelUpdate1 = rs.getBitVectorOpt("channel_update_1").forall(channelUpdateCodec.decode(_).isSuccessful)
+              val validChannelUpdate2 = rs.getBitVectorOpt("channel_update_2").forall(channelUpdateCodec.decode(_).isSuccessful)
+              (shortChannelId, validChannelUpdate1 && validChannelUpdate2)
+            }.collect {
+              case (scid, false) => scid
+            }.toList
+          invalidChannels.foreach { scid =>
+            logger.warn(s"removing channel update with scid=$scid from the network DB (update cannot be decoded)")
+            statement.executeUpdate(s"DELETE FROM network.public_channels WHERE short_channel_id=$scid")
           }
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }

@@ -176,13 +176,17 @@ object LiquidityAds {
 
   object WillFundRates {
     def apply(fundingRates: List[FundingRate], paymentTypes: Set[PaymentType]): WillFundRates = {
-      val indexes = paymentTypes.map(_.bitIndex)
-      // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to
-      // bytes *before* setting bits.
-      var buf = BitVector.fill(indexes.max + 1)(high = false).bytes.bits
-      indexes.foreach { i => buf = buf.set(i) }
-      val encoded = buf.reverse.bytes
-      WillFundRates(fundingRates, encoded)
+      val encodedPaymentTypes = if (paymentTypes.nonEmpty) {
+        val indexes = paymentTypes.map(_.bitIndex)
+        // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to
+        // bytes *before* setting bits.
+        var buf = BitVector.fill(indexes.max + 1)(high = false).bytes.bits
+        indexes.foreach { i => buf = buf.set(i) }
+        buf.reverse.bytes
+      } else {
+        ByteVector.empty
+      }
+      WillFundRates(fundingRates, encodedPaymentTypes)
     }
 
     private def hasPaymentType(bitIndex: Int, encoded: ByteVector): Boolean = {

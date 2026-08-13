@@ -22,7 +22,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel.{InvalidLiquidityAdsAmount, InvalidLiquidityAdsSig, MissingLiquidityAds}
 import fr.acinq.eclair.{randomBytes32, randomBytes64}
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.HexStringSyntax
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 class LiquidityAdsSpec extends AnyFunSuite {
 
@@ -60,6 +60,13 @@ class LiquidityAdsSpec extends AnyFunSuite {
           case None => assert(result.isRight)
         }
     }
+  }
+
+  test("codec round-trip funding rates with no payment types") {
+    // A remote peer can send this valid wire encoding: zero funding rates followed by a 0-length payment-type bitfield.
+    val decoded = LiquidityAds.Codecs.willFundRates.decode(hex"00000000".bits).require.value
+    assert(decoded == LiquidityAds.WillFundRates(Nil, ByteVector.empty))
+    assert(LiquidityAds.Codecs.willFundRates.encode(decoded).isSuccessful)
   }
 
 }

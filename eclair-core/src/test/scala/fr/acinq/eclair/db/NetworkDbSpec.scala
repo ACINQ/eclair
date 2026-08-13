@@ -359,6 +359,26 @@ class NetworkDbSpec extends AnyFunSuite {
     }
   }
 
+  test("remove multiple invalid channel updates on postgres restart") {
+    val dbs = TestPgDatabases()
+    try {
+      val t1 = channelTestCases(0)
+      val t2 = channelTestCases(1)
+      val db1 = dbs.network
+      db1.addChannel(t1.channel, t1.txid, t1.capacity)
+      db1.addChannel(t2.channel, t2.txid, t2.capacity)
+      val channelUpdateWithoutHtlcMax = hex"12540b6a236e21932622d61432f52913d9442cc09a1057c386119a286153f8681c66d2a0f17d32505ba71bb37c8edcfa9c11e151b2b38dae98b825eff1c040b36fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008850f00058e00015e6a782e0000009000000000000003e8000003e800000002"
+      using(dbs.connection.prepareStatement("UPDATE network.public_channels SET channel_update_1=?")) { statement =>
+        statement.setBytes(1, channelUpdateWithoutHtlcMax.toArray)
+        statement.executeUpdate()
+      }
+      val db2 = new PgNetworkDb()(dbs.datasource)
+      assert(db2.listChannels().isEmpty)
+    } finally {
+      dbs.close()
+    }
+  }
+
   test("json column reset (postgres)") {
     val dbs = TestPgDatabases()
     val db = dbs.network
