@@ -24,6 +24,7 @@ import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor3}
 import scodec.bits.Bases.Alphabets
 import scodec.bits.ByteVector
 
+import java.net.InetSocketAddress
 import java.nio.file.attribute.PosixFilePermissions
 import java.nio.file.{Files, Path, Paths}
 import java.util
@@ -58,10 +59,26 @@ class TorProtocolHandler(authentication: Authentication,
   private var address: Option[NodeAddress] = None
 
   override def receive: Receive = {
-    case Connected(_, _) =>
+    case Connected(remoteAddress, _) =>
+      checkControlAddress(remoteAddress)
       receiver = sender()
       sendCommand("PROTOCOLINFO 1")
       context become protocolInfo
+  }
+
+  /**
+   * The tor control protocol doesn't let us authenticate the server when using password authentication: we would send
+   * our password in cleartext to whatever process is listening on the control port. And since ADD_ONION also sends our
+   * onion private key in cleartext, a remote control port exposes both secrets to the network. We thus only allow
+   * password authentication on a local control port, and require safecookie otherwise, which authenticates the server.
+   */
+  private def checkControlAddress(remoteAddress: InetSocketAddress): Unit = {
+    val isLocal = Option(remoteAddress.getAddress).exists(_.isLoopbackAddress)
+    authentication match {
+      case _: Password if !isLocal => throw TorException(s"cannot use password authentication with a remote control port ($remoteAddress): use safecookie instead")
+      case _ if !isLocal => log.warning("tor control port {} is not local: our onion private key will be sent in cleartext over the network", remoteAddress)
+      case _ => ()
+    }
   }
 
   def protocolInfo: Receive = {
