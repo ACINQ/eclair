@@ -21,11 +21,11 @@ import akka.io.Tcp.Connected
 import akka.util.ByteString
 import fr.acinq.eclair.tor.TorProtocolHandler.Authentication
 import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor3}
+import fr.acinq.eclair.writeSecret
 import scodec.bits.Bases.Alphabets
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
-import java.nio.file.attribute.PosixFilePermissions
 import java.nio.file.{Files, Path, Paths}
 import java.util
 import javax.crypto.Mac
@@ -150,10 +150,7 @@ class TorProtocolHandler(authentication: Authentication,
   private def processOnionResponse(res: Map[String, String]): String = {
     val serviceId = res.getOrElse("ServiceID", throw TorException("service ID not found"))
     val privateKey = res.get("PrivateKey")
-    privateKey.foreach { pk =>
-      writeString(privateKeyPath, pk)
-      setPermissions(privateKeyPath, "rw-------")
-    }
+    privateKey.foreach(pk => writeSecret(privateKeyPath, pk))
     serviceId
   }
 
@@ -245,13 +242,6 @@ object TorProtocolHandler {
   def readString(path: Path): String = Files.readAllLines(path).get(0)
 
   def writeString(path: Path, string: String): Unit = Files.write(path, util.Arrays.asList(string))
-
-  def setPermissions(path: Path, permissionString: String): Unit =
-    try {
-      Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(permissionString))
-    } catch {
-      case _: UnsupportedOperationException => () // we are on windows
-    }
 
   def unquote(s: String): String = s
     .stripSuffix("\"")

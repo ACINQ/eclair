@@ -24,24 +24,54 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
-import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
+import java.nio.file.{Files, Path}
 
 package object eclair {
 
   val randomGen = new StrongRandom()
 
   /**
+   * Create an empty file that only the current user can read, replacing it if it already exists. The permissions must
+   * be set when the file is created: if we set them after writing to the file, there is a window during which other
+   * users can read its content.
+   */
+  def createSecretFile(path: Path): Unit = {
+    // File attributes are ignored when the file already exists, so we start from a clean slate.
+    Files.deleteIfExists(path)
+    try {
+      // The permissions are passed to the underlying open(2) call, so the file never exists with broader permissions.
+      // This also fails if someone else concurrently created that file, instead of storing our secret in their file.
+      Files.createFile(path, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
+    } catch {
+      case _: UnsupportedOperationException => Files.createFile(path) // non-POSIX file system (e.g. Windows)
+    }
+  }
+
+  /** Write a secret to a file that only the current user can read. */
+  def writeSecret(path: Path, secret: String): Unit = {
+    createSecretFile(path)
+    Files.writeString(path, secret) // the file already exists, so this doesn't change its permissions
+  }
+
+  /** Write a secret to a file that only the current user can read. */
+  def writeSecret(path: Path, secret: Array[Byte]): Unit = {
+    createSecretFile(path)
+    Files.write(path, secret) // the file already exists, so this doesn't change its permissions
+  }
+
+  /**
    * Restrict access to a file or directory to its owner, e.g. "rw-------" for a secret file or "rwx------" for a
    * directory containing secrets. This is a no-op on file systems that don't support POSIX permissions (e.g. Windows),
    * where access control is handled differently.
    */
-  def setOwnerPermissions(path: Path, permissions: String): Unit =
+  def setOwnerPermissions(path: Path, permissions: String): Unit = {
     try {
-      java.nio.file.Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(permissions))
+      Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(permissions))
     } catch {
       case _: UnsupportedOperationException => () // non-POSIX file system (e.g. Windows)
     }
+  }
 
   def randomBytes(length: Int): ByteVector = {
     val buffer = new Array[Byte](length)

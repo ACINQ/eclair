@@ -20,13 +20,14 @@ import akka.io.Tcp.Connected
 import akka.testkit.{ImplicitSender, TestActorRef}
 import akka.util.ByteString
 import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor3}
-import fr.acinq.eclair.{TestKitBaseClass, TestUtils}
+import fr.acinq.eclair.{TestKitBaseClass, TestUtils, createSecretFile, writeSecret}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
 import java.net.InetSocketAddress
-import java.nio.file.{Files, Paths}
+import java.nio.file.attribute.PosixFilePermissions
+import java.nio.file.{FileSystems, Files, Paths}
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Promise}
 
@@ -137,6 +138,25 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
     protocolHandler ! Connected(RemoteHost, LocalHost)
     // safecookie lets us verify that we're talking to the real tor server, so we allow a remote control port
     expectMsg(ByteString("PROTOCOLINFO 1\r\n"))
+  }
+
+  test("create the private key file with restricted permissions") {
+    assume(FileSystems.getDefault.supportedFileAttributeViews().contains("posix"), "this test requires a posix file system")
+    // the private key file may already exist with permissions that are too broad, for example if it was created by a
+    // previous version of eclair or restored from a backup
+    writeString(PkFilePath, "ED25519-V3:previous-key")
+    Files.setPosixFilePermissions(PkFilePath, PosixFilePermissions.fromString("rw-rw-rw-"))
+    createSecretFile(PkFilePath)
+    // the permissions are already restricted while the file is still empty: our private key is never readable by others
+    assert(Files.size(PkFilePath) == 0)
+    assert(PosixFilePermissions.toString(Files.getPosixFilePermissions(PkFilePath)) == "rw-------")
+  }
+
+  test("write private key to a file that only we can read") {
+    assume(FileSystems.getDefault.supportedFileAttributeViews().contains("posix"), "this test requires a posix file system")
+    writeSecret(PkFilePath, "ED25519-V3:private-key")
+    assert(readString(PkFilePath) == "ED25519-V3:private-key")
+    assert(PosixFilePermissions.toString(Files.getPosixFilePermissions(PkFilePath)) == "rw-------")
   }
 
   test("v2/v3 compatibility check against tor version") {
