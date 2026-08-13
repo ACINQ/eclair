@@ -790,10 +790,13 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "funding script included multiple times"))
     }
     val sharedOutput = sharedOutputs.headOption match {
-      case Some(output) => output
       case None =>
         log.warn("invalid interactive tx: funding outpoint not included")
         return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "funding outpoint not included"))
+      case Some(output) if output.amount != fundingParams.fundingAmount =>
+        log.warn("invalid interactive tx: funding amount doesn't match ({} != {})", sharedOutputs.map(_.amount).sum, fundingParams.fundingAmount)
+        return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "funding amount mismatch"))
+      case Some(output) => output
     }
 
     val sharedInput_opt = fundingParams.sharedInput_opt.map(sharedInput => {

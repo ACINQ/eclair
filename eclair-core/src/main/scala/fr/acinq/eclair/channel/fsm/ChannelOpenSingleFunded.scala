@@ -221,6 +221,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Left(ex) => handleLocalError(ex, d, None)
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
+          require(fundingTx.txOut(fundingTxOutputIndex).amount == localCommitTx.input.txOut.amount, "funding amount mismatch!")
           val remoteCommit = RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, d.remoteFirstPerCommitmentPoint)
           val localSigOfRemoteTx = d.commitmentFormat match {
             case _: SimpleTaprootChannelCommitmentFormat =>
