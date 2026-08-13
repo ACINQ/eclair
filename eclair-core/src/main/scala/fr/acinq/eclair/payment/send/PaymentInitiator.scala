@@ -119,7 +119,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       pending.get(ps.id).foreach(_.sender ! ps)
       // When directly using SendPaymentToRoute to manually send MPP payments, the paymentID of the child was used as
       // key instead of the parent payment ID.
-      ps.parts.foreach(part => pending.get(part.id).foreach(_.sender ! ps))
+      ps.parts.filter(_.id != ps.id).foreach(part => pending.get(part.id).foreach(_.sender ! ps))
       context become main(pending - ps.id -- ps.parts.map(_.id).toSet)
 
     case GetPayment(id) =>
