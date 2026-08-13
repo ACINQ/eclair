@@ -235,7 +235,11 @@ class NodeRelay private(nodeParams: NodeParams,
         stopping()
       case WrappedMultiPartPaymentSucceeded(MultiPartPaymentFSM.MultiPartPaymentSucceeded(_, parts)) =>
         context.log.info("completed incoming multi-part payment with parts={} paidAmount={}", parts.size, parts.map(_.amount).sum)
-        val upstream = Upstream.Hot.Trampoline(htlcs.toList)
+        // Note that we must filter based on the actually accepted parts, otherwise we may include extraneous HTLCs
+        // that have been failed by the MultiPartPaymentFSM.
+        val acceptedHtlcs = parts.collect { case p: MultiPartPaymentFSM.HtlcPart => (p.htlc.channelId, p.htlc.id) }.toSet
+        val acceptedUpstream = htlcs.filter(htlc => acceptedHtlcs.contains((htlc.add.channelId, htlc.add.id)))
+        val upstream = Upstream.Hot.Trampoline(acceptedUpstream.toList)
         validateRelay(nodeParams, upstream, nextPayload) match {
           case Some(failure) =>
             context.log.warn(s"rejecting trampoline payment reason=$failure")

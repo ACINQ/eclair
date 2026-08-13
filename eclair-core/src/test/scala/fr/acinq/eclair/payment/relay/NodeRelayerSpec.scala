@@ -262,6 +262,12 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val failure = FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(extra.add.amountMsat, nodeParams.currentBlockHeight))
     assert(fwd.message == CMD_FAIL_HTLC(extra.add.id, failure, Some(FailureAttributionData(extraReceivedAt, None)), commit = true))
 
+    // the extra payment is not included in the downstream payment
+    val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
+    val outgoingUpstream = outgoingCfg.upstream.asInstanceOf[Upstream.Hot.Trampoline]
+    assert(outgoingUpstream.received.map(_.add.channelId).toSet == incomingMultiPart.map(_.add.channelId).toSet)
+    mockPayFSM.expectMessageType[SendMultiPartPayment]
+
     register.expectNoMessage(100 millis)
   }
 
