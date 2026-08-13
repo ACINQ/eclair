@@ -192,6 +192,31 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.expectMsg(NoPendingPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
   }
 
+  test("clear successful payment with pre-defined route") { f =>
+    import f._
+    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), CltvExpiryDelta(18))
+    val route = PredefinedNodeRoute(finalAmount, Seq(a, b, c))
+    val request = SendPaymentToRoute(finalAmount, invoice, Nil, route, None, None)
+    sender.send(initiator, request)
+    val payment = sender.expectMsgType[SendPaymentToRouteResponse]
+    payFsm.expectMsgType[SendPaymentConfig]
+    payFsm.expectMsgType[PaymentLifecycle.SendPaymentToRoute]
+
+    val paymentSent = PaymentSent(
+      payment.parentId,
+      paymentPreimage,
+      finalAmount,
+      priv_c.publicKey,
+      Seq(PaymentPart(payment.paymentId, PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, finalAmount, 200 unixms), 0 msat, None, 100 unixms)),
+      None,
+      80 unixms)
+    payFsm.send(initiator, paymentSent)
+
+    sender.expectMsg(paymentSent)
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(payment.paymentId)))
+    sender.expectMsg(NoPendingPayment(PaymentIdentifier.PaymentUUID(payment.paymentId)))
+  }
+
   test("forward single-part payment when multi-part deactivated", Tag(Tags.DisableMPP)) { f =>
     import f._
     val finalExpiryDelta = CltvExpiryDelta(24)

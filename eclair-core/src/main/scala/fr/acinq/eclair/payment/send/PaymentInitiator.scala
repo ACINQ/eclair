@@ -115,10 +115,12 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       context become main(pending - pf.id)
     }
 
-    case ps: PaymentSent => pending.get(ps.id).foreach { pp =>
-      pp.sender ! ps
-      context become main(pending - ps.id)
-    }
+    case ps: PaymentSent =>
+      pending.get(ps.id).foreach(_.sender ! ps)
+      // When directly using SendPaymentToRoute to manually send MPP payments, the paymentID of the child was used as
+      // key instead of the parent payment ID.
+      ps.parts.foreach(part => pending.get(part.id).foreach(_.sender ! ps))
+      context become main(pending - ps.id -- ps.parts.map(_.id).toSet)
 
     case GetPayment(id) =>
       val pending_opt = id match {
