@@ -98,6 +98,13 @@ object OnTheFlyFunding {
     /** Maximum fees that can be collected from this HTLC. */
     def maxFees(htlcMinimum: MilliSatoshi): MilliSatoshi = (htlc.amount - htlcMinimum).max(0 msat)
 
+    /** Incoming HTLCs that are paying for this proposal, identified by their channel and HTLC id. */
+    def upstreamHtlcs: Set[(ByteVector32, Long)] = upstream match {
+      case _: Upstream.Local => Set.empty
+      case u: Upstream.Hot.Channel => Set((u.add.channelId, u.add.id))
+      case u: Upstream.Hot.Trampoline => u.received.map(r => (r.add.channelId, r.add.id)).toSet
+    }
+
     /** Create commands to fail all upstream HTLCs. */
     def createFailureCommands(failure_opt: Option[FailureReason]): Seq[(ByteVector32, CMD_FAIL_HTLC)] = upstream match {
       case _: Upstream.Local => Nil
@@ -149,6 +156,9 @@ object OnTheFlyFunding {
 
     /** Maximum fees that can be collected from this HTLC set. */
     def maxFees(htlcMinimum: MilliSatoshi): MilliSatoshi = proposed.map(_.maxFees(htlcMinimum)).sum
+
+    /** Incoming HTLCs that are paying for this payment, identified by their channel and HTLC id. */
+    def upstreamHtlcs: Set[(ByteVector32, Long)] = proposed.flatMap(_.upstreamHtlcs).toSet
 
     /** Create commands to fail all upstream HTLCs. */
     def createFailureCommands(): Seq[(ByteVector32, CMD_FAIL_HTLC)] = proposed.flatMap(_.createFailureCommands(None))
