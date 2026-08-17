@@ -27,6 +27,6 @@ sealed trait OnionMessageTlv extends Tlv
 
 object OnionMessageTlv {
   // We don't support any TLV for onion messages yet. Since onion messages can be spammy, we don't need to waste any
-  // ressources trying to decode unknown TLVs that we'll throw away anyway.
+  // resources trying to decode unknown TLVs that we'll throw away anyway.
   val onionMessageTlvCodec: Codec[TlvStream[OnionMessageTlv]] = provide(TlvStream.empty[OnionMessageTlv])
 }
