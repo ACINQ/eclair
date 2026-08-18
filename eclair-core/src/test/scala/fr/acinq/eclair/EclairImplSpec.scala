@@ -273,19 +273,19 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val eclair = new EclairImpl(kit)
 
-    eclair.forceClose(Left(ByteVector32.Zeroes) :: Nil, None)
+    eclair.forceClose(Left(ByteVector32.Zeroes) :: Nil, None, overrideOutdatedCommitment = false)
     register.expectMsg(Register.Forward(null, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)))
 
     eclair.bumpForceCloseFee(Left(ByteVector32.Zeroes) :: Nil, ConfirmationTarget.Priority(ConfirmationPriority.Medium))
     register.expectMsgType[Register.Forward[CMD_BUMP_FORCE_CLOSE_FEE]]
 
-    eclair.forceClose(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil, None)
+    eclair.forceClose(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil, None, overrideOutdatedCommitment = false)
     register.expectMsg(Register.ForwardShortId(null, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_FORCECLOSE(ActorRef.noSender)))
 
     eclair.bumpForceCloseFee(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil, ConfirmationTarget.Priority(ConfirmationPriority.Fast))
     register.expectMsgType[Register.ForwardShortId[CMD_BUMP_FORCE_CLOSE_FEE]]
 
-    eclair.forceClose(Left(ByteVector32.Zeroes) :: Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil, None)
+    eclair.forceClose(Left(ByteVector32.Zeroes) :: Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil, None, overrideOutdatedCommitment = false)
     register.expectMsgAllOf(
       Register.Forward(null, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)),
       Register.ForwardShortId(null, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_FORCECLOSE(ActorRef.noSender))

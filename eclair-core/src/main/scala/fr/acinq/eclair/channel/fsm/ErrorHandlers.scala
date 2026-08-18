@@ -101,6 +101,8 @@ trait ErrorHandlers extends CommonHandlers {
           case _: InvalidFundingTx =>
             // invalid funding tx in the single-funding case: we just close the channel
             goto(CLOSED) using IgnoreClosedData(d)
+          case f: ForcedLocalCommit =>
+            spendLocalCurrent(dd, maxClosingFeerate_opt, f.overrideOutdatedCommitment) sending error
           case _: ChannelException =>
             // known channel exception: we force close using our current commitment
             spendLocalCurrent(dd, maxClosingFeerate_opt) sending error
@@ -209,16 +211,19 @@ trait ErrorHandlers extends CommonHandlers {
     }
   }
 
-  def spendLocalCurrent(d: ChannelDataWithCommitments, maxClosingFeerateOverride_opt: Option[FeeratePerKw]): FSM.State[ChannelState, ChannelData] = {
+  def spendLocalCurrent(d: ChannelDataWithCommitments, maxClosingFeerateOverride_opt: Option[FeeratePerKw], overrideOutdatedCommitment: Boolean = false): FSM.State[ChannelState, ChannelData] = {
     val outdatedCommitment = d match {
       case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.isDefined => true
       case _ => false
     }
-    if (outdatedCommitment) {
+    if (outdatedCommitment && !overrideOutdatedCommitment) {
       log.warning("we have an outdated commitment: will not publish our local tx")
       stay()
     } else {
+      if (outdatedCommitment) {
+        log.warning("publishing a commitment that our peer claims is outdated: if our data isn't up-to-date, we will lose all our funds!")
+      }
       val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
       val commitment = d.commitments.latest
       log.error(s"force-closing with fundingIndex=${commitment.fundingTxIndex}")

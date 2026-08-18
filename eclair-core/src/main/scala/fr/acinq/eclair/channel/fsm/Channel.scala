@@ -2970,9 +2970,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case data: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED =>
           rollbackFundingAttempt(data.signingSession.fundingTx.tx, Nil)
           handleFastClose(c, d.channelId)
+        case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT if !c.overrideOutdatedCommitment =>
+          handleCommandError(CommandUnavailableInThisState(d.channelId, "forceclose", stateName), c)
         case data: ChannelDataWithCommitments =>
           val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
-          val failure = ForcedLocalCommit(d.channelId)
+          val failure = ForcedLocalCommit(d.channelId, c.overrideOutdatedCommitment)
           c.resetFundingTxIndex_opt match {
             case Some(resetFundingTxIndex) =>
               val isActive = data.commitments.active.exists(_.fundingTxIndex == resetFundingTxIndex)

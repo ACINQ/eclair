@@ -113,8 +113,8 @@ trait Channel {
 
   val forceClose: Route = postRequest("forceclose") { implicit t =>
     withChannelsIdentifier { channels =>
-      formFields("maxClosingFeerateSatByte".as[FeeratePerByte].?) { maxClosingFeerate_opt =>
-        complete(eclairApi.forceClose(channels, maxClosingFeerate_opt.map(_.perKw)))
+      formFields("maxClosingFeerateSatByte".as[FeeratePerByte].?, "overrideOutdatedCommitment".as[Boolean].?) { (maxClosingFeerate_opt, overrideOutdatedCommitment_opt) =>
+        complete(eclairApi.forceClose(channels, maxClosingFeerate_opt.map(_.perKw), overrideOutdatedCommitment_opt.getOrElse(false)))
       }
     }
   }

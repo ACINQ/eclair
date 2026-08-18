@@ -426,6 +426,42 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
+  test("reconnect with an outdated commitment (force-close)", Tag(IgnoreChannelUpdates)) { f =>
+    import f._
+
+    // We store the current state, then add an htlc and sign it.
+    val oldStateData = alice.stateData
+    addHtlc(250_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // We simulate a disconnection and replace alice's state with an older one.
+    disconnect(alice, bob)
+    alice.setState(OFFLINE, oldStateData)
+    val aliceOutdatedCommitTx = alice.signCommitTx()
+    reconnect(alice, bob, alice2bob, bob2alice)
+    alice2bob.expectMsgType[ChannelReestablish]
+    val reestablishB = bob2alice.expectMsgType[ChannelReestablish]
+
+    // Alice realizes that she has an outdated commitment: she asks bob to publish its commitment a
+    bob2alice.forward(alice, reestablishB)
+    alice2bob.expectMsgType[Error]
+    awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
+
+    // Alice doesn't publish her outdated commitment, and doesn't pretend that she does.
+    val sender = TestProbe()
+    alice ! CMD_FORCECLOSE(sender.ref)
+    assert(sender.expectMsgType[RES_FAILURE[CMD_FORCECLOSE, ChannelException]].t == CommandUnavailableInThisState(channelId(alice), "forceclose", WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT))
+    alice2blockchain.expectNoMessage(100 millis)
+    assert(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
+
+    // The node operator can override that behavior when they're sure that their data is up-to-date.
+    alice ! CMD_FORCECLOSE(sender.ref, overrideOutdatedCommitment = true)
+    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
+    awaitCond(alice.stateName == CLOSING)
+    val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished
+    assert(localCommitPublished.map(_.commitTx.txid).contains(aliceOutdatedCommitTx.txid))
+  }
+
   test("counterparty lies about having a more recent commitment and publishes current commitment", Tag(IgnoreChannelUpdates)) { f =>
     import f._
 
