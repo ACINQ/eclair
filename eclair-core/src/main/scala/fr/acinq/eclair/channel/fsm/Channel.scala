@@ -41,7 +41,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxFunder, InteractiveTxSigningSession}
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishReplaceableTx, SetChannelId}
 import fr.acinq.eclair.channel.publish._
-import fr.acinq.eclair.crypto.NonceGenerator
+import fr.acinq.eclair.crypto.{NonceGenerator, Sphinx}
 import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent.EventType
 import fr.acinq.eclair.db.PendingCommandsDb
@@ -580,7 +580,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           relayer ! RES_ADD_SETTLED(origin, remoteNodeId, htlc, HtlcResult.RemoteFulfill(fulfill))
           context.system.eventStream.publish(OutgoingHtlcFulfilled(fulfill))
           log.info("OutgoingHtlcFulfilled: channelId={}, id={}", fulfill.channelId.toHex, fulfill.id)
-          stay() using d.copy(commitments = commitments1)
+          checkFulfillmentPayload(fulfill, d.copy(commitments = commitments1))
         case Left(cause) => handleLocalError(cause, d, Some(fulfill))
       }
 
@@ -1605,7 +1605,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case Right((commitments1, origin, htlc)) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
           relayer ! RES_ADD_SETTLED(origin, remoteNodeId, htlc, HtlcResult.RemoteFulfill(fulfill))
-          stay() using d.copy(commitments = commitments1)
+          checkFulfillmentPayload(fulfill, d.copy(commitments = commitments1))
         case Left(cause) => handleLocalError(cause, d, Some(fulfill))
       }
 
@@ -3327,6 +3327,18 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
     }
     stay()
+  }
+
+  /**
+   * If our peer includes a fulfillment payload that is larger than what the specification allows, they are clearly
+   * malicious, so we immediately force-close. Note that we always relay the preimage upstream first, to make sure we
+   * don't lose funds.
+   */
+  private def checkFulfillmentPayload(fulfill: UpdateFulfillHtlc, d1: ChannelDataWithCommitments): State = {
+    fulfill.fulfillmentPayload_opt match {
+      case Some(payload) if payload.size > Sphinx.SuccessPacket.MAX_LENGTH => handleLocalError(InvalidFulfillmentPayload(d1.channelId, fulfill.id), d1, Some(fulfill))
+      case _ => stay() using d1
+    }
   }
 
   private def handleCommandSuccess(c: channel.Command, newData: ChannelData) = {

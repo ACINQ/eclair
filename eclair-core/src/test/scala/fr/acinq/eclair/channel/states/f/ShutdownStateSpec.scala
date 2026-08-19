@@ -35,8 +35,9 @@ import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelUpdate, ClosingComplete, ClosingSig, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelUpdate, ClosingComplete, ClosingSig, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, Shutdown, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateFulfillHtlcTlv}
+import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -221,6 +222,21 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val fulfill = UpdateFulfillHtlc(ByteVector32.Zeroes, 0, r1)
     alice ! fulfill
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.modify(_.changes.remoteChanges).setTo(initialState.commitments.changes.remoteChanges.copy(initialState.commitments.changes.remoteChanges.proposed :+ fulfill)))
+  }
+
+  test("recv UpdateFulfillHtlc (fulfillment payload too large)") { f =>
+    import f._
+    val tx = alice.signCommitTx()
+
+    // Our peer includes a fulfillment payload that is larger than what is specified in the BOLTs.
+    val payload = randomBytes(Sphinx.SuccessPacket.MAX_LENGTH + 1)
+    alice ! UpdateFulfillHtlc(ByteVector32.Zeroes, 0, r1, TlvStream(UpdateFulfillHtlcTlv.FulfillmentPayload(payload)))
+    // We relay the preimage upstream before force-closing, to make sure that we don't lose funds.
+    val forward = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFulfill]]
+    assert(forward.result.fulfillmentPayload_opt.contains(payload.take(Sphinx.SuccessPacket.MAX_LENGTH)))
+    alice2bob.expectMsgType[Error]
+    awaitCond(alice.stateName == CLOSING)
+    alice2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv UpdateFulfillHtlc (unknown htlc id)") { f =>

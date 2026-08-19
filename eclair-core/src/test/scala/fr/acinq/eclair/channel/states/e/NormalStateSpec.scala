@@ -43,7 +43,7 @@ import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelReestablishTlv, ChannelUpdate, ClosingSigned, CommitSig, CommitSigTlv, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, RevokeAndAckTlv, Shutdown, TemporaryNodeFailure, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, Warning}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelReestablishTlv, ChannelUpdate, ClosingSigned, CommitSig, CommitSigTlv, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, RevokeAndAckTlv, Shutdown, TemporaryNodeFailure, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateFulfillHtlcTlv, Warning}
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -1831,6 +1831,43 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
     alice2blockchain.expectFinalTxPublished("local-main-delayed")
     alice2blockchain.expectWatchTxConfirmed(tx.txid)
+  }
+
+  test("recv UpdateFulfillHtlc (fulfillment payload)") { f =>
+    import f._
+    val (r, htlc) = addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    bob2relayer.expectMsgType[RelayForward]
+
+    // actual test begins: bob includes a fulfillment payload of the maximum allowed size.
+    val payload = randomBytes(Sphinx.SuccessPacket.MAX_LENGTH)
+    alice ! UpdateFulfillHtlc(channelId(alice), htlc.id, r, TlvStream(UpdateFulfillHtlcTlv.FulfillmentPayload(payload)))
+    val forward = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFulfill]]
+    assert(forward.htlc == htlc)
+    assert(forward.result.fulfillmentPayload_opt.contains(payload))
+    alice2bob.expectNoMessage(100 millis)
+    assert(alice.stateName == NORMAL)
+  }
+
+  test("recv UpdateFulfillHtlc (fulfillment payload too large)") { f =>
+    import f._
+    val (r, htlc) = addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    bob2relayer.expectMsgType[RelayForward]
+    val tx = alice.signCommitTx()
+
+    // actual test begins: bob includes a fulfillment payload that is larger than what we would be able to relay.
+    val payload = randomBytes(Sphinx.SuccessPacket.MAX_LENGTH + 1)
+    alice ! UpdateFulfillHtlc(channelId(alice), htlc.id, r, TlvStream(UpdateFulfillHtlcTlv.FulfillmentPayload(payload)))
+    // We relay the preimage upstream before force-closing, to make sure that we don't lose funds.
+    val forward = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFulfill]]
+    assert(forward.htlc == htlc)
+    // We truncate the payload, since we cannot relay a larger one upstream.
+    assert(forward.result.fulfillmentPayload_opt.contains(payload.take(Sphinx.SuccessPacket.MAX_LENGTH)))
+    // Our peer is not following the specification: we force-close to make that costly for them.
+    alice2bob.expectMsgType[Error]
+    awaitCond(alice.stateName == CLOSING)
+    alice2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv UpdateFulfillHtlc (invalid preimage)") { f =>

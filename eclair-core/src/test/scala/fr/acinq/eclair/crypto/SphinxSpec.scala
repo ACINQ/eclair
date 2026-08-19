@@ -409,6 +409,48 @@ class SphinxSpec extends AnyFunSuite {
     assert(result.holdTimes == Seq(HoldTime(500 millisecond, publicKeys(0)), HoldTime(400 milliseconds, publicKeys(1)), HoldTime(300 milliseconds, publicKeys(2)), HoldTime(200 milliseconds, publicKeys(3)), HoldTime(100 milliseconds, publicKeys(4))))
   }
 
+  test("fulfillment payload size limits") {
+    // We build the onion packet to obtain the shared secrets.
+    val Success(PacketAndSecrets(packet, sharedSecrets)) = create(sessionKey, 1300, publicKeys, referencePaymentPayloads, associatedData)
+    val Right(DecryptedPacket(_, packet1, sharedSecret0)) = peel(privKeys(0), associatedData, packet)
+    val Right(DecryptedPacket(_, packet2, sharedSecret1)) = peel(privKeys(1), associatedData, packet1)
+    val Right(DecryptedPacket(_, packet3, sharedSecret2)) = peel(privKeys(2), associatedData, packet2)
+    val Right(DecryptedPacket(_, packet4, sharedSecret3)) = peel(privKeys(3), associatedData, packet3)
+    val Right(lastPacket@DecryptedPacket(_, _, sharedSecret4)) = peel(privKeys(4), associatedData, packet4)
+    assert(lastPacket.isLastPacket)
+    val intermediateSecrets = Seq(sharedSecret3, sharedSecret2, sharedSecret1, sharedSecret0)
+    def payloadOfLength(length: Int): ByteVector = if (length == 0) ByteVector.empty else randomBytes(length)
+
+    // Payloads of any size up to MAX_PAYLOAD_LENGTH can be sent and received.
+    for (payloadLength <- Seq(0, 1, 16, 1000, SuccessPacket.MAX_PAYLOAD_LENGTH - 1, SuccessPacket.MAX_PAYLOAD_LENGTH)) {
+      val payload = payloadOfLength(payloadLength)
+      val encrypted = SuccessPacket.create(sharedSecret4, payload)
+      // The recipient adds a 16-bytes mac, and the result must fit in what intermediate nodes are allowed to relay.
+      assert(encrypted.length == payloadLength + 16)
+      assert(encrypted.length <= SuccessPacket.MAX_LENGTH)
+      // Intermediate nodes don't change the size of the payload.
+      val wrapped = intermediateSecrets.foldLeft(encrypted)((current, ss) => SuccessPacket.wrap(current, ss))
+      assert(wrapped.length == encrypted.length)
+      assert(SuccessPacket.decrypt(Some(wrapped), None, sharedSecrets).fulfillmentPayload_opt.contains(payload))
+    }
+
+    // Payloads that are too large are truncated, but the result is still a valid packet: this guarantees that we cannot
+    // create a packet that our peers would reject (see Channel.checkFulfillmentPayload).
+    for (payloadLength <- Seq(SuccessPacket.MAX_PAYLOAD_LENGTH + 1, SuccessPacket.MAX_LENGTH, 2 * SuccessPacket.MAX_LENGTH)) {
+      val payload = randomBytes(payloadLength)
+      val encrypted = SuccessPacket.create(sharedSecret4, payload)
+      assert(encrypted.length == SuccessPacket.MAX_LENGTH)
+      val wrapped = intermediateSecrets.foldLeft(encrypted)((current, ss) => SuccessPacket.wrap(current, ss))
+      assert(wrapped.length == SuccessPacket.MAX_LENGTH)
+      val decrypted = SuccessPacket.decrypt(Some(wrapped), None, sharedSecrets)
+      assert(decrypted.fulfillmentPayload_opt.contains(payload.take(SuccessPacket.MAX_PAYLOAD_LENGTH)))
+    }
+
+    // If a malicious node relays a packet that is larger than what we allow, we truncate it, which makes it invalid.
+    val tooLarge = SuccessPacket.create(sharedSecret4, randomBytes(1000)) ++ randomBytes(SuccessPacket.MAX_LENGTH)
+    assert(SuccessPacket.decrypt(Some(tooLarge), None, sharedSecrets).fulfillmentPayload_opt.isEmpty)
+  }
+
   test("only some nodes in the route support attributable failures") {
     for ((payloads, packetPayloadLength) <- Seq((referencePaymentPayloads, 1300), (paymentPayloadsFull, 1300))) {
       // origin build the onion packet

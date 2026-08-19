@@ -293,6 +293,10 @@ object Sphinx extends Logging {
   case class HtlcSuccess(holdTimes: Seq[HoldTime], fulfillmentPayload_opt: Option[ByteVector], remainingAttribution_opt: Option[ByteVector])
 
   object FailurePacket {
+    // The failure payload is limited to 32kB, to leave room for attribution data and other TLVs.
+    // We silently truncate payloads larger than 32kB.
+    val MAX_LENGTH = 32_768
+
     /**
      * Create a failure packet that needs to be wrapped before being returned to the sender.
      * Each intermediate hop will add a layer of encryption and forward to the previous hop.
@@ -305,7 +309,7 @@ object Sphinx extends Logging {
      */
     def create(sharedSecret: ByteVector32, failure: FailureMessage): ByteVector = {
       val um = generateKey("um", sharedSecret)
-      val packet = FailureMessageCodecs.failureOnionCodec(Hmac256(um)).encode(failure).require.toByteVector
+      val packet = FailureMessageCodecs.failureOnionCodec(Hmac256(um)).encode(failure).require.toByteVector.take(MAX_LENGTH)
       logger.debug(s"um key: $um")
       logger.debug(s"raw error packet: ${packet.toHex}")
       packet
@@ -320,10 +324,10 @@ object Sphinx extends Logging {
      */
     def wrap(packet: ByteVector, sharedSecret: ByteVector32): ByteVector = {
       val key = generateKey("ammag", sharedSecret)
-      val stream = generateStream(key, packet.length.toInt)
+      val stream = generateStream(key, packet.length.toInt.min(MAX_LENGTH))
       logger.debug(s"ammag key: $key")
       logger.debug(s"error stream: $stream")
-      packet xor stream
+      packet.take(MAX_LENGTH) xor stream
     }
 
     /**
@@ -339,15 +343,15 @@ object Sphinx extends Logging {
      */
     def decrypt(packet: ByteVector, attribution_opt: Option[ByteVector], sharedSecrets: Seq[SharedSecret], index: Int = 1): HtlcFailure = {
       sharedSecrets match {
-        case Nil => HtlcFailure(Nil, Left(CannotDecryptFailurePacket(packet, attribution_opt)))
+        case Nil => HtlcFailure(Nil, Left(CannotDecryptFailurePacket(packet.take(MAX_LENGTH), attribution_opt)))
         case ss :: tail =>
-          val packet1 = wrap(packet, ss.secret)
+          val packet1 = wrap(packet.take(MAX_LENGTH), ss.secret)
           val attribution1_opt = attribution_opt.flatMap(attribution => Attribution.decrypt(attribution, Some(packet1), ss, sharedSecrets.length))
           val um = generateKey("um", ss.secret)
           val downstream = FailureMessageCodecs.failureOnionCodec(Hmac256(um)).decode(packet1.toBitVector) match {
             // We've identified the failing node: no need to continue decrypting.
             case Attempt.Successful(value) => HtlcFailure(Nil, Right(DecryptedFailurePacket(ss.remoteNodeId, index, value.value)))
-              // The failing node may be downstream: we keep decrypting.
+            // The failing node may be downstream: we keep decrypting.
             case _ => decrypt(packet1, attribution1_opt.map(_.downstreamAttribution), tail, index + 1)
           }
           HtlcFailure(attribution1_opt.map(_.holdTime).toSeq ++ downstream.holdTimes, downstream.failure)
@@ -356,6 +360,12 @@ object Sphinx extends Logging {
   }
 
   object SuccessPacket {
+    // The encrypted fulfillment payload that is sent on the wire is limited to 32kB, to leave room for attribution data
+    // and other TLVs. We silently truncate packets larger than 32kB.
+    val MAX_LENGTH: Int = 32_768
+    // We add a 16-bytes mac, so the plaintext payload must be slightly smaller.
+    val MAX_PAYLOAD_LENGTH: Int = MAX_LENGTH - 16
+
     /**
      * Create an encrypted fulfillment payload, that will be wrapped by each intermediate node before being returned to
      * the sender. Note that the final node (which creates this payload) does *not* apply additional wrapping since this
@@ -367,7 +377,7 @@ object Sphinx extends Logging {
      */
     def create(sharedSecret: ByteVector32, payload: ByteVector): ByteVector = {
       val key = generateKey("fulfillment", sharedSecret)
-      val (encryptedPayload, mac) = ChaCha20Poly1305.encrypt(key, zeroes(12), payload, ByteVector.empty)
+      val (encryptedPayload, mac) = ChaCha20Poly1305.encrypt(key, zeroes(12), payload.take(MAX_PAYLOAD_LENGTH), ByteVector.empty)
       encryptedPayload ++ mac
     }
 
@@ -378,8 +388,8 @@ object Sphinx extends Logging {
      */
     def wrap(payload: ByteVector, sharedSecret: ByteVector32): ByteVector = {
       val key = generateKey("ammag", sharedSecret)
-      val stream = generateStream(key, payload.length.toInt)
-      payload xor stream
+      val stream = generateStream(key, payload.length.toInt.min(MAX_LENGTH))
+      payload.take(MAX_LENGTH) xor stream
     }
 
     /**
@@ -387,18 +397,24 @@ object Sphinx extends Logging {
      * Node shared secrets are applied until we reach the recipient's shared secret, where the decryption step differs.
      * Note that malicious nodes in the route may have altered the packet, triggering a decryption failure.
      *
-     * @param payload_opt     fulfillment payload.
-     * @param attribution_opt attribution data for this success packet.
-     * @param sharedSecrets   nodes shared secrets.
-     * @param fullRoute       must be set to false when decrypting a partial route (e.g. as an intermediate trampoline).
+     * @param payload_opt            fulfillment payload.
+     * @param attribution_opt        attribution data for this success packet.
+     * @param sharedSecrets          nodes shared secrets.
+     * @param lastSecretIsRecipient  whether the last element of `sharedSecrets` belongs to the node that created the
+     *                               fulfillment payload: only that node encrypts it instead of wrapping it. This must
+     *                               be set to false when decrypting a partial route (e.g. as an intermediate
+     *                               trampoline node), and when sending a trampoline payment the trampoline onion shared
+     *                               secrets must be appended to the outer onion shared secrets for this to hold.
      */
-    def decrypt(payload_opt: Option[ByteVector], attribution_opt: Option[ByteVector], sharedSecrets: Seq[SharedSecret], fullRoute: Boolean = true): HtlcSuccess = {
+    def decrypt(payload_opt: Option[ByteVector], attribution_opt: Option[ByteVector], sharedSecrets: Seq[SharedSecret], lastSecretIsRecipient: Boolean = true): HtlcSuccess = {
+      val truncatedPayload_opt = payload_opt.map(_.take(MAX_LENGTH))
+      val truncatedAttribution_opt = attribution_opt.map(_.take(Attribution.totalLength))
       sharedSecrets match {
-        case Nil => HtlcSuccess(Nil, payload_opt, attribution_opt)
+        case Nil => HtlcSuccess(Nil, truncatedPayload_opt, truncatedAttribution_opt)
         case ss :: tail =>
           // We start by unwrapping the fulfillment payload, if provided.
-          val isFinalNode = tail.isEmpty && fullRoute
-          val unwrappedPayload_opt = payload_opt match {
+          val isFinalNode = tail.isEmpty && lastSecretIsRecipient
+          val unwrappedPayload_opt = truncatedPayload_opt match {
             case Some(payload) if isFinalNode =>
               // We decrypt the payload provided by the final node.
               val key = generateKey("fulfillment", ss.secret)
@@ -419,8 +435,8 @@ object Sphinx extends Logging {
           // allows identifying which nodes are acting maliciously, if any.
           // We keep processing the fulfillment payload recursively though, because we need to use all shared secrets
           // to decrypt it.
-          val attribution1_opt = attribution_opt.flatMap(attribution => Attribution.decrypt(attribution, if (!isFinalNode) unwrappedPayload_opt else None, ss, sharedSecrets.length))
-          val downstream = decrypt(unwrappedPayload_opt, attribution1_opt.map(_.downstreamAttribution), tail, fullRoute)
+          val attribution1_opt = truncatedAttribution_opt.flatMap(attribution => Attribution.decrypt(attribution, if (!isFinalNode) unwrappedPayload_opt else None, ss, sharedSecrets.length))
+          val downstream = decrypt(unwrappedPayload_opt, attribution1_opt.map(_.downstreamAttribution), tail, lastSecretIsRecipient)
           HtlcSuccess(attribution1_opt.map(_.holdTime).toSeq ++ downstream.holdTimes, downstream.fulfillmentPayload_opt, downstream.remainingAttribution_opt)
       }
     }
@@ -440,7 +456,8 @@ object Sphinx extends Logging {
     private val maxNumHops = 20
     private val holdTimeLength = 4
     private val hmacLength = 4 // HMACs are truncated to 4 bytes to save space
-    val totalLength: Int = maxNumHops * holdTimeLength + maxNumHops * (maxNumHops + 1) / 2 * hmacLength // = 920
+    // Attribution data uses a fixed length of 920 bytes: we silently truncate it if we receive a larger one.
+    val totalLength: Int = maxNumHops * holdTimeLength + maxNumHops * (maxNumHops + 1) / 2 * hmacLength
 
     /** Valid attribution data from one hop in the payment path. */
     case class PerHopAttribution(holdTime: HoldTime, downstreamAttribution: ByteVector) {
@@ -450,7 +467,7 @@ object Sphinx extends Logging {
     private def wrap(attributionData: ByteVector, sharedSecret: ByteVector32): ByteVector = {
       val key = generateKey("ammagext", sharedSecret)
       val stream = generateStream(key, totalLength)
-      attributionData xor stream
+      attributionData.take(totalLength) xor stream
     }
 
     /**
@@ -494,7 +511,7 @@ object Sphinx extends Logging {
      * @param payload_opt               payload that should be covered by the attribution HMACs.
      */
     def create(downstreamAttribution_opt: Option[ByteVector], payload_opt: Option[ByteVector], holdTime: FiniteDuration, sharedSecret: ByteVector32): ByteVector = {
-      val downstreamAttribution = downstreamAttribution_opt.getOrElse(zeroes(totalLength))
+      val downstreamAttribution = downstreamAttribution_opt.map(_.take(totalLength)).getOrElse(zeroes(totalLength))
       val downstreamHmacs = getHmacs(downstreamAttribution).dropRight(1).map(_.drop(1))
       val downstreamHoldTimes = downstreamAttribution.take((maxNumHops - 1) * holdTimeLength)
       val holdTimes = uint32.encode(holdTime.toMillis / 100).require.bytes ++ downstreamHoldTimes
@@ -513,7 +530,7 @@ object Sphinx extends Logging {
      * @param remainingHops number of remaining downstream nodes.
      */
     def decrypt(attribution: ByteVector, payload_opt: Option[ByteVector], sharedSecret: SharedSecret, remainingHops: Int): Option[PerHopAttribution] = {
-      val decrypted = wrap(attribution, sharedSecret.secret)
+      val decrypted = wrap(attribution.take(totalLength), sharedSecret.secret)
       val holdTime = (uint32.decode(decrypted.take(holdTimeLength).bits).require.value * 100).milliseconds
       val holdTimes = decrypted.take(maxNumHops * holdTimeLength)
       val hmacs = getHmacs(decrypted)

@@ -23,6 +23,7 @@ import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.reputation.Reputation
@@ -307,7 +308,7 @@ object HtlcResult {
   sealed trait Fulfill extends HtlcResult {
     def paymentPreimage: ByteVector32
     def fulfillmentPayload_opt: Option[ByteVector] = this match {
-      case RemoteFulfill(fulfill) => fulfill.fulfillmentPayload_opt
+      case RemoteFulfill(fulfill) => fulfill.fulfillmentPayload_opt.map(_.take(Sphinx.SuccessPacket.MAX_LENGTH))
       case _: OnChainFulfill => None
     }
   }
