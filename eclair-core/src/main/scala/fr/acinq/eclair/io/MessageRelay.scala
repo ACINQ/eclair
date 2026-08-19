@@ -124,9 +124,10 @@ private class MessageRelay(nodeParams: NodeParams,
   private def withNextNodeId(msg: OnionMessage, nextNodeId: EncodedNodeId.WithPublicKey): Behavior[Command] = {
     nextNodeId match {
       case EncodedNodeId.WithPublicKey.Plain(nodeId) if nodeId == nodeParams.nodeId =>
-        if (selfHopsCount > nodeParams.offersConfig.messagePathMinLength) {
+        if (selfHopsCount > 2 * nodeParams.offersConfig.messagePathMinLength + 1) {
           // We only include ourselves multiple times in a path when using dummy hops.
           // If we're included too many times in a path, that's most likely a remote node messing with us.
+          log.debug("too many self hops (max={})", 2 * nodeParams.offersConfig.messagePathMinLength + 1)
           val reason = TooManyDummyHops(nodeParams.offersConfig.messagePathMinLength)
           Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, reason.getClass.getSimpleName).increment()
           replyTo_opt.foreach(_ ! DroppedMessage(messageId, reason))
