@@ -612,7 +612,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == BadRequest)
         val resp = entityAs[ErrorResponse](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
-        assert(resp.error == "invoice has expired")
+        assert(resp.error == "API call failed: check logs for more details")
         eclair.send(None, 1258000 msat, any, any, any, any, any)(any[Timeout]).wasCalled(once)
       }
   }

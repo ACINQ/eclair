@@ -16,13 +16,12 @@
 
 package fr.acinq.eclair
 
-import java.io.File
-
 import akka.actor.ActorSystem
 import com.typesafe.config.{ConfigFactory, ConfigParseOptions, ConfigSyntax}
 import grizzled.slf4j.Logging
 import kamon.Kamon
 
+import java.io.File
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
 
@@ -30,11 +29,13 @@ object Boot extends App with Logging {
   try {
     val datadir = new File(sys.props.getOrElse("eclair.datadir", sys.props("user.home") + "/.eclair"))
     val config = ConfigFactory.parseString(
-      sys.env.getOrElse("AKKA_CONF", "").replace(";", "\n"),
-      ConfigParseOptions.defaults().setSyntax(ConfigSyntax.PROPERTIES))
+        sys.env.getOrElse("AKKA_CONF", "").replace(";", "\n"),
+        ConfigParseOptions.defaults().setSyntax(ConfigSyntax.PROPERTIES))
       .withFallback(ConfigFactory.parseProperties(System.getProperties))
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(ConfigFactory.load())
+    // It's unsafe to use the cluster mode with plain tcp: communications MUST be encrypted.
+    require(config.getString("akka.remote.artery.transport") == "tls-tcp", "frontend cluster communication must use tls-tcp")
 
     // the actor system name needs to be the same for all members of the cluster
     implicit val system: ActorSystem = ActorSystem("eclair-node", config)
@@ -54,7 +55,7 @@ object Boot extends App with Logging {
     case t: Throwable => onError(t)
   }
 
-  def onError(t: Throwable): Unit = {
+  private def onError(t: Throwable): Unit = {
     val errorMsg = if (t.getMessage != null) t.getMessage else t.getClass.getSimpleName
     System.err.println(s"fatal error: $errorMsg")
     logger.error(s"fatal error: $errorMsg", t)

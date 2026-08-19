@@ -319,7 +319,10 @@ private[channel] object ChannelCodecs5 {
 
     private val waitForRevCodec: Codec[WaitForRev] = ("sentAfterLocalCommitIndex" | uint64overflow).as[WaitForRev]
 
-    private val updateMessageCodec: Codec[UpdateMessage] = lengthDelimited(lightningMessageCodec.narrow[UpdateMessage](f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g))
+    private val updateMessageCodec: Codec[UpdateMessage] = lengthDelimited(lightningMessageCodec.narrow[UpdateMessage]({
+      case f: UpdateMessage => Attempt.successful(f)
+      case _ => Attempt.failure(Err("not an UpdateMessage"))
+    }, g => g))
 
     private val localChangesCodec: Codec[LocalChanges] = (
       ("proposed" | listOfN(uint16, updateMessageCodec)) ::

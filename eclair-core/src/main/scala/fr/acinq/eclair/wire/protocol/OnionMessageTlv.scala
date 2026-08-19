@@ -16,10 +16,8 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.eclair.wire.protocol.CommonCodecs.varint
-import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
 import scodec.Codec
-import scodec.codecs.discriminated
+import scodec.codecs.provide
 
 /**
  * Created by thomash on 10/09/2021.
@@ -28,5 +26,7 @@ import scodec.codecs.discriminated
 sealed trait OnionMessageTlv extends Tlv
 
 object OnionMessageTlv {
-  val onionMessageTlvCodec: Codec[TlvStream[OnionMessageTlv]] = tlvStream(discriminated[OnionMessageTlv].by(varint))
+  // We don't support any TLV for onion messages yet. Since onion messages can be spammy, we don't need to waste any
+  // resources trying to decode unknown TLVs that we'll throw away anyway.
+  val onionMessageTlvCodec: Codec[TlvStream[OnionMessageTlv]] = provide(TlvStream.empty[OnionMessageTlv])
 }
