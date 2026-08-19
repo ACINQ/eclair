@@ -29,7 +29,7 @@ import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.io.Peer.{PeerInfo, PeerInfoResponse}
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
 import fr.acinq.eclair.message.OnionMessages
-import fr.acinq.eclair.message.OnionMessages.DropReason
+import fr.acinq.eclair.message.OnionMessages.{DropReason, TooManyDummyHops}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OnionMessage
 import fr.acinq.eclair.{EncodedNodeId, Logs, NodeParams, ShortChannelId}
@@ -90,6 +90,7 @@ private class MessageRelay(nodeParams: NodeParams,
 
   import MessageRelay._
 
+  private var selfHopsCount = 0
   private val log = context.log
 
   def queryNextNodeId(msg: OnionMessage, nextNode: Either[ShortChannelId, EncodedNodeId]): Behavior[Command] = {
@@ -123,18 +124,28 @@ private class MessageRelay(nodeParams: NodeParams,
   private def withNextNodeId(msg: OnionMessage, nextNodeId: EncodedNodeId.WithPublicKey): Behavior[Command] = {
     nextNodeId match {
       case EncodedNodeId.WithPublicKey.Plain(nodeId) if nodeId == nodeParams.nodeId =>
-        OnionMessages.process(nodeParams.privateKey, msg) match {
-          case OnionMessages.DropMessage(reason) =>
-            Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, reason.getClass.getSimpleName).increment()
-            replyTo_opt.foreach(_ ! DroppedMessage(messageId, reason))
-            Behaviors.stopped
-          case OnionMessages.SendMessage(nextNode, nextMessage) =>
-            // We need to repeat the process until we identify the (real) next node, or find out that we're the recipient.
-            queryNextNodeId(nextMessage, nextNode)
-          case received: OnionMessages.ReceiveMessage =>
-            context.system.eventStream ! EventStream.Publish(received)
-            replyTo_opt.foreach(_ ! Sent(messageId))
-            Behaviors.stopped
+        if (selfHopsCount > nodeParams.offersConfig.messagePathMinLength) {
+          // We only include ourselves multiple times in a path when using dummy hops.
+          // If we're included too many times in a path, that's most likely a remote node messing with us.
+          val reason = TooManyDummyHops(nodeParams.offersConfig.messagePathMinLength)
+          Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, reason.getClass.getSimpleName).increment()
+          replyTo_opt.foreach(_ ! DroppedMessage(messageId, reason))
+          Behaviors.stopped
+        } else {
+          selfHopsCount += 1
+          OnionMessages.process(nodeParams.privateKey, msg) match {
+            case OnionMessages.DropMessage(reason) =>
+              Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, reason.getClass.getSimpleName).increment()
+              replyTo_opt.foreach(_ ! DroppedMessage(messageId, reason))
+              Behaviors.stopped
+            case OnionMessages.SendMessage(nextNode, nextMessage) =>
+              // We need to repeat the process until we identify the (real) next node, or find out that we're the recipient.
+              queryNextNodeId(nextMessage, nextNode)
+            case received: OnionMessages.ReceiveMessage =>
+              context.system.eventStream ! EventStream.Publish(received)
+              replyTo_opt.foreach(_ ! Sent(messageId))
+              Behaviors.stopped
+          }
         }
       case EncodedNodeId.WithPublicKey.Plain(nodeId) =>
         policy match {
