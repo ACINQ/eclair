@@ -2,6 +2,8 @@
 
 <insert here a high-level description of the release>
 
+We explicitly document that bitcoind should run on the same machine as eclair, or that a secure tunnel (providing encryption and authentication) must be setup between eclair and bitcoind.
+
 ## Major changes
 
 <insert changes>
