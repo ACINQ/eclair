@@ -190,6 +190,43 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMessage(100 millis)
   }
 
+  test("fail upstream HTLCs that reuse an on-the-fly funding payment_hash") { f =>
+    import f._
+
+    // Our peer has a pending on-the-fly funding proposal that was funded, and then sends us more HTLCs that reuse the
+    // same payment_hash: those additional HTLCs must be failed, otherwise our peer can force-close our upstream channels.
+    val paymentHash = randomBytes32()
+
+    val htlc_ab_1 = Seq(
+      buildHtlcIn(0, channelId_ab_1, paymentHash),
+      buildHtlcIn(1, channelId_ab_1, paymentHash),
+    )
+    val htlc_ab_2 = Seq(
+      buildHtlcIn(2, channelId_ab_2, paymentHash),
+    )
+
+    val channels = Seq(
+      ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_1, Map.empty),
+      ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_2, Map.empty)
+    )
+
+    // Only the first HTLC is paying for the on-the-fly funding proposal.
+    val upstream = Upstream.Hot.Channel(htlc_ab_1.head.add, TimestampMilli.now(), a, 0.1)
+    val pending = OnTheFlyFunding.Pending(Seq(OnTheFlyFunding.Proposal(createWillAdd(100_000 msat, paymentHash, CltvExpiry(500)), upstream, Nil)), createStatus())
+    nodeParams.db.liquidity.addPendingOnTheFlyFunding(randomKey().publicKey, pending)
+
+    val channel = TestProbe()
+    val (relayer, _) = f.createRelayer(nodeParams)
+    relayer ! PostRestartHtlcCleaner.Init(channels.map(_.withChannelKeys(nodeParams)))
+    // The HTLC that is paying for the on-the-fly funding is kept, but the other ones are failed.
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
+    channel.expectMsg(CMD_FAIL_HTLC(1, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true))
+    channel.expectNoMessage(100 millis)
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels(1).channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(1).commitments)))
+    channel.expectMsg(CMD_FAIL_HTLC(2, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true))
+    channel.expectNoMessage(100 millis)
+  }
+
   test("clean up upstream HTLCs for which we're the final recipient") { f =>
     import f._
 
