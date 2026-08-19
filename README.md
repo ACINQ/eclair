@@ -90,6 +90,11 @@ rpcworkqueue=128
 rpcclienttimeout=30
 ```
 
+:warning: We recommend running bitcoind on the same machine as your eclair node.
+:warning: If you run bitcoind on a remote machine, you MUST use a secure tunnel between bitcoind and eclair: the RPC and ZMQ events must be encrypted and authenticated.
+
+Note that bitcoind does not provide a built-in mechanism for using TLS (or another encryption protocol): it is up to the node operator to setup a secure tunnel (e.g. using ssh or wireguard).
+
 ### Installing Eclair
 
 Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful functional language that runs on the JVM, and is packaged as a ZIP archive.
