@@ -716,7 +716,8 @@ final case class DATA_CLOSING(commitments: Commitments,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               revokedCommitPublished: List[RevokedCommitPublished] = Nil,
-                              maxClosingFeerate_opt: Option[FeeratePerKw] = None) extends ChannelDataWithCommitments {
+                              maxClosingFeerate_opt: Option[FeeratePerKw] = None,
+                              remoteChannelReestablishCommitmentPoint_opt: Option[PublicKey] = None) extends ChannelDataWithCommitments {
   val spendingTxs: List[Transaction] = mutualClosePublished.map(_.tx) ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
   require(spendingTxs.nonEmpty, "there must be at least one tx published in this state")
 }
