@@ -564,7 +564,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val victimCommitTx = bob.signCommitTx()
 
     // C settles downstream, so V learns the preimage: the relayer records the fulfill command.
-    bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(channelId, CMD_FULFILL_HTLC(htlc.id, r, None, commit = true))
+    bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(channelId, CMD_FULFILL_HTLC(htlc.id, r, None, None, commit = true))
 
     val listener = TestProbe()
     bob.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
