@@ -3422,12 +3422,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         // would punish us by taking all the funds in the channel
         handleOutdatedCommitment(channelReestablish, d)
       case res: Syncing.SyncResult.LocalLateUnproven =>
-        // we believe that our db is correct and they have not proved that we're late => force-close the channel
+        // they claim our data is outdated, but without proving it: we trust our db and force-close the channel
         log.error(s"our local commitment is in sync, but counterparty says that they have a more recent remote commitment than the one we know of (they could be lying)!!! ourRemoteCommitmentNumber=${res.ourRemoteCommitmentNumber} theirCommitmentNumber=${res.theirLocalCommitmentNumber}")
         handleLocalError(ForcedLocalCommit(d.channelId), d, Some(channelReestablish))
       case res: Syncing.SyncResult.RemoteLying =>
-        // they are deliberately trying to fool us into thinking we have a late commitment.
-        // we believe that our db is correct => force-close the channel
+        // they are deliberately trying to fool us into thinking we have a late commitment: we force-close the channel
         log.error(s"counterparty claims that we have an outdated commitment, but they sent an invalid proof, so our commitment may or may not be revoked: ourLocalCommitmentNumber=${res.ourLocalCommitmentNumber} theirRemoteCommitmentNumber=${res.theirRemoteCommitmentNumber}")
         handleLocalError(ForcedLocalCommit(d.channelId), d, Some(channelReestablish))
       case SyncResult.RemoteLate =>
