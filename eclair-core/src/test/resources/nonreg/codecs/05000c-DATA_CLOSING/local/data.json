@@ -182,5 +182,5 @@
     "irrevocablySpent" : { }
   },
   "revokedCommitPublished" : [ ],
-  "remoteChannelReestablishCommitmentPoint_opt" : "020f477182a679fceef73473a051296c77f544a7d900e93f38fea2496bbd22ab4d"
+  "remoteFuturePerCommitmentPoint_opt" : "020f477182a679fceef73473a051296c77f544a7d900e93f38fea2496bbd22ab4d"
 }

@@ -217,7 +217,7 @@ trait ErrorHandlers extends CommonHandlers {
     }
   }
 
-  def spendLocalCurrent(d: ChannelDataWithCommitments, maxClosingFeerateOverride_opt: Option[FeeratePerKw], remoteChannelReestablishCommitmentPoint_opt: Option[PublicKey] = None): FSM.State[ChannelState, ChannelData] = {
+  def spendLocalCurrent(d: ChannelDataWithCommitments, maxClosingFeerateOverride_opt: Option[FeeratePerKw], remoteFuturePerCommitmentPoint_opt: Option[PublicKey] = None): FSM.State[ChannelState, ChannelData] = {
     val outdatedCommitment = d match {
       case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.isDefined => true
@@ -238,7 +238,7 @@ trait ErrorHandlers extends CommonHandlers {
         case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished), maxClosingFeerate_opt = maxClosingFeerateOverride_opt.orElse(closing.maxClosingFeerate_opt))
         case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, negotiating.closingTxProposed.flatten.map(_.unsignedTx), localCommitPublished = Some(localCommitPublished))
         case negotiating: DATA_NEGOTIATING_SIMPLE => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = negotiating.proposedClosingTxs.flatMap(_.all), mutualClosePublished = negotiating.publishedClosingTxs, localCommitPublished = Some(localCommitPublished))
-        case _ => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished), maxClosingFeerate_opt = maxClosingFeerateOverride_opt, remoteChannelReestablishCommitmentPoint_opt = remoteChannelReestablishCommitmentPoint_opt)
+        case _ => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished), maxClosingFeerate_opt = maxClosingFeerateOverride_opt, remoteFuturePerCommitmentPoint_opt = remoteFuturePerCommitmentPoint_opt)
       }
       goto(CLOSING) using nextData storing() calling doPublish(localCommitPublished, closingTxs, commitment)
     }
@@ -410,29 +410,29 @@ trait ErrorHandlers extends CommonHandlers {
         goto(CLOSING) using nextData storing() calling doPublish(revokedCommitPublished, closingTxs) sending error
       case None =>
         d match {
-        case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT =>
-          log.warning("they published a future commit (because we asked them to) in txid={}", tx.txid)
-          val (remoteCommitPublished, closingTxs) = spendRemoteCommit(d.remoteChannelReestablish.myCurrentPerCommitmentPoint, "future-remote-commit")
-          val nextData = DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
-          goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, closingTxs, d.commitments.latest)
-        case d: DATA_CLOSING if d.remoteChannelReestablishCommitmentPoint_opt.isDefined =>
-          // we force-closed because they claim we were late without proving it, but we cannot match this commit tx so far
-          // it may be so because we can be late and yet safe:
-          // - our view of our peer's commit tx really is late and we don't have their latest commitment point
-          // - but they don't know our current commitment secret so it's safe to forceclose and publish our commit tx
-          // - they have published their commit tx, which we don't recognize because we don't have their latest commitment point
-          // => this is similar to what we do in DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT: we use the commitment point from their channel_reestablish message
-          // to derive our keys and try and spend our main output from their commit tx
-          log.warning(s"remote published their commit tx txid=${tx.txid}, we had forced closed because they claim we were late without proving it")
-          val (remoteCommitPublished, closingTxs) = spendRemoteCommit(d.remoteChannelReestablishCommitmentPoint_opt.get, "maybe-future-remote-commit")
-          val nextData = d.copy(futureRemoteCommitPublished = Some(remoteCommitPublished))
-          goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, closingTxs, d.commitments.latest)
-        case _ =>
-          // the published tx doesn't seem to be a valid commitment transaction
-          log.error(s"couldn't identify txid=${tx.txid}, something very bad is going on!!!")
-          context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"funding tx ${commitment.fundingTxId} of channel ${d.channelId} was spent by an unknown transaction, indicating that your DB has lost data or your node has been breached: please contact the dev team."))
-          goto(ERR_INFORMATION_LEAK)
-      }
+          case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT =>
+            log.warning("they published a future commit (because we asked them to) in txid={}", tx.txid)
+            val (remoteCommitPublished, closingTxs) = spendRemoteCommit(d.remoteChannelReestablish.myCurrentPerCommitmentPoint, "future-remote-commit")
+            val nextData = DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
+            goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, closingTxs, d.commitments.latest)
+          case d: DATA_CLOSING if d.remoteFuturePerCommitmentPoint_opt.isDefined =>
+            // we force-closed because they claim we were late without proving it, but we cannot match this commit tx so far
+            // it may be so because we can be late and yet safe:
+            // - our view of our peer's commit tx really is late and we don't have their latest commitment point
+            // - but they don't know our current commitment secret so it's safe to forceclose and publish our commit tx
+            // - they have published their commit tx, which we don't recognize because we don't have their latest commitment point
+            // => this is similar to what we do in DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT: we use the commitment point from their channel_reestablish message
+            // to derive our keys and try and spend our main output from their commit tx
+            log.warning(s"remote published their commit tx txid=${tx.txid}, we had forced closed because they claim we were late without proving it")
+            val (remoteCommitPublished, closingTxs) = spendRemoteCommit(d.remoteFuturePerCommitmentPoint_opt.get, "maybe-future-remote-commit")
+            val nextData = d.copy(futureRemoteCommitPublished = Some(remoteCommitPublished))
+            goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, closingTxs, d.commitments.latest)
+          case _ =>
+            // the published tx doesn't seem to be a valid commitment transaction
+            log.error(s"couldn't identify txid=${tx.txid}, something very bad is going on!!!")
+            context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"funding tx ${commitment.fundingTxId} of channel ${d.channelId} was spent by an unknown transaction, indicating that your DB has lost data or your node has been breached: please contact the dev team."))
+            goto(ERR_INFORMATION_LEAK)
+        }
     }
   }
 
