@@ -404,6 +404,11 @@ object Features {
     val mandatory = 62
   }
 
+  case object OnionMessagesChannelsOnly extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_onion_messages_only_channels"
+    val mandatory = 66
+  }
+
   case object SimpleTaprootChannels extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
     val rfcName = "option_simple_taproot"
     val mandatory = 80
@@ -484,6 +489,7 @@ object Features {
     Quiescence,
     AttributionData,
     OnionMessages,
+    OnionMessagesChannelsOnly,
     ZeroFeeCommitments,
     ProvideStorage,
     ChannelType,
