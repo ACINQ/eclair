@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.internal.channel.version5
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.channel._
@@ -26,7 +26,7 @@ import fr.acinq.eclair.transactions.Transactions.{ClosingTx, ClosingTxs, InputIn
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
-import fr.acinq.eclair.wire.protocol.{LiquidityAds, UpdateAddHtlc, UpdateMessage}
+import fr.acinq.eclair.wire.protocol.{ChannelReestablish, LiquidityAds, UpdateAddHtlc, UpdateMessage}
 import fr.acinq.eclair.{FeatureSupport, Features, PermanentChannelFeature}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -508,6 +508,20 @@ private[channel] object ChannelCodecs5 {
         ("proposedClosingTxs" | listOfN(uint16, closingTxsCodec)) ::
         ("publishedClosingTxs" | listOfN(uint16, closingTxCodec))).as[DATA_NEGOTIATING_SIMPLE]
 
+    val DATA_CLOSING_0a_Codec: Codec[DATA_CLOSING] = (
+      ("commitments" | versionedCommitmentsCodec) ::
+        ("waitingSince" | blockHeight) ::
+        ("finalScriptPubKey" | lengthDelimited(bytes)) ::
+        ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
+        ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
+        ("localCommitPublished" | optional(bool8, localCommitPublishedCodec)) ::
+        ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
+        ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
+        ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
+        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec)) ::
+        ("maxClosingFeerate" | optional(bool8, feeratePerKw)) ::
+        ("remoteChannelReestablishCommitmentPoint" | provide(Option.empty[PublicKey]))).as[DATA_CLOSING]
+
     val DATA_CLOSING_Codec: Codec[DATA_CLOSING] = (
       ("commitments" | versionedCommitmentsCodec) ::
         ("waitingSince" | blockHeight) ::
@@ -519,7 +533,8 @@ private[channel] object ChannelCodecs5 {
         ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec)) ::
-        ("maxClosingFeerate" | optional(bool8, feeratePerKw))).as[DATA_CLOSING]
+        ("maxClosingFeerate" | optional(bool8, feeratePerKw)) ::
+        ("remoteChannelReestablishCommitmentPoint" | optional(bool8, publicKey))).as[DATA_CLOSING]
 
     val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
       ("commitments" | versionedCommitmentsCodec) ::
@@ -528,8 +543,9 @@ private[channel] object ChannelCodecs5 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
+    .typecase(0x0c, Codecs.DATA_CLOSING_Codec)
     .typecase(0x0b, Codecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
-    .typecase(0x0a, Codecs.DATA_CLOSING_Codec)
+    .typecase(0x0a, Codecs.DATA_CLOSING_0a_Codec)
     .typecase(0x09, Codecs.DATA_NEGOTIATING_SIMPLE_Codec)
     .typecase(0x08, Codecs.DATA_NEGOTIATING_Codec)
     .typecase(0x07, Codecs.DATA_SHUTDOWN_Codec)

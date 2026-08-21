@@ -372,7 +372,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
-  test("reconnect with an outdated commitment (but counterparty can't tell)", Tag(IgnoreChannelUpdates)) { f =>
+  def reconnectWithOutdatedCommitment(f: FixtureParam): Transaction = {
     import f._
 
     // we start by storing the current state
@@ -408,22 +408,66 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectNoMessage(100 millis)
     bob2blockchain.expectNoMessage(100 millis)
 
-    // alice realizes she has an old state when receiving Bob's reestablish
+    // bob tells alice that she's let but cannot prove it
     bob2alice.forward(alice, reestablishB)
-    // alice asks bob to publish its current commitment
+
+    // alice force-closes the channel
     val error = alice2bob.expectMsgType[Error]
-    assert(error == Error(channelId(alice), PleasePublishYourCommitment(channelId(alice)).getMessage))
+    assert(error == Error(channelId(alice), ForcedLocalCommit(channelId(alice)).getMessage))
     alice2bob.forward(bob)
+    bobCommitTx
+  }
 
-    // alice now waits for bob to publish its commitment
-    awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
+  test("reconnect with an outdated commitment (but counterparty can't tell), Alice and Bob publish their commit tx, Alice wins", Tag(IgnoreChannelUpdates)) { f =>
+    import f._
 
-    // bob is nice and publishes its commitment
+    val bobCommitTx = reconnectWithOutdatedCommitment(f)
+    awaitCond(alice.stateName == CLOSING)
+    val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    alice2blockchain.expectFinalTxPublished(localCommitPublished.commitTx.txid)
+    val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    val mainDelayedTx = alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    Transaction.correctlySpends(mainDelayedTx.tx, localCommitPublished.commitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    alice2blockchain.expectWatchTxConfirmed(localCommitPublished.commitTx.txid)
+    alice2blockchain.expectWatchOutputsSpent(Seq(mainDelayedTx.input, anchorTx.input.outPoint))
+    alice2blockchain.expectNoMessage(100 millis)
+
+    // alice is still able to spent bob's commitment if he decides to publish it anyway
     alice ! WatchFundingSpentTriggered(bobCommitTx)
-
-    // alice is able to claim its main output
     val claimMainOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    // alice wins the race
+    alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, localCommitPublished.commitTx)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, mainDelayedTx.tx)
+
+    awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("reconnect with an outdated commitment (but counterparty can't tell), Alice and Bob publish their commit tx, Bob wins", Tag(IgnoreChannelUpdates)) { f =>
+    import f._
+
+    val bobCommitTx = reconnectWithOutdatedCommitment(f)
+    awaitCond(alice.stateName == CLOSING)
+    val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    alice2blockchain.expectFinalTxPublished(localCommitPublished.commitTx.txid)
+    val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    val mainDelayedTx = alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    Transaction.correctlySpends(mainDelayedTx.tx, localCommitPublished.commitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    alice2blockchain.expectWatchTxConfirmed(localCommitPublished.commitTx.txid)
+    alice2blockchain.expectWatchOutputsSpent(Seq(mainDelayedTx.input, anchorTx.input.outPoint))
+    alice2blockchain.expectNoMessage(100 millis)
+
+    // alice is still able to spent bob's commitment if he decides to publish it anyway
+    alice ! WatchFundingSpentTriggered(bobCommitTx)
+    val claimMainOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx
+    Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    // bob wins the race
+    alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, bobCommitTx)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, claimMainOutput)
+
+    awaitCond(alice.stateName == CLOSED)
   }
 
   test("counterparty lies about having a more recent commitment and publishes current commitment", Tag(IgnoreChannelUpdates)) { f =>
@@ -440,14 +484,19 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob sends an invalid channel_reestablish
     alice2bob.expectMsgType[ChannelReestablish]
     val invalidReestablish = bob2alice.expectMsgType[ChannelReestablish].copy(nextRemoteRevocationNumber = 42)
-
-    // alice then asks bob to publish its commitment to find out if bob is lying
     bob2alice.send(alice, invalidReestablish)
-    val error = alice2bob.expectMsgType[Error]
-    assert(error == Error(channelId(alice), PleasePublishYourCommitment(channelId(alice)).getMessage))
-    // alice now waits for bob to publish its commitment
+
+    // Alice sees that claim and force-closes the channel
+    awaitCond(alice.stateName == CLOSING)
+    val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    alice2blockchain.expectFinalTxPublished(localCommitPublished.commitTx.txid)
+    val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    val mainDelayedTx = alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    val htlcTimeoutTx = alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx]
+    Transaction.correctlySpends(mainDelayedTx.tx, localCommitPublished.commitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    alice2blockchain.expectWatchTxConfirmed(localCommitPublished.commitTx.txid)
+    alice2blockchain.expectWatchOutputsSpent(Seq(mainDelayedTx.input, anchorTx.input.outPoint, htlcTimeoutTx.input.outPoint))
     alice2blockchain.expectNoMessage(100 millis)
-    awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
 
     // bob publishes the latest commitment
     alice ! WatchFundingSpentTriggered(bobCommitTx)
@@ -474,14 +523,19 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob sends an invalid channel_reestablish
     alice2bob.expectMsgType[ChannelReestablish]
     val invalidReestablish = bob2alice.expectMsgType[ChannelReestablish].copy(nextLocalCommitmentNumber = 42)
-
-    // alice then asks bob to publish its commitment to find out if bob is lying
     bob2alice.send(alice, invalidReestablish)
-    val error = alice2bob.expectMsgType[Error]
-    assert(error == Error(channelId(alice), PleasePublishYourCommitment(channelId(alice)).getMessage))
-    // alice now waits for bob to publish its commitment
+
+    // Alice sees that claim and force-closes the channel
+    awaitCond(alice.stateName == CLOSING)
+    val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    alice2blockchain.expectFinalTxPublished(localCommitPublished.commitTx.txid)
+    val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    val mainDelayedTx = alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    Transaction.correctlySpends(mainDelayedTx.tx, localCommitPublished.commitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    val htlcTimeoutTx = alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx]
+    alice2blockchain.expectWatchTxConfirmed(localCommitPublished.commitTx.txid)
+    alice2blockchain.expectWatchOutputsSpent(Seq(mainDelayedTx.input, anchorTx.input.outPoint, htlcTimeoutTx.input.outPoint))
     alice2blockchain.expectNoMessage(100 millis)
-    awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
 
     // bob publishes the revoked commitment
     alice ! WatchFundingSpentTriggered(bobRevokedCommitTx)
@@ -493,6 +547,54 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val claimRevokedOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx
     Transaction.correctlySpends(claimRevokedOutput, bobRevokedCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     assert(claimRevokedOutput.txIn.head.outPoint.index != claimMainOutput.txIn.head.outPoint.index)
+  }
+
+  /**
+   * Attacker controls both A and C in A -> V -> C, victim V is Bob here (Alice plays A).
+   * V holds an incoming HTLC from A and has learned the preimage downstream from C.
+   * V must force-close A-V before the HTLC expires, otherwise A can sweep it via the timeout path.
+   */
+  test("counterparty lies about peer being late to try and steal HTLCs", Tag(IgnoreChannelUpdates)) { f =>
+    import f._
+
+    // A offers an HTLC to V and it is cross-signed: V now holds an incoming HTLC.
+    val (r, htlc) = addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val channelId = bob.stateData.asInstanceOf[DATA_NORMAL].channelId
+    val victimCommitTx = bob.signCommitTx()
+
+    // C settles downstream, so V learns the preimage: the relayer records the fulfill command.
+    bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(channelId, CMD_FULFILL_HTLC(htlc.id, r, None, None, commit = true))
+
+    val listener = TestProbe()
+    bob.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
+
+    // A disconnects before the fulfill is cross-signed, then poisons the channel on reconnection.
+    disconnect(alice, bob)
+    reconnect(alice, bob, alice2bob, bob2alice)
+    val honest = alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    val remoteCommitIndex = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommitIndex
+    val localCommitIndex = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex
+
+    // next_remote_revocation_number is honest, so step 1 of checkSync passes; only next_local_commitment_number lies.
+    val poisoned = honest.copy(nextLocalCommitmentNumber = remoteCommitIndex + 2)
+    assert(poisoned.nextRemoteRevocationNumber == localCommitIndex)
+    alice2bob.send(bob, poisoned)
+
+    // alice claims that bob is late but does not prove it: bob force-closes the channel
+    assert(bob2alice.expectMsgType[Error] == Error(channelId, ForcedLocalCommit(channelId).getMessage))
+    awaitCond(bob.stateName == CLOSING)
+
+    val localCommitPublished = bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    bob2blockchain.expectFinalTxPublished(localCommitPublished.commitTx.txid)
+    val anchorTx = bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    val mainDelayedTx = bob2blockchain.expectFinalTxPublished("local-main-delayed")
+    Transaction.correctlySpends(mainDelayedTx.tx, localCommitPublished.commitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    bob2blockchain.expectWatchTxConfirmed(localCommitPublished.commitTx.txid)
+    bob2blockchain.expectWatchOutputsSpent(Seq(mainDelayedTx.input, anchorTx.input.outPoint))
+    bob2blockchain.expectMsgType[WatchOutputSpent]
+    bob2blockchain.expectReplaceableTxPublished[HtlcSuccessTx]
   }
 
   test("change relay fee while offline", Tag(IgnoreChannelUpdates)) { f =>
