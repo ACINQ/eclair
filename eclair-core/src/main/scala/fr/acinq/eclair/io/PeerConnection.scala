@@ -418,7 +418,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
                   log.warning("starting batch with incomplete previous batch ({}/{} received)", pending.received.size, pending.batchSize)
                   // This is a spec violation from our peer: this will likely lead to a force-close.
                   d.transport ! Warning(msg.channelId, "invalid start_batch message: the previous batch is not done yet")
-                  d.peer ! CommitSigBatch(pending.received)
+                  d.peer ! CommitSigs(pending.received)
                 case _ => ()
               }
               stay() using d.copy(commitSigBatch_opt = Some(PendingCommitSigBatch(msg.channelId, msg.batchSize, Nil)))
@@ -439,7 +439,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
                 }
               case _ =>
                 log.warning("received {} as part of a batch: we don't support batching that kind of messages", msg.getClass.getSimpleName)
-                if (pending.received.nonEmpty) d.peer ! CommitSigBatch(pending.received)
+                if (pending.received.nonEmpty) d.peer ! CommitSigs(pending.received)
                 d.peer ! msg
                 stay() using d.copy(commitSigBatch_opt = None)
             }
@@ -457,7 +457,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
                   case Some(pending) if pending.channelId != msg.channelId || pending.batchSize != batchSize =>
                     log.warning("received invalid commit_sig batch while a different batch isn't complete")
                     // This should never happen, otherwise it will likely lead to a force-close.
-                    d.peer ! CommitSigBatch(pending.received)
+                    d.peer ! CommitSigs(pending.received)
                     stay() using d.copy(legacyCommitSigBatch_opt = Some(PendingCommitSigBatch(msg.channelId, batchSize, Seq(msg))))
                   case Some(pending) =>
                     val received1 = pending.received :+ msg

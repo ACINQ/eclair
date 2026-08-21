@@ -495,6 +495,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           }
         case _: FullySignedSharedTransaction =>
           d.status match {
+            case DualFundingStatus.RbfWaitingForSigs(signingSession) if !signingSession.isConsistentWith(d.commitments) =>
+              log.warning("aborting RBF attempt: commitment number mismatch")
+              rollbackRbfAttempt(signingSession, d)
+              handleLocalError(InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId), d, Some(txSigs))
             case DualFundingStatus.RbfWaitingForSigs(signingSession) =>
               signingSession.receiveTxSigs(channelKeys, txSigs, nodeParams.currentBlockHeight) match {
                 case Left(f) =>
@@ -680,6 +684,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case s: DualFundingStatus.RbfInProgress =>
           log.debug("received their commit_sig, deferring message")
           stay() using d.copy(status = s.copy(remoteCommitSig = Some(commitSig)))
+        case DualFundingStatus.RbfWaitingForSigs(signingSession) if !signingSession.isConsistentWith(d.commitments) =>
+          log.warning("aborting RBF attempt: commitment number mismatch")
+          rollbackRbfAttempt(signingSession, d)
+          handleLocalError(InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId), d, Some(commitSig))
         case DualFundingStatus.RbfWaitingForSigs(signingSession) =>
           signingSession.receiveCommitSig(d.commitments.channelParams, channelKeys, commitSig, nodeParams.currentBlockHeight) match {
             case Left(f) =>

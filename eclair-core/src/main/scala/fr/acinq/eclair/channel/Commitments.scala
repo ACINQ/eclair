@@ -874,7 +874,13 @@ case class Commitments(channelParams: ChannelParams,
   val lastLocalLocked_opt: Option[Commitment] = active.filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).sortBy(_.fundingTxIndex).lastOption
   val lastRemoteLocked_opt: Option[Commitment] = active.filter(c => c.remoteFundingStatus == RemoteFundingStatus.Locked).sortBy(_.fundingTxIndex).lastOption
 
-  def add(commitment: Commitment): Commitments = copy(active = commitment +: active)
+  def add(commitment: Commitment): Commitments = {
+    // As part of a defense-in-depth strategy, we verify that the commitment indices always match (even though the
+    // caller should always enforce that, it's good to make it explicit here).
+    require(commitment.localCommit.index == localCommitIndex, s"cannot add commitment at localCommitIndex=${commitment.localCommit.index}, we're at localCommitIndex=$localCommitIndex")
+    require(commitment.remoteCommit.index == remoteCommitIndex, s"cannot add commitment at remoteCommitIndex=${commitment.remoteCommit.index}, we're at remoteCommitIndex=$remoteCommitIndex")
+    copy(active = commitment +: active)
+  }
 
   // @formatter:off
   def localIsQuiescent: Boolean = changes.localChanges.all.isEmpty

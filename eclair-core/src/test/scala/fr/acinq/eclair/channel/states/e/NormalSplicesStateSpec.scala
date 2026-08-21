@@ -31,9 +31,11 @@ import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
+import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.crypto.keymanager.RemoteCommitmentKeys
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner.ForgetHtlcInfos
 import fr.acinq.eclair.io.Peer.{LiquidityPurchaseAborted, LiquidityPurchaseSigned}
 import fr.acinq.eclair.payment.relay.Relayer
@@ -1965,6 +1967,153 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val channelReestablishBob = bob2alice.expectMsgType[ChannelReestablish]
     if (sendReestablish) bob2alice.forward(alice)
     (channelReestablishAlice, channelReestablishBob)
+  }
+
+  /** Simulate a splice signing session that isn't consistent with our commitments anymore. */
+  private def desynchronizeSpliceSigningSession(alice: TestFSMRef[ChannelState, ChannelData, Channel]): InteractiveTxSigningSession.WaitingForSigs = {
+    val d = alice.stateData.asInstanceOf[DATA_NORMAL]
+    val signingSession = d.spliceStatus.asInstanceOf[SpliceStatus.SpliceWaitingForSigs].signingSession
+    assert(signingSession.isConsistentWith(d.commitments))
+    // We simulate a state where our commitments moved to the next commitment numbers while this splice was being
+    // signed: the splice commitment would then use commitment numbers that we have already revoked.
+    val desynchronized = signingSession.copy(remoteCommit = signingSession.remoteCommit.copy(index = signingSession.remoteCommit.index + 1))
+    assert(!desynchronized.isConsistentWith(d.commitments))
+    alice.setState(NORMAL, d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(desynchronized)))
+    desynchronized
+  }
+
+  test("recv CommitSigBatch after receiving the splice commit_sig") { f =>
+    import f._
+
+    initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    // Alice receives Bob's commit_sig for the splice and is waiting for his tx_signatures.
+    val spliceSigBob = bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[TxSignatures] // we don't forward it yet
+
+    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    assert(aliceCommitments.active.size == 1)
+    val parentCommitment = aliceCommitments.active.head
+    val commitIndex = parentCommitment.localCommit.index
+    inside(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus) {
+      case SpliceStatus.SpliceWaitingForSigs(signingSession) =>
+        // We have already applied their commit_sig for the splice, which is created at the parent's commitment index.
+        assert(signingSession.localCommit.isRight)
+        assert(signingSession.localCommitIndex == commitIndex)
+    }
+
+    // Bob then sends a batch that includes the *next* commit_sig for the parent commitment. If Alice applied it, she
+    // would reveal the per-commitment secret for the index at which the splice commitment is being created, and Bob
+    // could claim the whole channel once the splice completes.
+    val bobKeys = bob.underlyingActor.channelKeys
+    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val aliceNextPerCommitmentPoint = alice.underlyingActor.channelKeys.commitmentPoint(commitIndex + 1)
+    val remoteKeys = RemoteCommitmentKeys(bobCommitments.channelParams, bobKeys, aliceNextPerCommitmentPoint)
+    val bobParentCommitment = bobCommitments.active.find(_.fundingTxId == parentCommitment.fundingTxId).get
+    val Right((_, parentSigBob)) = bobParentCommitment.sendCommit(bobCommitments.channelParams, bobKeys, remoteKeys, bobCommitments.changes, aliceNextPerCommitmentPoint, batchSize = 2, nextRemoteNonce_opt = None)
+    alice ! CommitSigBatch(Seq(parentSigBob, spliceSigBob))
+    // Alice force-closes instead of revoking that commitment index.
+    assert(alice2bob.expectMsgType[Error].toAscii == CommitSigCountMismatch(channelId(alice), 1, 2).getMessage)
+    alice2blockchain.expectFinalTxPublished(parentCommitment.localCommit.txId)
+  }
+
+  test("recv CommitSigBatch containing a single commit_sig while signing a splice") { f =>
+    import f._
+
+    initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    val spliceSigBob = bob2alice.expectMsgType[CommitSig]
+    val spliceTxSigsBob = bob2alice.expectMsgType[TxSignatures]
+
+    // Our peer connection flushes incomplete batches of commit_sig: when such a batch contains a single message, it
+    // must be delivered as an individual commit_sig, otherwise we would needlessly force-close the channel.
+    assert(CommitSigs(Seq(spliceSigBob)) == spliceSigBob)
+    alice ! CommitSigs(Seq(spliceSigBob))
+    alice ! spliceTxSigsBob
+    alice2bob.expectMsgType[TxSignatures]
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 2)
+  }
+
+  test("recv TxSignatures with an inconsistent splice signing session") { f =>
+    import f._
+
+    initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    val spliceTxSigsBob = bob2alice.expectMsgType[TxSignatures]
+
+    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val signingSession = desynchronizeSpliceSigningSession(alice)
+    // We must not add that commitment to our commitments, even though we have their tx_signatures.
+    alice ! spliceTxSigsBob
+    val expected = InvalidCommitmentNumber(channelId(alice), signingSession.fundingTxId)
+    assert(alice2bob.expectMsgType[Error].toAscii == expected.getMessage)
+    alice2blockchain.expectFinalTxPublished(aliceCommitments.latest.localCommit.txId)
+  }
+
+  test("reconnect with an inconsistent splice signing session") { f =>
+    import f._
+
+    initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[TxSignatures]
+
+    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val signingSession = desynchronizeSpliceSigningSession(alice)
+    disconnect(f)
+    reconnect(f)
+
+    // We abort the splice attempt instead of resuming it at commitment numbers that we may have revoked.
+    val expected = InvalidCommitmentNumber(channelId(alice), signingSession.fundingTxId)
+    // Note that we also retransmit channel_ready, so we look for our tx_abort in the messages we send.
+    val txAbort = alice2bob.fishForSpecificMessage() { case msg: TxAbort => msg }
+    assert(txAbort.toAscii == expected.getMessage)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.SpliceAborted)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+  }
+
+  test("recv CommitSigBatch including the parent commitment while signing a splice") { f =>
+    import f._
+
+    initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    val spliceSigBob = bob2alice.expectMsgType[CommitSig]
+    bob2alice.expectMsgType[TxSignatures]
+
+    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    assert(aliceCommitments.active.size == 1)
+    val parentCommitment = aliceCommitments.active.head
+    val commitIndex = parentCommitment.localCommit.index
+    val signingSession = alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.asInstanceOf[SpliceStatus.SpliceWaitingForSigs].signingSession
+    // The splice commitment is being signed at the same commitment index as its parent.
+    assert(signingSession.localCommitIndex == commitIndex)
+
+    // Instead of sending his commit_sig for the splice individually, Bob includes the *next* commit_sig for the parent
+    // commitment as well, which would desynchronize the parent and splice commitments.
+    val bobKeys = bob.underlyingActor.channelKeys
+    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val aliceNextPerCommitmentPoint = alice.underlyingActor.channelKeys.commitmentPoint(commitIndex + 1)
+    assert(bobCommitments.remoteNextCommitInfo == Right(aliceNextPerCommitmentPoint))
+    val remoteKeys = RemoteCommitmentKeys(bobCommitments.channelParams, bobKeys, aliceNextPerCommitmentPoint)
+    val bobParentCommitment = bobCommitments.active.find(_.fundingTxId == parentCommitment.fundingTxId).get
+    val Right((_, parentSigBob)) = bobParentCommitment.sendCommit(bobCommitments.channelParams, bobKeys, remoteKeys, bobCommitments.changes, aliceNextPerCommitmentPoint, batchSize = 2, nextRemoteNonce_opt = None)
+    assert(parentSigBob.fundingTxId_opt.contains(parentCommitment.fundingTxId))
+    // Bob sends that commit_sig as a batch, which must not be applied to the parent commitment while a splice is being
+    // signed: otherwise Alice would revoke the commitment index that the splice commitment is being created at.
+    alice ! CommitSigBatch(Seq(parentSigBob, spliceSigBob))
+    // Alice immediately force-closes.
+    assert(alice2bob.expectMsgType[Error].toAscii == CommitSigCountMismatch(channelId(alice), 1, 2).getMessage)
+    alice2blockchain.expectFinalTxPublished(aliceCommitments.latest.localCommit.txId)
   }
 
   test("disconnect (tx_complete not received)") { f =>
