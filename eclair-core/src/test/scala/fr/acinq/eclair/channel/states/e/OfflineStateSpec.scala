@@ -558,7 +558,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     // We simulate a pending fulfill
-    bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(initialState.channelId, CMD_FULFILL_HTLC(htlc.id, r, None, commit = true))
+    bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(initialState.channelId, CMD_FULFILL_HTLC(htlc.id, r, None, None, commit = true))
 
     // then we reconnect them
     reconnect(alice, bob, alice2bob, bob2alice)
@@ -589,7 +589,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     // We simulate a pending fulfill
-    bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(initialState.channelId, CMD_FULFILL_HTLC(htlc.id, r, None, commit = true))
+    bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(initialState.channelId, CMD_FULFILL_HTLC(htlc.id, r, None, None, commit = true))
 
     // then we reconnect them
     reconnect(alice, bob, alice2bob, bob2alice)
@@ -627,7 +627,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // We simulate a pending fulfill on that HTLC but not relayed.
     // When it is close to expiring upstream, we should close the channel.
-    bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(initialState.channelId, CMD_FULFILL_HTLC(htlc.id, r, None, commit = true))
+    bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(initialState.channelId, CMD_FULFILL_HTLC(htlc.id, r, None, None, commit = true))
     bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - bob.underlyingActor.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
 
     val ChannelErrorOccurred(_, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]

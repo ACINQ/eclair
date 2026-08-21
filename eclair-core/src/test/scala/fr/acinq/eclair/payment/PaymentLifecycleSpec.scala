@@ -847,7 +847,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     sender.send(paymentFSM, addCompleted(HtlcResult.OnChainFulfill(defaultPaymentPreimage)))
     val paymentOK = sender.expectMsgType[PaymentSent]
-    val PaymentSent(_, paymentOK.paymentPreimage, finalAmount, _, PaymentPart(_, part, fee, _, _) :: Nil, _, _) = eventListener.expectMsgType[PaymentSent]
+    val PaymentSent(_, paymentOK.paymentPreimage, finalAmount, _, PaymentPart(_, part, fee, _, _) :: Nil, _, _, _) = eventListener.expectMsgType[PaymentSent]
     assert(part.amount == request.amount)
     assert(finalAmount == defaultAmountMsat)
 

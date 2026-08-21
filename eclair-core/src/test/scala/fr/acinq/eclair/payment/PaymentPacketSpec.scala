@@ -39,7 +39,7 @@ import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommi
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampMilli, TimestampMilliLong, TimestampSecondLong, UInt64, nodeFee, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampMilli, TimestampMilliLong, TimestampSecondLong, UInt64, nodeFee, randomBytes, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -643,6 +643,228 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(failure.isInstanceOf[FinalIncorrectCltvExpiry])
   }
 
+  test("build htlc success fulfillment payload") {
+    // a -> b -> c -> d -> e
+    val recipient = ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret, upgradeAccountability = false)
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, hops, None), recipient, Reputation.Score.max(accountable = false))
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, amount_ab, paymentHash, expiry_ab, payment.cmd.onion, None, accountable = false, None)
+    val Right(ChannelRelayPacket(_, _, packet_c, _)) = decrypt(add_b, priv_b.privateKey, Features.empty)
+    val add_c = UpdateAddHtlc(randomBytes32(), 1, amount_bc, paymentHash, expiry_bc, packet_c, None, accountable = false, None)
+    val Right(ChannelRelayPacket(_, _, packet_d, _)) = decrypt(add_c, priv_c.privateKey, Features.empty)
+    val add_d = UpdateAddHtlc(randomBytes32(), 2, amount_cd, paymentHash, expiry_cd, packet_d, None, accountable = false, None)
+    val Right(ChannelRelayPacket(_, _, packet_e, _)) = decrypt(add_d, priv_d.privateKey, Features.empty)
+    val add_e = UpdateAddHtlc(randomBytes32(), 3, amount_de, paymentHash, expiry_de, packet_e, None, accountable = false, None)
+    val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features.empty)
+    assert(payload_e.isInstanceOf[FinalPayload.Standard])
+
+    // e fulfills the payment and includes a fulfillment payload
+    val cmd_e = CMD_FULFILL_HTLC(add_e.id, paymentPreimage, Some(randomBytes(256)), Some(FulfillAttributionData(670 unixms, None, None)))
+    val fulfill_e = buildHtlcFulfill(priv_e.privateKey, useAttributionData = true, cmd_e, add_e, now = 800 unixms)
+    val cmd_d = CMD_FULFILL_HTLC(add_d.id, paymentPreimage, fulfill_e.fulfillmentPayload_opt, Some(FulfillAttributionData(650 unixms, None, fulfill_e.attribution_opt)))
+    val fulfill_d = buildHtlcFulfill(priv_d.privateKey, useAttributionData = true, cmd_d, add_d, now = 810 unixms)
+    val cmd_c = CMD_FULFILL_HTLC(add_c.id, paymentPreimage, fulfill_d.fulfillmentPayload_opt, Some(FulfillAttributionData(560 unixms, None, fulfill_d.attribution_opt)))
+    val fulfill_c = buildHtlcFulfill(priv_c.privateKey, useAttributionData = true, cmd_c, add_c, now = 815 unixms)
+    val cmd_b = CMD_FULFILL_HTLC(add_b.id, paymentPreimage, fulfill_c.fulfillmentPayload_opt, Some(FulfillAttributionData(490 unixms, None, fulfill_c.attribution_opt)))
+    val fulfill_b = buildHtlcFulfill(priv_b.privateKey, useAttributionData = true, cmd_b, add_b, now = 830 unixms)
+    val successDetails = Sphinx.SuccessPacket.decrypt(fulfill_b.fulfillmentPayload_opt, fulfill_b.attribution_opt, payment.sharedSecrets)
+    assert(successDetails.fulfillmentPayload_opt == cmd_e.fulfillmentPayload_opt)
+    assert(successDetails.holdTimes == Seq(HoldTime(300 millis, b), HoldTime(200 millis, c), HoldTime(100 millis, d), HoldTime(100 millis, e)))
+  }
+
+  test("build htlc success fulfillment payload (malicious intermediate node)") {
+    // a -> b -> c -> d -> e
+    val recipient = ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret, upgradeAccountability = false)
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, hops, None), recipient, Reputation.Score.max(accountable = false))
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, amount_ab, paymentHash, expiry_ab, payment.cmd.onion, None, accountable = false, None)
+    val Right(ChannelRelayPacket(_, _, packet_c, _)) = decrypt(add_b, priv_b.privateKey, Features.empty)
+    val add_c = UpdateAddHtlc(randomBytes32(), 1, amount_bc, paymentHash, expiry_bc, packet_c, None, accountable = false, None)
+    val Right(ChannelRelayPacket(_, _, packet_d, _)) = decrypt(add_c, priv_c.privateKey, Features.empty)
+    val add_d = UpdateAddHtlc(randomBytes32(), 2, amount_cd, paymentHash, expiry_cd, packet_d, None, accountable = false, None)
+    val Right(ChannelRelayPacket(_, _, packet_e, _)) = decrypt(add_d, priv_d.privateKey, Features.empty)
+    val add_e = UpdateAddHtlc(randomBytes32(), 3, amount_de, paymentHash, expiry_de, packet_e, None, accountable = false, None)
+    val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features.empty)
+    assert(payload_e.isInstanceOf[FinalPayload.Standard])
+
+    // e fulfills the payment and includes a fulfillment payload
+    val cmd_e = CMD_FULFILL_HTLC(add_e.id, paymentPreimage, Some(randomBytes(256)), Some(FulfillAttributionData(670 unixms, None, None)))
+    val fulfill_e = buildHtlcFulfill(priv_e.privateKey, useAttributionData = true, cmd_e, add_e, now = 800 unixms)
+    val cmd_d = CMD_FULFILL_HTLC(add_d.id, paymentPreimage, fulfill_e.fulfillmentPayload_opt, Some(FulfillAttributionData(650 unixms, None, fulfill_e.attribution_opt)))
+    // d removes attribution data and modifies the fulfillment payload
+    val fulfill_d = buildHtlcFulfill(priv_d.privateKey, useAttributionData = true, cmd_d, add_d, now = 810 unixms).copy(
+      tlvStream = TlvStream(UpdateFulfillHtlcTlv.FulfillmentPayload(randomBytes(256)))
+    )
+    val cmd_c = CMD_FULFILL_HTLC(add_c.id, paymentPreimage, fulfill_d.fulfillmentPayload_opt, Some(FulfillAttributionData(560 unixms, None, fulfill_d.attribution_opt)))
+    val fulfill_c = buildHtlcFulfill(priv_c.privateKey, useAttributionData = true, cmd_c, add_c, now = 815 unixms)
+    val cmd_b = CMD_FULFILL_HTLC(add_b.id, paymentPreimage, fulfill_c.fulfillmentPayload_opt, Some(FulfillAttributionData(490 unixms, None, fulfill_c.attribution_opt)))
+    val fulfill_b = buildHtlcFulfill(priv_b.privateKey, useAttributionData = true, cmd_b, add_b, now = 830 unixms)
+    val successDetails = Sphinx.SuccessPacket.decrypt(fulfill_b.fulfillmentPayload_opt, fulfill_b.attribution_opt, payment.sharedSecrets)
+    // a can attribute the issue to either c or d because it is missing attribution data after c
+    assert(successDetails.fulfillmentPayload_opt.isEmpty)
+    assert(successDetails.holdTimes == Seq(HoldTime(300 millis, b), HoldTime(200 millis, c)))
+  }
+
+  test("build htlc success fulfillment payload (blinded payment)") {
+    // a -> b -> c -> d -> e, blinded after c
+    val (_, route, recipient) = longBlindedHops(hex"0451")
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max(accountable = false))
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextPathKey_opt, accountable = false, payment.cmd.fundingFee_opt)
+    val Right(ChannelRelayPacket(_, _, packet_c, _)) = decrypt(add_b, priv_b.privateKey, Features.empty)
+    val add_c = UpdateAddHtlc(randomBytes32(), 1, amount_bc, paymentHash, expiry_bc, packet_c, None, accountable = false, None)
+    val Right(ChannelRelayPacket(_, payload_c, packet_d, _)) = decrypt(add_c, priv_c.privateKey, Features(RouteBlinding -> Optional))
+    val pathKey_d = payload_c.asInstanceOf[IntermediatePayload.ChannelRelay.Blinded].nextPathKey
+    val add_d = UpdateAddHtlc(randomBytes32(), 2, amount_cd, paymentHash, expiry_cd, packet_d, Some(pathKey_d), accountable = false, None)
+    val Right(ChannelRelayPacket(_, payload_d, packet_e, _)) = decrypt(add_d, priv_d.privateKey, Features(RouteBlinding -> Optional))
+    val pathKey_e = payload_d.asInstanceOf[IntermediatePayload.ChannelRelay.Blinded].nextPathKey
+    val add_e = UpdateAddHtlc(randomBytes32(), 3, amount_de, paymentHash, expiry_de, packet_e, Some(pathKey_e), accountable = false, None)
+    val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features(RouteBlinding -> Optional))
+    assert(payload_e.isInstanceOf[FinalPayload.Blinded])
+
+    // all nodes include the fulfillment payload, even though attribution data is not included inside the blinded path
+    val cmd_e = CMD_FULFILL_HTLC(add_e.id, paymentPreimage, Some(randomBytes(256)), Some(FulfillAttributionData(820 unixms, None, None)))
+    val fulfill_e = buildHtlcFulfill(priv_e.privateKey, useAttributionData = true, cmd_e, add_e, now = 850 unixms)
+    assert(fulfill_e.attribution_opt.isEmpty)
+    assert(fulfill_e.fulfillmentPayload_opt.nonEmpty)
+    val cmd_d = CMD_FULFILL_HTLC(add_d.id, paymentPreimage, fulfill_e.fulfillmentPayload_opt, Some(FulfillAttributionData(810 unixms, None, fulfill_e.attribution_opt)))
+    val fulfill_d = buildHtlcFulfill(priv_d.privateKey, useAttributionData = true, cmd_d, add_d, now = 850 unixms)
+    assert(fulfill_d.attribution_opt.isEmpty)
+    assert(fulfill_d.fulfillmentPayload_opt.nonEmpty)
+    val cmd_c = CMD_FULFILL_HTLC(add_c.id, paymentPreimage, fulfill_d.fulfillmentPayload_opt, Some(FulfillAttributionData(750 unixms, None, fulfill_d.attribution_opt)))
+    val fulfill_c = buildHtlcFulfill(priv_c.privateKey, useAttributionData = true, cmd_c, add_c, now = 860 unixms)
+    assert(fulfill_c.attribution_opt.nonEmpty)
+    assert(fulfill_c.fulfillmentPayload_opt.nonEmpty)
+    val cmd_b = CMD_FULFILL_HTLC(add_b.id, paymentPreimage, fulfill_c.fulfillmentPayload_opt, Some(FulfillAttributionData(670 unixms, None, fulfill_c.attribution_opt)))
+    val fulfill_b = buildHtlcFulfill(priv_b.privateKey, useAttributionData = true, cmd_b, add_b, now = 870 unixms)
+    val successDetails = Sphinx.SuccessPacket.decrypt(fulfill_b.fulfillmentPayload_opt, fulfill_b.attribution_opt, payment.sharedSecrets)
+    assert(successDetails.fulfillmentPayload_opt == cmd_e.fulfillmentPayload_opt)
+    assert(successDetails.holdTimes == Seq(HoldTime(200 millis, b), HoldTime(100 millis, c)))
+  }
+
+  test("build htlc success fulfillment payload (trampoline payment)") {
+    // Create a trampoline payment to e:
+    //        .--> d --.
+    //       /          \
+    // b -> c            e
+    val invoiceFeatures = Features[Bolt11Feature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, Features.TrampolinePaymentPrototype -> Optional)
+    val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_e.privateKey, Left("invoice"), CltvExpiryDelta(12), paymentSecret = paymentSecret, features = invoiceFeatures)
+    val payment = TrampolinePayment.buildOutgoingPayment(c, invoice, finalExpiry)
+    val add_c = UpdateAddHtlc(randomBytes32(), 0, payment.trampolineAmount, paymentHash, payment.trampolineExpiry, payment.onion.packet, None, accountable = false, None)
+    val Right(RelayToTrampolinePacket(_, _, payload_c, trampolinePacket_e, _)) = decrypt(add_c, priv_c.privateKey, Features.empty)
+    val (add_d, sharedSecrets_c) = {
+      // c finds a path c->d->e
+      val payloads = Seq(
+        NodePayload(d, PaymentOnion.IntermediatePayload.ChannelRelay.Standard(channelUpdate_de.shortChannelId, payload_c.amountToForward, payload_c.outgoingCltv, upgradeAccountability = false)),
+        NodePayload(e, PaymentOnion.FinalPayload.Standard.createTrampolinePayload(payload_c.amountToForward, payload_c.amountToForward, payload_c.outgoingCltv, paymentSecret, trampolinePacket_e, upgradeAccountability = false))
+      )
+      val onion_d = OutgoingPaymentPacket.buildOnion(payloads, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
+      val add_d = UpdateAddHtlc(randomBytes32(), 0, payload_c.amountToForward + 500.msat, paymentHash, payload_c.outgoingCltv + CltvExpiryDelta(36), onion_d.packet, None, accountable = false, None)
+      (add_d, onion_d.sharedSecrets)
+    }
+    val Right(ChannelRelayPacket(_, _, packet_e, _)) = decrypt(add_d, priv_d.privateKey, Features.empty)
+    val add_e = UpdateAddHtlc(randomBytes32(), 3, payload_c.amountToForward, paymentHash, payload_c.outgoingCltv, packet_e, None, accountable = false, None)
+    val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features.empty)
+    assert(payload_e.isInstanceOf[FinalPayload.Standard])
+
+    // e fulfills the payment and includes a fulfillment payload
+    val cmd_e = CMD_FULFILL_HTLC(add_e.id, paymentPreimage, Some(randomBytes(256)), Some(FulfillAttributionData(800 unixms, Some(800 unixms), None)))
+    val fulfill_e = buildHtlcFulfill(priv_e.privateKey, useAttributionData = true, cmd_e, add_e, now = 850 unixms)
+    val cmd_d = CMD_FULFILL_HTLC(add_d.id, paymentPreimage, fulfill_e.fulfillmentPayload_opt, Some(FulfillAttributionData(750 unixms, None, fulfill_e.attribution_opt)))
+    val fulfill_d = buildHtlcFulfill(priv_d.privateKey, useAttributionData = true, cmd_d, add_d, now = 860 unixms)
+    // c needs to unwrap the fulfillment payload and attribution data from downstream
+    val success_c = Sphinx.SuccessPacket.decrypt(fulfill_d.fulfillmentPayload_opt, fulfill_d.attribution_opt, sharedSecrets_c, lastSecretIsRecipient = false)
+    assert(success_c.fulfillmentPayload_opt.nonEmpty)
+    assert(success_c.remainingAttribution_opt.nonEmpty)
+    assert(success_c.holdTimes == Seq(HoldTime(100 millis, d), HoldTime(0 millis, e)))
+    val cmd_c = CMD_FULFILL_HTLC(add_c.id, paymentPreimage, success_c.fulfillmentPayload_opt, Some(FulfillAttributionData(700 unixms, Some(700 unixms), success_c.remainingAttribution_opt)))
+    val fulfill_c = buildHtlcFulfill(priv_c.privateKey, useAttributionData = true, cmd_c, add_c, now = 875 unixms)
+    val successDetails = Sphinx.SuccessPacket.decrypt(fulfill_c.fulfillmentPayload_opt, fulfill_c.attribution_opt, payment.onion.sharedSecrets ++ payment.trampolineOnion.sharedSecrets)
+    assert(successDetails.fulfillmentPayload_opt == cmd_e.fulfillmentPayload_opt)
+    assert(successDetails.holdTimes == Seq(HoldTime(100 millis, c), HoldTime(100 millis, c), HoldTime(0 millis, e)))
+  }
+
+  test("build htlc success fulfillment payload (maximum size)") {
+    // a -> b -> c -> d -> e
+    val recipient = ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret, upgradeAccountability = false)
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, hops, None), recipient, Reputation.Score.max(accountable = false))
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, amount_ab, paymentHash, expiry_ab, payment.cmd.onion, None, accountable = false, None)
+    val Right(ChannelRelayPacket(_, _, packet_c, _)) = decrypt(add_b, priv_b.privateKey, Features.empty)
+    val add_c = UpdateAddHtlc(randomBytes32(), 1, amount_bc, paymentHash, expiry_bc, packet_c, None, accountable = false, None)
+    val Right(ChannelRelayPacket(_, _, packet_d, _)) = decrypt(add_c, priv_c.privateKey, Features.empty)
+    val add_d = UpdateAddHtlc(randomBytes32(), 2, amount_cd, paymentHash, expiry_cd, packet_d, None, accountable = false, None)
+    val Right(ChannelRelayPacket(_, _, packet_e, _)) = decrypt(add_d, priv_d.privateKey, Features.empty)
+    val add_e = UpdateAddHtlc(randomBytes32(), 3, amount_de, paymentHash, expiry_de, packet_e, None, accountable = false, None)
+
+    // e fulfills the payment with the largest fulfillment payload it is allowed to send.
+    val cmd_e = CMD_FULFILL_HTLC(add_e.id, paymentPreimage, Some(randomBytes(Sphinx.SuccessPacket.MAX_PAYLOAD_LENGTH)), Some(FulfillAttributionData(670 unixms, None, None)))
+    val fulfill_e = buildHtlcFulfill(priv_e.privateKey, useAttributionData = true, cmd_e, add_e, now = 800 unixms)
+    val cmd_d = CMD_FULFILL_HTLC(add_d.id, paymentPreimage, fulfill_e.fulfillmentPayload_opt, Some(FulfillAttributionData(650 unixms, None, fulfill_e.attribution_opt)))
+    val fulfill_d = buildHtlcFulfill(priv_d.privateKey, useAttributionData = true, cmd_d, add_d, now = 810 unixms)
+    val cmd_c = CMD_FULFILL_HTLC(add_c.id, paymentPreimage, fulfill_d.fulfillmentPayload_opt, Some(FulfillAttributionData(560 unixms, None, fulfill_d.attribution_opt)))
+    val fulfill_c = buildHtlcFulfill(priv_c.privateKey, useAttributionData = true, cmd_c, add_c, now = 815 unixms)
+    val cmd_b = CMD_FULFILL_HTLC(add_b.id, paymentPreimage, fulfill_c.fulfillmentPayload_opt, Some(FulfillAttributionData(490 unixms, None, fulfill_c.attribution_opt)))
+    val fulfill_b = buildHtlcFulfill(priv_b.privateKey, useAttributionData = true, cmd_b, add_b, now = 830 unixms)
+
+    // Every node relays a payload of the maximum size, without exceeding the maximum size of a lightning message.
+    Seq(fulfill_e, fulfill_d, fulfill_c, fulfill_b).foreach(fulfill => {
+      assert(fulfill.fulfillmentPayload_opt.get.size == Sphinx.SuccessPacket.MAX_LENGTH)
+      assert(fulfill.attribution_opt.get.size == Sphinx.Attribution.totalLength)
+      assert(LightningMessageCodecs.lightningMessageCodec.encode(fulfill).require.bytes.size <= 65535)
+    })
+
+    val successDetails = Sphinx.SuccessPacket.decrypt(fulfill_b.fulfillmentPayload_opt, fulfill_b.attribution_opt, payment.sharedSecrets)
+    assert(successDetails.fulfillmentPayload_opt == cmd_e.fulfillmentPayload_opt)
+    assert(successDetails.holdTimes == Seq(HoldTime(300 millis, b), HoldTime(200 millis, c), HoldTime(100 millis, d), HoldTime(100 millis, e)))
+  }
+
+  test("build htlc success fulfillment payload (payload too large)") {
+    // a -> b -> c -> d -> e
+    val recipient = ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret, upgradeAccountability = false)
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, hops, None), recipient, Reputation.Score.max(accountable = false))
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, amount_ab, paymentHash, expiry_ab, payment.cmd.onion, None, accountable = false, None)
+    val Right(ChannelRelayPacket(_, _, packet_c, _)) = decrypt(add_b, priv_b.privateKey, Features.empty)
+    val add_c = UpdateAddHtlc(randomBytes32(), 1, amount_bc, paymentHash, expiry_bc, packet_c, None, accountable = false, None)
+    val Right(ChannelRelayPacket(_, _, packet_d, _)) = decrypt(add_c, priv_c.privateKey, Features.empty)
+    val add_d = UpdateAddHtlc(randomBytes32(), 2, amount_cd, paymentHash, expiry_cd, packet_d, None, accountable = false, None)
+    val Right(ChannelRelayPacket(_, _, packet_e, _)) = decrypt(add_d, priv_d.privateKey, Features.empty)
+    val add_e = UpdateAddHtlc(randomBytes32(), 3, amount_de, paymentHash, expiry_de, packet_e, None, accountable = false, None)
+
+    // e is asked to include a payload that is larger than what it is allowed to send: it must truncate it, otherwise its
+    // peers would reject the resulting update_fulfill_htlc (see Channel.checkFulfillmentPayload).
+    for (payloadLength <- Seq(Sphinx.SuccessPacket.MAX_PAYLOAD_LENGTH + 1, Sphinx.SuccessPacket.MAX_LENGTH, 60_000)) {
+      val cmd_e = CMD_FULFILL_HTLC(add_e.id, paymentPreimage, Some(randomBytes(payloadLength)), Some(FulfillAttributionData(670 unixms, None, None)))
+      val fulfill_e = buildHtlcFulfill(priv_e.privateKey, useAttributionData = true, cmd_e, add_e, now = 800 unixms)
+      assert(fulfill_e.fulfillmentPayload_opt.get.size == Sphinx.SuccessPacket.MAX_LENGTH)
+    }
+
+    // b receives a fulfillment payload that is larger than what the specification allows: it must truncate it,
+    // otherwise it wouldn't be able to send the resulting update_fulfill_htlc to a.
+    val cmd_b = CMD_FULFILL_HTLC(add_b.id, paymentPreimage, Some(randomBytes(60_000)), Some(FulfillAttributionData(490 unixms, None, Some(randomBytes(Sphinx.Attribution.totalLength)))))
+    val fulfill_b = buildHtlcFulfill(priv_b.privateKey, useAttributionData = true, cmd_b, add_b, now = 830 unixms)
+    assert(fulfill_b.fulfillmentPayload_opt.get.size == Sphinx.SuccessPacket.MAX_LENGTH)
+    assert(fulfill_b.attribution_opt.get.size == Sphinx.Attribution.totalLength)
+    assert(LightningMessageCodecs.lightningMessageCodec.encode(fulfill_b).require.bytes.size <= 65535)
+  }
+
+  test("build htlc success fulfillment payload (blinded trampoline payment)") {
+    // We are the recipient of a trampoline payment and are hidden inside a blinded path: we must include the fulfillment
+    // payload, but we must not reveal any attribution data.
+    val pathKey = randomKey()
+    val blindedNodeId = Sphinx.RouteBlinding.derivePrivateKey(priv_e.privateKey, pathKey.publicKey).publicKey
+    val trampolinePayload = PaymentOnion.FinalPayload.Standard.createPayload(finalAmount, finalAmount, finalExpiry, paymentSecret, upgradeAccountability = false)
+    val trampolineOnion = OutgoingPaymentPacket.buildOnion(NodePayload(e, trampolinePayload) :: Nil, paymentHash, None).toOption.get
+    val outerPayload = PaymentOnion.FinalPayload.Standard.createPayload(finalAmount, finalAmount, finalExpiry, paymentSecret, trampolineOnion_opt = Some(trampolineOnion.packet), upgradeAccountability = false)
+    val outerOnion = OutgoingPaymentPacket.buildOnion(NodePayload(blindedNodeId, outerPayload) :: Nil, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
+    val add_e = UpdateAddHtlc(randomBytes32(), 3, amount_de, paymentHash, expiry_de, outerOnion.packet, Some(pathKey.publicKey), accountable = false, None)
+
+    val cmd_e = CMD_FULFILL_HTLC(add_e.id, paymentPreimage, Some(randomBytes(256)), Some(FulfillAttributionData(820 unixms, Some(820 unixms), None)))
+    val fulfill_e = buildHtlcFulfill(priv_e.privateKey, useAttributionData = true, cmd_e, add_e, now = 850 unixms)
+    assert(fulfill_e.attribution_opt.isEmpty)
+    assert(fulfill_e.fulfillmentPayload_opt.nonEmpty)
+    // The sender applies the outer onion shared secret, then the trampoline onion shared secret.
+    val successDetails = Sphinx.SuccessPacket.decrypt(fulfill_e.fulfillmentPayload_opt, fulfill_e.attribution_opt, outerOnion.sharedSecrets ++ trampolineOnion.sharedSecrets)
+    assert(successDetails.fulfillmentPayload_opt == cmd_e.fulfillmentPayload_opt)
+    assert(successDetails.holdTimes.isEmpty)
+  }
+
   test("build htlc failure onion") {
     // a -> b -> c -> d -> e
     val recipient = ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret, upgradeAccountability = false)
@@ -670,6 +892,22 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val Right(Sphinx.DecryptedFailurePacket(failingNode, 4, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, fail_b.attribution_opt, payment.sharedSecrets).failure
     assert(failingNode == e)
     assert(decryptedFailure == failure)
+  }
+
+  test("build htlc failure onion (failure packet too large)") {
+    // a -> b -> c -> d -> e
+    val recipient = ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret, upgradeAccountability = false)
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, hops, None), recipient, Reputation.Score.max(accountable = false))
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, amount_ab, paymentHash, expiry_ab, payment.cmd.onion, None, accountable = false, None)
+
+    // b receives a failure packet that is larger than what the specification allows: it must truncate it, otherwise it
+    // wouldn't be able to send the resulting update_fail_htlc to a.
+    val reason = FailureReason.EncryptedDownstreamFailure(randomBytes(60_000), Some(randomBytes(Sphinx.Attribution.totalLength)))
+    val cmd_b = CMD_FAIL_HTLC(add_b.id, reason, Some(FailureAttributionData(490 unixms, None)))
+    val Right(fail_b: UpdateFailHtlc) = buildHtlcFailure(priv_b.privateKey, useAttributableFailures = true, cmd_b, add_b, now = 830 unixms)
+    assert(fail_b.reason.size == Sphinx.FailurePacket.MAX_LENGTH)
+    assert(fail_b.attribution_opt.get.size == Sphinx.Attribution.totalLength)
+    assert(LightningMessageCodecs.lightningMessageCodec.encode(fail_b).require.bytes.size <= 65535)
   }
 
   test("build htlc failure onion with attribution data") {
