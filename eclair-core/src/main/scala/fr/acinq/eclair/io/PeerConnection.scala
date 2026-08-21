@@ -86,16 +86,16 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
   when(AUTHENTICATING) {
     case Event(TransportHandler.HandshakeCompleted(remoteNodeId), d: AuthenticatingData) =>
-      cancelTimer(AUTH_TIMER)
       Logs.withMdc(diagLog)(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
         log.info(s"connection authenticated (direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"})")
       }
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
+      d.pendingAuth.authTracker_opt.foreach(_ ! Authenticated(self, remoteNodeId, d.pendingAuth.outgoing))
       switchboard ! Authenticated(self, remoteNodeId, d.pendingAuth.outgoing)
       goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport, d.isPersistent)
 
     case Event(AuthTimeout, d: AuthenticatingData) =>
-      log.warning(s"authentication timed out after ${conf.authTimeout}")
+      log.warning("authentication timed out after {}", conf.authTimeout)
       d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.AuthenticationFailed("authentication timed out"))
       stop(FSM.Normal)
 
@@ -107,6 +107,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
   when(BEFORE_INIT) {
     case Event(InitializeConnection(peer, chainHash, localFeatures, doSync, fundingRates_opt), d: BeforeInitData) =>
+      cancelTimer(AUTH_TIMER)
       d.transport ! TransportHandler.Listener(self)
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       log.debug(s"using features=$localFeatures")
@@ -124,6 +125,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       startSingleTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
       unstashAll() // unstash remote init if it already arrived
       goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, doSync, d.isPersistent)
+
+    case Event(AuthTimeout, d: BeforeInitData) =>
+      log.warning("connection was not initialized within {}", conf.authTimeout)
+      d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("connection was never initialized"))
+      stop(FSM.Normal)
 
     case Event(_: protocol.Init, _) =>
       log.debug("stashing remote init")
@@ -702,7 +708,10 @@ object PeerConnection {
                   maxOnionMessagesPerSecond: Int,
                   maxGossipQueriesPerSecond: Int,
                   sendRemoteAddressInit: Boolean,
-                  maxNoChannels: Int)
+                  maxNoChannels: Int,
+                  maxPendingIncomingConnections: Int,
+                  pendingConnectionMinAge: FiniteDuration,
+                  pendingConnectionAcceptDelay: FiniteDuration)
 
   /**
    * Gossip sync messages, which all carry a chain hash. Unlike gossip announcements, which we validate and may ignore,
@@ -753,7 +762,7 @@ object PeerConnection {
   case object INITIALIZING extends State
   case object CONNECTED extends State
 
-  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: NodeAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None, isPersistent: Boolean) {
+  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: NodeAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None, isPersistent: Boolean, authTracker_opt: Option[ActorRef] = None) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey, outgoing: Boolean) extends RemoteTypes
@@ -794,6 +803,7 @@ object PeerConnection {
     case object NoRemainingChannel extends KillReason
     case object AllChannelsFail extends KillReason
     case object ConnectionReplaced extends KillReason
+    case object TooManyPendingConnections extends KillReason
   }
   // @formatter:on
 

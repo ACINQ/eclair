@@ -544,6 +544,14 @@ object NodeParams extends Logging {
     val maxNoChannels = config.getInt("peer-connection.max-no-channels")
     require(maxNoChannels > 0, "peer-connection.max-no-channels must be > 0")
 
+    val maxPendingIncomingConnections = config.getInt("peer-connection.max-pending-incoming-connections")
+    require(maxPendingIncomingConnections >= 0, "peer-connection.max-pending-incoming-connections must be >= 0 (0 disables the limit)")
+    // Those two durations may be set to 0 to disable the corresponding protection.
+    val pendingConnectionMinAge = FiniteDuration(config.getDuration("peer-connection.pending-connection-min-age").toMillis, TimeUnit.MILLISECONDS)
+    require(pendingConnectionMinAge >= Duration.Zero, "peer-connection.pending-connection-min-age must be >= 0")
+    val pendingConnectionAcceptDelay = FiniteDuration(config.getDuration("peer-connection.pending-connection-accept-delay").toMillis, TimeUnit.MILLISECONDS)
+    require(pendingConnectionAcceptDelay >= Duration.Zero, "peer-connection.pending-connection-accept-delay must be >= 0")
+
     val willFundRates_opt = {
       val supportedPaymentTypes = Map(
         LiquidityAds.PaymentType.FromChannelBalance.rfcName -> LiquidityAds.PaymentType.FromChannelBalance,
@@ -690,6 +698,9 @@ object NodeParams extends Logging {
         maxGossipQueriesPerSecond = config.getInt("router.sync.max-queries-per-second"),
         sendRemoteAddressInit = config.getBoolean("peer-connection.send-remote-address-init"),
         maxNoChannels = maxNoChannels,
+        maxPendingIncomingConnections = maxPendingIncomingConnections,
+        pendingConnectionMinAge = pendingConnectionMinAge,
+        pendingConnectionAcceptDelay = pendingConnectionAcceptDelay,
       ),
       routerConf = RouterConf(
         watchSpentWindow = watchSpentWindow,

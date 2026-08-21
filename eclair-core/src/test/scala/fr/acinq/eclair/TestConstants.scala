@@ -210,6 +210,9 @@ object TestConstants {
         maxGossipQueriesPerSecond = 10,
         sendRemoteAddressInit = true,
         maxNoChannels = 250,
+        maxPendingIncomingConnections = 100,
+        pendingConnectionMinAge = 1 second,
+        pendingConnectionAcceptDelay = 100 millis,
       ),
       routerConf = RouterConf(
         watchSpentWindow = 1 second,
@@ -436,6 +439,9 @@ object TestConstants {
         maxGossipQueriesPerSecond = 10,
         sendRemoteAddressInit = true,
         maxNoChannels = 250,
+        maxPendingIncomingConnections = 100,
+        pendingConnectionMinAge = 1 second,
+        pendingConnectionAcceptDelay = 100 millis,
       ),
       routerConf = RouterConf(
         watchSpentWindow = 1 second,

@@ -39,6 +39,9 @@ object Monitoring {
 
     val IncomingConnectionsNoChannels = Kamon.gauge("incomingconnections.nochannels")
     val IncomingConnectionsDisconnected = Kamon.counter("incomingconnections.disconnected")
+    val IncomingConnectionsPending = Kamon.gauge("incomingconnections.pending")
+    val IncomingConnectionsEvicted = Kamon.counter("incomingconnections.evicted")
+    val IncomingConnectionsRejected = Kamon.counter("incomingconnections.rejected")
 
     val OnTheFlyFunding = Kamon.counter("on-the-fly-funding.attempts")
     val OnTheFlyFundingFees = Kamon.histogram("on-the-fly-funding.fees-msat")

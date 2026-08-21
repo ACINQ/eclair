@@ -130,6 +130,30 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     origin.expectMsg(PeerConnection.ConnectionResult.AuthenticationFailed("authentication timed out"))
   }
 
+  test("disconnect if connection is never initialized") { f =>
+    import f._
+    val probe = TestProbe()
+    val origin = TestProbe()
+    probe.watch(peerConnection)
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref), isPersistent = true))
+    transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
+    switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId, outgoing = true))
+    // If we never receive InitializeConnection from the switchboard, we eventually stop ourselves.
+    assert(peerConnection.stateName == PeerConnection.BEFORE_INIT)
+    probe.expectTerminated(peerConnection)
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("connection was never initialized"))
+  }
+
+  test("notify auth tracker when the handshake completes") { f =>
+    import f._
+    val probe = TestProbe()
+    val authTracker = TestProbe()
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref), isPersistent = true, authTracker_opt = Some(authTracker.ref)))
+    authTracker.expectNoMessage(100 millis)
+    transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
+    authTracker.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId, outgoing = true))
+  }
+
   test("disconnect if init timeout") { f =>
     import f._
     val probe = TestProbe()
