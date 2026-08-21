@@ -21,10 +21,11 @@ import akka.io.Tcp.Connected
 import akka.util.ByteString
 import fr.acinq.eclair.tor.TorProtocolHandler.Authentication
 import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor3}
+import fr.acinq.eclair.writeSecret
 import scodec.bits.Bases.Alphabets
 import scodec.bits.ByteVector
 
-import java.nio.file.attribute.PosixFilePermissions
+import java.net.InetSocketAddress
 import java.nio.file.{Files, Path, Paths}
 import java.util
 import javax.crypto.Mac
@@ -35,22 +36,21 @@ import scala.util.Try
 case class TorException(private val msg: String) extends RuntimeException(s"Tor error: $msg")
 
 /**
-  * Created by rorp
-  *
-  * Specification: https://gitweb.torproject.org/torspec.git/tree/control-spec.txt
-  *
-  * @param authentication      Tor controller auth mechanism (password or safecookie)
-  * @param privateKeyPath      path to a file that contains a Tor private key
-  * @param virtualPort         port for the public hidden service (typically 9735)
-  * @param targets             address of our protected server (format [host:]port), 127.0.0.1:[[virtualPort]] if empty
-  * @param onionAdded          a Promise to track creation of the endpoint
-  */
+ * Created by rorp
+ *
+ * Specification: https://gitweb.torproject.org/torspec.git/tree/control-spec.txt
+ *
+ * @param authentication Tor controller auth mechanism (password or safecookie)
+ * @param privateKeyPath path to a file that contains a Tor private key
+ * @param virtualPort    port for the public hidden service (typically 9735)
+ * @param targets        address of our protected server (format [host:]port), 127.0.0.1:[[virtualPort]] if empty
+ * @param onionAdded     a Promise to track creation of the endpoint
+ */
 class TorProtocolHandler(authentication: Authentication,
                          privateKeyPath: Path,
                          virtualPort: Int,
                          targets: Seq[String],
-                         onionAdded: Option[Promise[NodeAddress]]
-                        ) extends Actor with Stash with ActorLogging {
+                         onionAdded: Option[Promise[NodeAddress]]) extends Actor with Stash with ActorLogging {
 
   import TorProtocolHandler._
 
@@ -59,10 +59,26 @@ class TorProtocolHandler(authentication: Authentication,
   private var address: Option[NodeAddress] = None
 
   override def receive: Receive = {
-    case Connected(_, _) =>
+    case Connected(remoteAddress, _) =>
+      checkControlAddress(remoteAddress)
       receiver = sender()
       sendCommand("PROTOCOLINFO 1")
       context become protocolInfo
+  }
+
+  /**
+   * The tor control protocol doesn't let us authenticate the server when using password authentication: we would send
+   * our password in cleartext to whatever process is listening on the control port. And since ADD_ONION also sends our
+   * onion private key in cleartext, a remote control port exposes both secrets to the network. We thus only allow
+   * password authentication on a local control port, and require safecookie otherwise, which authenticates the server.
+   */
+  private def checkControlAddress(remoteAddress: InetSocketAddress): Unit = {
+    val isLocal = Option(remoteAddress.getAddress).exists(_.isLoopbackAddress)
+    authentication match {
+      case _: Password if !isLocal => throw TorException(s"cannot use password authentication with a remote control port ($remoteAddress): use safecookie instead")
+      case _ if !isLocal => log.warning("tor control port {} is not local: our onion private key will be sent in cleartext over the network", remoteAddress)
+      case _ => ()
+    }
   }
 
   def protocolInfo: Receive = {
@@ -134,10 +150,7 @@ class TorProtocolHandler(authentication: Authentication,
   private def processOnionResponse(res: Map[String, String]): String = {
     val serviceId = res.getOrElse("ServiceID", throw TorException("service ID not found"))
     val privateKey = res.get("PrivateKey")
-    privateKey.foreach { pk =>
-      writeString(privateKeyPath, pk)
-      setPermissions(privateKeyPath, "rw-------")
-    }
+    privateKey.foreach(pk => writeSecret(privateKeyPath, pk))
     serviceId
   }
 
@@ -158,15 +171,19 @@ class TorProtocolHandler(authentication: Authentication,
   }
 
   private def computeClientHash(serverHash: ByteVector, serverNonce: ByteVector, clientNonce: ByteVector, cookieFile: Path): ByteVector = {
-    if (serverHash.length != 32)
+    if (serverHash.length != 32) {
       throw TorException("invalid server hash length")
-    if (serverNonce.length != 32)
+    }
+    if (serverNonce.length != 32) {
       throw TorException("invalid server nonce length")
+    }
 
     val cookie = ByteVector.view(Files.readAllBytes(cookieFile))
+    if (cookie.length != 32) {
+      throw TorException("invalid server cookie length")
+    }
 
     val message = cookie ++ clientNonce ++ serverNonce
-
     val computedServerHash = hmacSHA256(ServerKey, message)
     if (computedServerHash != serverHash) {
       throw TorException("unexpected server hash")
@@ -225,13 +242,6 @@ object TorProtocolHandler {
   def readString(path: Path): String = Files.readAllLines(path).get(0)
 
   def writeString(path: Path, string: String): Unit = Files.write(path, util.Arrays.asList(string))
-
-  def setPermissions(path: Path, permissionString: String): Unit =
-    try {
-      Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(permissionString))
-    } catch {
-      case _: UnsupportedOperationException => () // we are on windows
-    }
 
   def unquote(s: String): String = s
     .stripSuffix("\"")
