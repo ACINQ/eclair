@@ -341,7 +341,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                   val d1 = DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, nodeParams.currentBlockHeight, None, Right(fundingSigned))
                   nodeParams.addChannelIdIfAbsent(channelId, remoteNodeId) match {
                     case None =>
-                      nodeParams.db.channels.addChannel(d1) match {
+                      store(d1) match {
                         case None =>
                           peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
                           txPublisher ! SetChannelId(remoteNodeId, channelId)
@@ -415,7 +415,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             originChannels = Map.empty)
           val blockHeight = nodeParams.currentBlockHeight
           val d1 = DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, blockHeight, None, Left(d.lastSent))
-          nodeParams.db.channels.addChannel(d1) match {
+          store(d1) match {
             case None =>
               context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
               context.system.eventStream.publish(ChannelFundingCreated(self, d.channelId, remoteNodeId, Right(d.fundingTx), commitment.fundingTxIndex, commitments))
