@@ -474,7 +474,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
    * that modified transaction with SIGHASH_ALL without noticing.
    */
   private def checkUnsignedTx(expected: Psbt, actual: Psbt): Unit = {
-    require(actual.global.tx.txid == expected.global.tx.txid, s"bitcoin core modified our unsigned transaction (expected=${expected.global.tx.txid} actual=${actual.global.tx.txid}): bitcoin core may be malicious")
+    require(actual.global.tx.getTxid == expected.global.tx.getTxid, s"bitcoin core modified our unsigned transaction (expected=${expected.global.tx.getTxid} actual=${actual.global.tx.getTxid}): bitcoin core may be malicious")
   }
 
   def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
