@@ -164,7 +164,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     for {
       spent <- spentAmount(psbt, ourInputs)
       change <- changeAmount(psbt, ourOutputs)
-      _ = logger.info(s"signing txid=${psbt.global.tx.txid} fees=${psbt.computeFees()} spent=$spent change=$change")
+      _ = logger.info(s"signing txid=${psbt.global.tx.getTxid} fees=${psbt.computeFees()} spent=$spent change=$change")
       _ <- Try {
         ourOutputs.foreach(i => require(isOurOutput(psbt, i), s"could not verify output $i: bitcoin core may be malicious"))
       }
@@ -258,7 +258,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     // We check that these fields are consistent and match the outpoint that is spent in the PSBT.
     // This prevents attacks where Bitcoin Core would lie about the amount being spent and make us pay very high fees.
     require(input.getNonWitnessUtxo != null, "non-witness utxo is missing: bitcoin core may be malicious")
-    require(input.getNonWitnessUtxo.txid == psbt.global.tx.txIn.get(pos).outPoint.txid, "utxo txid mismatch: bitcoin core may be malicious")
+    require(input.getNonWitnessUtxo.getTxid == psbt.global.tx.txIn.get(pos).outPoint.txid, "utxo txid mismatch: bitcoin core may be malicious")
     require(input.getNonWitnessUtxo.txOut.get(psbt.global.tx.txIn.get(pos).outPoint.index.toInt) == input.getWitnessUtxo, "utxo mismatch: bitcoin core may be malicious")
 
     // We must use SIGHASH_ALL, otherwise we would be vulnerable to "signature reuse" attacks.
