@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
+import fr.acinq.bitcoin.Script.LOCKTIME_THRESHOLD
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, SatoshiLong, Transaction, TxId}
@@ -959,7 +960,7 @@ case class Commitments(channelParams: ChannelParams,
     }
 
     // CLTV expiry values >= 500_000_000 would indicate a time in seconds instead of a block height.
-    if (add.cltvExpiry >= CltvExpiry(500_000_000)) {
+    if (add.cltvExpiry >= CltvExpiry(LOCKTIME_THRESHOLD)) {
       return Left(ExpiryTooBig(channelId, CltvExpiry(500_000_000), add.cltvExpiry, currentBlockHeight))
     }
 
