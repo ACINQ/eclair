@@ -135,7 +135,7 @@ object PeerScorer {
   private case object FeeDecrease extends FeeDirection { override def toString: String = "decrease" }
   // @formatter:on
 
-  private case class FeeChangeDecision(direction: FeeDirection, previousFee: RelayFees, newFee: RelayFees, dailyVolumeOutAtChange: MilliSatoshi)
+  private case class FeeChangeDecision(direction: FeeDirection, previousFee: RelayFees, newFee: RelayFees, dailyVolumeOutAtChange: MilliSatoshi, volumeVariation: Double)
 
   private case class DecisionHistory(funding: Map[PublicKey, FundingDecision], feeChanges: Map[PublicKey, FeeChangeDecision]) {
     // @formatter:off
@@ -414,6 +414,15 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
     val now = TimestampMilli.now()
     val lastTwoBucketsRatio = 1.0 + Bucket.consumed(now)
     val lastTwoBucketsDailyRatio = (Bucket.duration * lastTwoBucketsRatio).toSeconds.toDouble / (24 * 3600)
+
+    def volumeVariation(p: PeerInfo) = {
+      if (p.stats.slice(2, 3).map(_.totalAmountOut).sum != 0.msat) {
+        p.stats.take(2).map(_.totalAmountOut).sum.toLong.toDouble / (p.stats.slice(2, 3).map(_.totalAmountOut).sum.toLong * lastTwoBucketsRatio)
+      } else {
+        0.0
+      }
+    }
+
     // We increase fees of channels that are performing better than we expected.
     val feeIncreases = peers
       // We select peers that have exceeded our payment volume target in the past two periods.
@@ -421,19 +430,19 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       // And that have an increasing payment volume compared to the period before that.
       .filter(p => p.stats.slice(2, 3).map(_.totalAmountOut).sum > 0.msat)
       .filter(p => (p.stats.take(2).map(_.totalAmountOut).sum / lastTwoBucketsRatio) > p.stats.slice(2, 3).map(_.totalAmountOut).sum * 1.1)
-      .flatMap(p => {
+      .flatMap { p =>
         p.latestUpdate_opt match {
           // And for which we haven't updated our relay fees recently already.
           case Some(u) if u.timestamp <= now.toTimestampSecond - (Bucket.duration * 1.5).toSeconds =>
             val next = u.relayFees.copy(feeProportionalMillionths = u.feeProportionalMillionths + 500)
             if (next.feeBase <= config.relayFees.maxRelayFees.feeBase && next.feeProportionalMillionths <= config.relayFees.maxRelayFees.feeProportionalMillionths) {
-              Some(p.remoteNodeId -> FeeChangeDecision(FeeIncrease, u.relayFees, next, p.dailyVolumeOut))
+              Some(p.remoteNodeId -> FeeChangeDecision(FeeIncrease, u.relayFees, next, p.dailyVolumeOut, volumeVariation(p)))
             } else {
               None
             }
           case _ => None
         }
-      }).toMap
+      }.toMap
     // We decrease fees of channels that aren't performing well.
     val feeDecreases = peers
       // We select peers that have a recent 15% decrease in outgoing payment volume.
@@ -443,19 +452,19 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       .filter(p => p.stats.slice(2, 3).map(_.totalAmountOut).sum <= p.stats.slice(3, 4).map(_.totalAmountOut).sum)
       // And that have enough liquidity to relay outgoing payments.
       .filter(p => p.canSend >= Seq(config.relayFees.dailyPaymentVolumeThreshold, p.capacity * config.relayFees.dailyPaymentVolumeThresholdPercent).min)
-      .flatMap(p => {
+      .flatMap { p =>
         p.latestUpdate_opt match {
           // And for which we haven't updated our relay fees recently already.
           case Some(u) if u.timestamp <= now.toTimestampSecond - (Bucket.duration * 1.5).toSeconds =>
             val next = u.relayFees.copy(feeProportionalMillionths = u.feeProportionalMillionths - 500)
             if (next.feeBase >= config.relayFees.minRelayFees.feeBase && next.feeProportionalMillionths >= config.relayFees.minRelayFees.feeProportionalMillionths) {
-              Some(p.remoteNodeId -> FeeChangeDecision(FeeDecrease, u.relayFees, next, p.dailyVolumeOut))
+              Some(p.remoteNodeId -> FeeChangeDecision(FeeDecrease, u.relayFees, next, p.dailyVolumeOut, volumeVariation(p)))
             } else {
               None
             }
           case _ => None
         }
-      }).toMap
+      }.toMap
     // We revert fee changes that had a negative impact on volume.
     val feeReverts = peers
       .filterNot(p => feeIncreases.contains(p.remoteNodeId) || feeDecreases.contains(p.remoteNodeId))
@@ -477,8 +486,8 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
             }
             if (updateMatchesRecord && withinEvaluationWindow && notUpdatedRecently && shouldRevert) {
               val decision = record.direction match {
-                case PeerScorer.FeeIncrease => FeeChangeDecision(FeeDecrease, u.relayFees, u.relayFees.copy(feeProportionalMillionths = u.relayFees.feeProportionalMillionths - 500), p.dailyVolumeOut)
-                case PeerScorer.FeeDecrease => FeeChangeDecision(FeeIncrease, u.relayFees, u.relayFees.copy(feeProportionalMillionths = u.relayFees.feeProportionalMillionths + 500), p.dailyVolumeOut)
+                case PeerScorer.FeeIncrease => FeeChangeDecision(FeeDecrease, u.relayFees, u.relayFees.copy(feeProportionalMillionths = u.relayFees.feeProportionalMillionths - 500), p.dailyVolumeOut, volumeVariation(p))
+                case PeerScorer.FeeDecrease => FeeChangeDecision(FeeIncrease, u.relayFees, u.relayFees.copy(feeProportionalMillionths = u.relayFees.feeProportionalMillionths + 500), p.dailyVolumeOut, volumeVariation(p))
               }
               Some(p.remoteNodeId -> decision)
             } else {
@@ -487,21 +496,9 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
           case _ => None
         }
       }.toMap
-    // We print the results to help debugging.
-    if (feeIncreases.nonEmpty || feeDecreases.nonEmpty || feeReverts.nonEmpty) {
-      log.info("we should update our relay fees with the following peers:")
-      log.info("|                               node_id                              | volume_variation | decision | current_fee | next_fee |")
-      log.info("|--------------------------------------------------------------------|------------------|----------|-------------|----------|")
-      (feeIncreases.toSeq ++ feeDecreases.toSeq ++ feeReverts.toSeq).foreach { case (remoteNodeId, decision) =>
-        val volumeVariation = peers.find(_.remoteNodeId == remoteNodeId) match {
-          case Some(p) if p.stats.slice(2, 3).map(_.totalAmountOut).sum != 0.msat => p.stats.take(2).map(_.totalAmountOut).sum.toLong.toDouble / (p.stats.slice(2, 3).map(_.totalAmountOut).sum.toLong * lastTwoBucketsRatio)
-          case _ => 0.0
-        }
-        log.info(f"| $remoteNodeId | $volumeVariation%16.2f | ${decision.direction} | ${decision.previousFee.feeProportionalMillionths}%11d | ${decision.newFee.feeProportionalMillionths}%8d |")
-      }
-      log.info("|--------------------------------------------------------------------|------------------|----------|-------------|----------|")
-    }
-    updateRelayFeesIfEnabled(peers, feeIncreases ++ feeDecreases ++ feeReverts)
+    val feeDecisions = (feeIncreases ++ feeDecreases ++ feeReverts)
+      .flatMap { case (remoteNodeId, decision) => peers.find(_.remoteNodeId == remoteNodeId).map((_, decision)) }
+    updateRelayFees(feeDecisions, "volume-based")
     // Note that in order to avoid oscillating between reverts (reverting a revert), we remove the previous records when
     // reverting a change: this way, the normal algorithm resumes during the next run.
     val history1 = history.addFeeChanges(feeIncreases ++ feeDecreases).revertFeeChanges(feeReverts.keySet)
@@ -523,30 +520,40 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       .filter(p => p.latestUpdate_opt.exists(u => u.relayFees.feeProportionalMillionths > config.relayFees.minRelayFees.feeProportionalMillionths))
       // And relay fees haven't been updated recently.
       .filter(p => p.latestUpdate_opt.exists(u => u.timestamp <= TimestampSecond.now() - 12.hours))
-      .flatMap(p => {
+      .flatMap { p =>
         p.latestUpdate_opt match {
           case Some(u) =>
             val next = u.relayFees.copy(feeProportionalMillionths = (u.feeProportionalMillionths - 500).max(config.relayFees.minRelayFees.feeProportionalMillionths))
-            Some(p.remoteNodeId -> FeeChangeDecision(FeeDecrease, u.relayFees, next, p.dailyVolumeOut))
+            Some(p.remoteNodeId -> FeeChangeDecision(FeeDecrease, u.relayFees, next, p.dailyVolumeOut, volumeVariation = 0))
           case None => None
         }
-      }).toMap
-    updateRelayFeesIfEnabled(peers, feeDecreases)
+      }.toMap
+      val feeDecisions = feeDecreases.flatMap { case (remoteNodeId, decision) => peers.find(_.remoteNodeId == remoteNodeId).map((_, decision)) }
+    updateRelayFees(feeDecisions, "idle-peers")
     history.addFeeChanges(feeDecreases)
   }
 
-  private def updateRelayFeesIfEnabled(peers: Seq[PeerInfo], decisions: Map[PublicKey, FeeChangeDecision]): Unit = {
-    if (config.relayFees.autoUpdate) {
+  private def updateRelayFees(decisions: Map[PeerInfo, FeeChangeDecision], reason: String): Unit = {
+    log.info("{} peer(s) selected for relay fee update with reason={}", decisions.size, reason)
+    if (decisions.nonEmpty) {
+      log.info("|                               node_id                              | volume_variation | decision | current_fee | next_fee |")
+      log.info("|--------------------------------------------------------------------|------------------|----------|-------------|----------|")
+      decisions.foreach { case (p, decision) =>
+        log.info(f"| ${p.remoteNodeId} | ${decision.volumeVariation}%16.2f | ${decision.direction} | ${decision.previousFee.feeProportionalMillionths}%11d | ${decision.newFee.feeProportionalMillionths}%8d |")
+      }
+      log.info("|--------------------------------------------------------------------|------------------|----------|-------------|----------|")
+    }
+
+    if (!config.relayFees.autoUpdate) {
+      log.info("not closing channels: auto-close is disabled")
+    } else {
       decisions.foreach {
-        case (remoteNodeId, decision) =>
+        case (p, decision) =>
+          log.info("setting feeBase={} feeProp={} with remote_node_id={} reason={}", decision.newFee.feeBase, decision.newFee.feeProportionalMillionths, p.remoteNodeId, reason)
           val cmd = CMD_UPDATE_RELAY_FEE(UntypedActorRef.noSender, decision.newFee.feeBase, decision.newFee.feeProportionalMillionths)
-          peers.find(_.remoteNodeId == remoteNodeId) match {
-            case Some(p) =>
-              // We store our decision in the DB, which ensures that it will not be reverted to default fees on reconnection.
-              nodeParams.db.peers.addOrUpdateRelayFees(remoteNodeId, decision.newFee)
-              p.channels.foreach(c => register ! Register.Forward(context.system.ignoreRef, c.channelId, cmd))
-            case None => ()
-          }
+          // We store our decision in the DB, which ensures that it will not be reverted to default fees on reconnection.
+          nodeParams.db.peers.addOrUpdateRelayFees(p.remoteNodeId, decision.newFee)
+          p.channels.foreach(c => register ! Register.Forward(context.system.ignoreRef, c.channelId, cmd))
       }
     }
   }
