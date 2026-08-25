@@ -48,6 +48,21 @@ trait CommonHandlers {
   implicit def state2mystate(state: FSM.State[ChannelState, ChannelData]): MyState = MyState(state)
 
   /**
+   * This is only to be used the first time the channel is persisted in db.
+   * Will return an error if the same channel_id is already present.
+   */
+  def store(d: PersistentChannelData): Option[Throwable] = {
+    log.debug("inserting database record for channelId={}", d.channelId)
+    nodeParams.db.channels.addChannel(d) match {
+      case None =>
+        context.system.eventStream.publish(ChannelPersisted(self, remoteNodeId, d.channelId, d))
+        None
+      case Some(t) =>
+        Some(t)
+    }
+  }
+
+  /**
    * We wrap the FSM state to add some utility functions that can be called on state transitions.
    */
   case class MyState(state: FSM.State[ChannelState, ChannelData]) {
