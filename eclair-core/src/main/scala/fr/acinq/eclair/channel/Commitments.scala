@@ -961,7 +961,7 @@ case class Commitments(channelParams: ChannelParams,
 
     // CLTV expiry values >= 500_000_000 would indicate a time in seconds instead of a block height.
     if (add.cltvExpiry >= CltvExpiry(LOCKTIME_THRESHOLD)) {
-      return Left(ExpiryTooBig(channelId, CltvExpiry(500_000_000), add.cltvExpiry, currentBlockHeight))
+      return Left(ExpiryTooBig(channelId, CltvExpiry(LOCKTIME_THRESHOLD), add.cltvExpiry, currentBlockHeight))
     }
 
     // we used to not enforce a strictly positive minimum, hence the max(1 msat)
