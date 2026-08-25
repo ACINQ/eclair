@@ -953,9 +953,14 @@ case class Commitments(channelParams: ChannelParams,
     }
   }
 
-  def receiveAdd(add: UpdateAddHtlc): Either[ChannelException, Commitments] = {
+  def receiveAdd(add: UpdateAddHtlc, currentBlockHeight: BlockHeight): Either[ChannelException, Commitments] = {
     if (add.id != changes.remoteNextHtlcId) {
       return Left(UnexpectedHtlcId(channelId, expected = changes.remoteNextHtlcId, actual = add.id))
+    }
+
+    // CLTV expiry values >= 500_000_000 would indicate a time in seconds instead of a block height.
+    if (add.cltvExpiry >= CltvExpiry(500_000_000)) {
+      return Left(ExpiryTooBig(channelId, CltvExpiry(500_000_000), add.cltvExpiry, currentBlockHeight))
     }
 
     // we used to not enforce a strictly positive minimum, hence the max(1 msat)
