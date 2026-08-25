@@ -329,43 +329,48 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
 
   /** We close channels where most of the liquidity is on our side and isn't actively used. */
   private def closeUnbalancedChannelsIfNeeded(peers: Seq[PeerInfo]): Unit = {
-    peers
-      // We only close channels when we have more than one.
-      .filter(_.channels.size > 1)
-      // We only close channels for which most of the liquidity is idle on our side.
-      .filter(p => p.canSend >= p.capacity * 0.8 && p.stats.map(_.totalAmountOut).sum <= p.capacity * config.liquidity.idleChannelClosingThresholdPct)
-      .foreach(p => {
-        val channels = sortChannelsToClose(p.channels)
-        // We keep the best channel and close the others, unless their balance doesn't match our thresholds.
-        val toClose = channels.tail
-          // We only close channels where we have a high enough balance.
-          .filter(c => c.canSend >= config.liquidity.localBalanceClosingThreshold)
-          // We only close channels where our peer has a low enough balance.
-          .filter(c => c.canReceive <= config.liquidity.remoteBalanceClosingThreshold)
-          // We don't close channels that have been opened in the last 3 days.
-          .filter(c => c.shortChannelId_opt.forall(scid => scid.blockHeight <= nodeParams.currentBlockHeight - 6 * 24 * 3))
-        closeChannels(p.remoteNodeId, toClose)
-      })
+    closeChannels(
+      channels = peers
+        // We only close channels when we have more than one.
+        .filter(_.channels.size > 1)
+        // We only close channels for which most of the liquidity is idle on our side.
+        .filter(p => p.canSend >= p.capacity * 0.8 && p.stats.map(_.totalAmountOut).sum <= p.capacity * config.liquidity.idleChannelClosingThresholdPct)
+        .flatMap { p =>
+          // We keep the best channel and close the others, unless their balance doesn't match our thresholds.
+          sortChannelsToClose(p.channels).tail
+            // We only close channels where we have a high enough balance.
+            .filter(c => c.canSend >= config.liquidity.localBalanceClosingThreshold)
+            // We only close channels where our peer has a low enough balance.
+            .filter(c => c.canReceive <= config.liquidity.remoteBalanceClosingThreshold)
+            // We don't close channels that have been opened in the last 3 days.
+            .filter(c => c.shortChannelId_opt.forall(scid => scid.blockHeight <= nodeParams.currentBlockHeight - 6 * 24 * 3))
+            .map(c => (p, c))
+        },
+      reason = "unbalanced"
+    )
   }
 
   /** We close channels where liquidity has been idle for too long with minimal relay fees. */
   private def closeIdleChannelsIfNeeded(peers: Seq[PeerInfo]): Unit = {
-    peers
-      // We only close channels when we have more than one.
-      .filter(_.channels.size > 1)
-      // We only close channels for which liquidity is idle.
-      .filter(p => p.stats.map(_.totalAmountOut).sum <= p.capacity * config.liquidity.idleChannelClosingThresholdPct && p.stats.map(_.totalAmountIn).sum <= p.capacity * config.liquidity.idleChannelClosingThresholdPct)
-      // And relay fees have been minimal for long enough to give a chance for routing to catch up.
-      .filter(p => p.latestUpdate_opt.exists(u => u.relayFees.feeProportionalMillionths <= config.relayFees.minRelayFees.feeProportionalMillionths && u.timestamp <= TimestampSecond.now() - 1.day))
-      .foreach(p => {
-        // We keep the best channel and close the others.
-        val toClose = sortChannelsToClose(p.channels).tail
-          // We only close channels where we have a high enough balance.
-          .filter(c => c.canSend >= config.liquidity.localBalanceClosingThreshold)
-          // We don't close channels that have been opened in the last 3 days.
-          .filter(c => c.shortChannelId_opt.forall(scid => scid.blockHeight <= nodeParams.currentBlockHeight - 6 * 24 * 3))
-        closeChannels(p.remoteNodeId, toClose)
-      })
+    closeChannels(
+      channels = peers
+        // We only close channels when we have more than one.
+        .filter(_.channels.size > 1)
+        // We only close channels for which liquidity is idle.
+        .filter(p => p.stats.map(_.totalAmountOut).sum <= p.capacity * config.liquidity.idleChannelClosingThresholdPct && p.stats.map(_.totalAmountIn).sum <= p.capacity * config.liquidity.idleChannelClosingThresholdPct)
+        // And relay fees have been minimal for long enough to give a chance for routing to catch up.
+        .filter(p => p.latestUpdate_opt.exists(u => u.relayFees.feeProportionalMillionths <= config.relayFees.minRelayFees.feeProportionalMillionths && u.timestamp <= TimestampSecond.now() - 1.day))
+        .flatMap { p =>
+          // We keep the best channel and close the others.
+          sortChannelsToClose(p.channels).tail
+            // We only close channels where we have a high enough balance.
+            .filter(c => c.canSend >= config.liquidity.localBalanceClosingThreshold)
+            // We don't close channels that have been opened in the last 3 days.
+            .filter(c => c.shortChannelId_opt.forall(scid => scid.blockHeight <= nodeParams.currentBlockHeight - 6 * 24 * 3))
+            .map(c => (p, c))
+        },
+      reason = "idle"
+    )
   }
 
   private def sortChannelsToClose(channels: Seq[ChannelInfo]): Seq[ChannelInfo] = {
@@ -379,13 +384,23 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
     }
   }
 
-  private def closeChannels(remoteNodeId: PublicKey, channels: Seq[ChannelInfo]): Unit = {
-    channels.foreach { c =>
-      if (!config.liquidity.autoClose) {
-        log.info("we should close channel_id={} with remote_node_id={} (local={}, remote={})", c.channelId, remoteNodeId, c.canSend.truncateToSatoshi.toMilliBtc, c.canReceive.truncateToSatoshi.toMilliBtc)
+  private def closeChannels(channels: Seq[(PeerInfo, ChannelInfo)], reason: String): Unit = {
+    log.info("{} channel(s) selected for closing with reason={}", channels.size, reason)
+    if (channels.nonEmpty) {
+      log.info("|                               node_id                              |                            channel_id                            |   local_bal   |  remote_bal  |")
+      log.info("|--------------------------------------------------------------------|------------------------------------------------------------------|---------------|--------------|")
+      channels.foreach { case (p, c) =>
+        log.info(f"| ${p.remoteNodeId} | ${c.channelId} | ${c.canSend.truncateToSatoshi.toMilliBtc.toDouble}%8.2f mbtc | ${c.canReceive.truncateToSatoshi.toMilliBtc.toDouble}%8.2f mbtc |")
       }
-      if (config.liquidity.autoClose && nodeParams.currentFeeratesForFundingClosing.medium <= config.liquidity.maxFeerate) {
-        log.info("closing channel_id={} with remote_node_id={} (local={}, remote={})", c.channelId, remoteNodeId, c.canSend.truncateToSatoshi.toMilliBtc, c.canReceive.truncateToSatoshi.toMilliBtc)
+      log.info("|--------------------------------------------------------------------|------------------------------------------------------------------|---------------|--------------|")
+    }
+    if (!config.liquidity.autoClose) {
+      log.info("not closing channels: auto-close is disabled")
+    } else if (nodeParams.currentFeeratesForFundingClosing.medium > config.liquidity.maxFeerate) {
+      log.info(s"not closing channels: feerate is too high (current=${nodeParams.currentFeeratesForFundingClosing.medium.perByte} max=${config.liquidity.maxFeerate.perByte})")
+    } else {
+      channels.foreach { case (p, c) =>
+        log.info("closing channel_id={} with remote_node_id={} reason={}", c.channelId, p.remoteNodeId, reason)
         val cmd = CMD_CLOSE(UntypedActorRef.noSender, None, None)
         register ! Register.Forward(context.system.ignoreRef, c.channelId, cmd)
       }
