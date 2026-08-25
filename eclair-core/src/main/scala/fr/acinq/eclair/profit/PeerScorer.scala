@@ -121,7 +121,9 @@ object PeerScorer {
                              minOnChainBalanceOverride_opt: Option[Satoshi],
                              maxFeerateOverride_opt: Option[FeeratePerKw],
                              reviveOldPeersOverride_opt: Option[Boolean],
-                             fundingCooldownOverride_opt: Option[FiniteDuration])
+                             fundingCooldownOverride_opt: Option[FiniteDuration],
+                             minRelayFeeProportionalMillionthsOverride_opt: Option[Long],
+                             maxRelayFeeProportionalMillionthsOverride_opt: Option[Long])
 
   private case class FundingProposal(peer: PeerInfo, fundingAmount: Satoshi) {
     val remoteNodeId: PublicKey = peer.remoteNodeId
@@ -180,26 +182,32 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       case ScorePeers(replyTo_opt) =>
         statsTracker ! PeerStatsTracker.GetLatestStats(context.messageAdapter[PeerStatsTracker.LatestStats](e => WrappedLatestStats(e.peers)))
         waitForStats(replyTo_opt, history)
-      case UpdateConfig(replyTo, cfg) =>
+      case UpdateConfig(replyTo, newConfig) =>
         config = config.copy(
-          topPeersWhitelist = config.topPeersWhitelist -- cfg.removeWhiteListedPeers ++ cfg.addWhiteListedPeers,
+          topPeersWhitelist = config.topPeersWhitelist -- newConfig.removeWhiteListedPeers ++ newConfig.addWhiteListedPeers,
           liquidity = config.liquidity.copy(
-            autoFund = cfg.autoFundOverride_opt.getOrElse(config.liquidity.autoFund),
-            autoClose = cfg.autoCloseOverride_opt.getOrElse(config.liquidity.autoClose),
-            minFundingAmount = cfg.minFundingAmountOverride_opt.getOrElse(config.liquidity.minFundingAmount),
-            maxFundingAmount = cfg.maxFundingAmountOverride_opt.getOrElse(config.liquidity.maxFundingAmount),
-            maxPerPeerCapacity = cfg.maxPerPeerCapacityOverride_opt.getOrElse(config.liquidity.maxPerPeerCapacity),
-            maxFundingTxPerDay = cfg.maxFundingTxPerDayOverride_opt.getOrElse(config.liquidity.maxFundingTxPerDay),
-            localBalanceClosingThreshold = cfg.localBalanceClosingThresholdOverride_opt.getOrElse(config.liquidity.localBalanceClosingThreshold),
-            remoteBalanceClosingThreshold = cfg.remoteBalanceClosingThresholdOverride_opt.getOrElse(config.liquidity.remoteBalanceClosingThreshold),
-            idleChannelClosingThresholdPct = cfg.idleChannelClosingThresholdPctOverride_opt.getOrElse(config.liquidity.idleChannelClosingThresholdPct),
-            minOnChainBalance = cfg.minOnChainBalanceOverride_opt.getOrElse(config.liquidity.minOnChainBalance),
-            maxFeerate = cfg.maxFeerateOverride_opt.getOrElse(config.liquidity.maxFeerate),
-            reviveOldPeers = cfg.reviveOldPeersOverride_opt.getOrElse(config.liquidity.reviveOldPeers),
-            fundingCooldown = cfg.fundingCooldownOverride_opt.getOrElse(config.liquidity.fundingCooldown),
+            autoFund = newConfig.autoFundOverride_opt.getOrElse(config.liquidity.autoFund),
+            autoClose = newConfig.autoCloseOverride_opt.getOrElse(config.liquidity.autoClose),
+            minFundingAmount = newConfig.minFundingAmountOverride_opt.getOrElse(config.liquidity.minFundingAmount),
+            maxFundingAmount = newConfig.maxFundingAmountOverride_opt.getOrElse(config.liquidity.maxFundingAmount),
+            maxPerPeerCapacity = newConfig.maxPerPeerCapacityOverride_opt.getOrElse(config.liquidity.maxPerPeerCapacity),
+            maxFundingTxPerDay = newConfig.maxFundingTxPerDayOverride_opt.getOrElse(config.liquidity.maxFundingTxPerDay),
+            localBalanceClosingThreshold = newConfig.localBalanceClosingThresholdOverride_opt.getOrElse(config.liquidity.localBalanceClosingThreshold),
+            remoteBalanceClosingThreshold = newConfig.remoteBalanceClosingThresholdOverride_opt.getOrElse(config.liquidity.remoteBalanceClosingThreshold),
+            idleChannelClosingThresholdPct = newConfig.idleChannelClosingThresholdPctOverride_opt.getOrElse(config.liquidity.idleChannelClosingThresholdPct),
+            minOnChainBalance = newConfig.minOnChainBalanceOverride_opt.getOrElse(config.liquidity.minOnChainBalance),
+            maxFeerate = newConfig.maxFeerateOverride_opt.getOrElse(config.liquidity.maxFeerate),
+            reviveOldPeers = newConfig.reviveOldPeersOverride_opt.getOrElse(config.liquidity.reviveOldPeers),
+            fundingCooldown = newConfig.fundingCooldownOverride_opt.getOrElse(config.liquidity.fundingCooldown),
           ),
           relayFees = config.relayFees.copy(
-            autoUpdate = cfg.autoUpdateFeesOverride_opt.getOrElse(config.relayFees.autoUpdate)
+            autoUpdate = newConfig.autoUpdateFeesOverride_opt.getOrElse(config.relayFees.autoUpdate),
+            minRelayFees = config.relayFees.minRelayFees.copy(
+              feeProportionalMillionths = newConfig.minRelayFeeProportionalMillionthsOverride_opt.getOrElse(config.relayFees.minRelayFees.feeProportionalMillionths)
+            ),
+            maxRelayFees = config.relayFees.maxRelayFees.copy(
+              feeProportionalMillionths = newConfig.maxRelayFeeProportionalMillionthsOverride_opt.getOrElse(config.relayFees.maxRelayFees.feeProportionalMillionths)
+            )
           )
         )
         log.info("updated configuration={}", config)
