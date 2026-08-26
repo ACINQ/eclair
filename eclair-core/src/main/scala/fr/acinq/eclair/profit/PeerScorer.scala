@@ -553,7 +553,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
     }
 
     if (!config.relayFees.autoUpdate) {
-      log.info("not closing channels: auto-close is disabled")
+      log.info("not updating relay fees: auto-update is disabled")
     } else {
       decisions.foreach {
         case (p, decision) =>
