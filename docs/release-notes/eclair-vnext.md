@@ -28,6 +28,8 @@ eclair.features.option_onion_messages_only_channels = optional
 
 ### Configuration changes
 
+#### Gossip queries
+
 A `query_channel_range` message is a few dozen bytes to send, but answering one requires scanning our whole routing
 table and sending back megabytes of data. We now limit how many of them we accept from a given peer, which can be
 configured with:
@@ -48,6 +50,17 @@ eclair.router.sync.max-queries-per-sync = 2000
 
 At the default `channel-query-chunk-size` this covers 200 000 channels, which is several times the current size of the
 network.
+
+#### Tor configuration
+
+`eclair.tor.auth` now defaults to `safecookie` instead of `password`.
+
+Password authentication sends our tor control password in cleartext to whatever process is listening on the control
+port, without any way of verifying that it is really tor. It is now rejected when `eclair.tor.host` isn't a local
+address: if you run tor on another host or in a separate container, switch to `eclair.tor.auth = safecookie`, which
+authenticates the tor server, or move the control port to the host running eclair. Note that the onion private key is
+sent to the control port on every startup, so a remote control port exposes it to the network regardless of the
+authentication method used.
 
 ### API changes
 
