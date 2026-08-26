@@ -2081,6 +2081,56 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
   }
 
+  test("reconnect with an inconsistent splice signing session (liquidity purchase)") { f =>
+    import f._
+
+    // Alice buys liquidity from Bob while splicing in.
+    val sender = TestProbe()
+    val fundingRequest = LiquidityAds.RequestFunding(400_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance)
+    alice ! CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest), None)
+    exchangeStfu(alice, bob, alice2bob, bob2alice)
+    assert(alice2bob.expectMsgType[SpliceInit].requestFunding_opt.nonEmpty)
+    alice2bob.forward(bob)
+    assert(bob2alice.expectMsgType[SpliceAck].willFund_opt.nonEmpty)
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddInput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddInput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddInput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddOutput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxComplete]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxComplete]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxComplete]
+    alice2bob.forward(bob)
+
+    // Bob signed that liquidity purchase: his peer actor is now waiting for the funding transaction.
+    val purchase = bobPeer.fishForSpecificMessage() { case l: LiquidityPurchaseSigned => l }
+    assert(purchase.fundingTxIndex == 1)
+    alice2bob.expectMsgType[CommitSig] // we don't forward it
+    bob2alice.expectMsgType[CommitSig] // we don't forward it
+
+    // Bob's signing session isn't consistent with his commitments anymore: he aborts the splice on reconnection, and
+    // must tell his peer actor so that it fails the corresponding upstream HTLCs instead of holding them.
+    val signingSession = desynchronizeSpliceSigningSession(bob)
+    disconnect(f)
+    reconnect(f)
+
+    val txAbort = bob2alice.fishForSpecificMessage() { case msg: TxAbort => msg }
+    assert(txAbort.toAscii == InvalidCommitmentNumber(channelId(bob), signingSession.fundingTxId).getMessage)
+    val aborted = bobPeer.fishForSpecificMessage() { case l: LiquidityPurchaseAborted => l }
+    assert(aborted.txId == purchase.txId)
+    assert(aborted.fundingTxIndex == purchase.fundingTxIndex)
+  }
+
   test("recv CommitSigBatch including the parent commitment while signing a splice") { f =>
     import f._
 

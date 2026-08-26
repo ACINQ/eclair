@@ -715,10 +715,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             case batch: CommitSigBatch =>
               log.warning("we're expecting a single commit_sig for splice with txId={} but received a batch of commit_sig for txIds={}", signingSession.fundingTxId, batch.messages.flatMap(_.fundingTxId_opt).mkString(","))
               rollbackFundingAttempt(signingSession.fundingTx.tx, Nil)
+              reportLiquidityPurchaseAborted(d.channelId, signingSession)
               handleLocalError(CommitSigCountMismatch(d.channelId, 1, batch.batchSize), d, Some(commit))
             case _: CommitSig if !signingSession.isConsistentWith(d.commitments) =>
               log.warning("aborting splice: commitment number mismatch")
               rollbackFundingAttempt(signingSession.fundingTx.tx, Nil)
+              reportLiquidityPurchaseAborted(d.channelId, signingSession)
               handleLocalError(InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId), d, Some(commit))
             case sig: CommitSig =>
               signingSession.receiveCommitSig(d.commitments.channelParams, channelKeys, sig, nodeParams.currentBlockHeight) match {
@@ -1529,6 +1531,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             case SpliceStatus.SpliceWaitingForSigs(signingSession) if !signingSession.isConsistentWith(d.commitments) =>
               log.warning("aborting splice RBF: commitment number mismatch")
               rollbackFundingAttempt(signingSession.fundingTx.tx, previousTxs = Seq.empty) // no splice rbf yet
+              reportLiquidityPurchaseAborted(d.channelId, signingSession)
               handleLocalError(InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId), d, Some(msg))
             case SpliceStatus.SpliceWaitingForSigs(signingSession) =>
               // we have not yet sent our tx_signatures
@@ -2721,6 +2724,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   // commitment numbers that we have already revoked.
                   log.warning("aborting rbf attempt: commitment number mismatch")
                   rollbackRbfAttempt(signingSession, d)
+                  reportLiquidityPurchaseAborted(d.channelId, signingSession)
                   goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId).getMessage)
                 case DualFundingStatus.RbfWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
                   if (retransmitCommitSig) {
@@ -3609,6 +3613,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             // we have already revoked. We abort the splice attempt instead.
             log.warning("aborting splice attempt: commitment number mismatch")
             rollbackFundingAttempt(signingSession.fundingTx.tx, previousTxs = Seq.empty) // no splice rbf yet
+            reportLiquidityPurchaseAborted(d.channelId, signingSession)
             sendQueue = sendQueue :+ TxAbort(d.channelId, InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId).getMessage)
             SpliceStatus.SpliceAborted
           case SpliceStatus.SpliceWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>

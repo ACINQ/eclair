@@ -498,6 +498,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             case DualFundingStatus.RbfWaitingForSigs(signingSession) if !signingSession.isConsistentWith(d.commitments) =>
               log.warning("aborting RBF attempt: commitment number mismatch")
               rollbackRbfAttempt(signingSession, d)
+              reportLiquidityPurchaseAborted(d.channelId, signingSession)
               handleLocalError(InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId), d, Some(txSigs))
             case DualFundingStatus.RbfWaitingForSigs(signingSession) =>
               signingSession.receiveTxSigs(channelKeys, txSigs, nodeParams.currentBlockHeight) match {
@@ -687,6 +688,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case DualFundingStatus.RbfWaitingForSigs(signingSession) if !signingSession.isConsistentWith(d.commitments) =>
           log.warning("aborting RBF attempt: commitment number mismatch")
           rollbackRbfAttempt(signingSession, d)
+          reportLiquidityPurchaseAborted(d.channelId, signingSession)
           handleLocalError(InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId), d, Some(commitSig))
         case DualFundingStatus.RbfWaitingForSigs(signingSession) =>
           signingSession.receiveCommitSig(d.commitments.channelParams, channelKeys, commitSig, nodeParams.currentBlockHeight) match {
