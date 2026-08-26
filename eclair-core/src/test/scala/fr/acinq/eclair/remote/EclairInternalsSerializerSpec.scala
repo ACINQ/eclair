@@ -16,10 +16,33 @@
 
 package fr.acinq.eclair.remote
 
+import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.router.Router.GossipDecision
 import org.scalatest.funsuite.AnyFunSuite
 
 class EclairInternalsSerializerSpec extends AnyFunSuite {
+
+  test("codec peer connection conf") {
+    // The peer connection conf is sent to remote frontends: it must round-trip exactly.
+    val conf = TestConstants.Alice.nodeParams.peerConnectionConf
+    val encoded = EclairInternalsSerializer.peerConnectionConfCodec.encode(conf).require
+    assert(EclairInternalsSerializer.peerConnectionConfCodec.decode(encoded).require.value == conf)
+  }
+
+  test("codec peer connection kill reason") {
+    val reasons = Seq(
+      PeerConnection.KillReason.UserRequest,
+      PeerConnection.KillReason.NoRemainingChannel,
+      PeerConnection.KillReason.AllChannelsFail,
+      PeerConnection.KillReason.ConnectionReplaced,
+      PeerConnection.KillReason.TooManyPendingConnections,
+    )
+    reasons.foreach { reason =>
+      val encoded = EclairInternalsSerializer.peerConnectionKillCodec.encode(PeerConnection.Kill(reason)).require
+      assert(EclairInternalsSerializer.peerConnectionKillCodec.decode(encoded).require.value == PeerConnection.Kill(reason))
+    }
+  }
 
   test("canary test codec gossip decision") {
     

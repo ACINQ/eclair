@@ -26,6 +26,28 @@ eclair.features.option_onion_messages = disabled
 eclair.features.option_onion_messages_only_channels = optional
 ```
 
+### Restrict the number of pending unauthenticated incoming connections
+
+Peers that open a connection but never complete the BOLT 8 handshake consume resources on our node (memory, file
+descriptors and CPU). We now bound how many of those we're willing to keep around:
+
+```conf
+eclair.peer-connection.max-pending-incoming-connections = 500
+eclair.peer-connection.pending-connection-min-age = 1 second
+eclair.peer-connection.pending-connection-accept-delay = 100 milliseconds
+```
+
+When we reach `max-pending-incoming-connections`, we drop the oldest connection that hasn't authenticated yet to make
+room for the new one, and then wait for `pending-connection-accept-delay` before accepting the next one, which lets the
+kernel backlog absorb (and discard) the excess connection attempts. We never drop a pending connection that is more
+recent than `pending-connection-min-age`: this guarantees that honest peers always have enough time to complete the
+handshake, even while we're being flooded with connection attempts. When every pending connection is that recent, we
+reject the incoming connection instead.
+
+The default values shouldn't be reached by honest nodes. Note that this is only a last-resort safety net: DDoS
+protection is much more efficiently handled at the network layer (for example by a cloud provider). Setting
+`max-pending-incoming-connections = 0` disables this limit entirely.
+
 ### Configuration changes
 
 #### Gossip queries
@@ -72,6 +94,7 @@ authentication method used.
 - Answering channel range queries is much cheaper: we cache the timestamps and checksums of our channel updates instead of recomputing them for the whole routing table on every incoming query
 - We ignore duplicate `short_channel_id`s in a `query_short_channel_ids`, and reject queries whose query flags don't cover every `short_channel_id`, or that are sent before we've replied to the previous one
 - We ignore `reply_short_channel_ids_end` messages that don't answer one of our queries: a peer could previously send us one to make us drop our synchronization state and ignore the rest of its replies
+- We now disconnect peers that authenticate but whose connection is never initialized: such connections previously stayed around forever
 
 ## Verifying signatures
 

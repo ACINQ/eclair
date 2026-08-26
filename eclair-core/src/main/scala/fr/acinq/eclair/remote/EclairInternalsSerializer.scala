@@ -127,7 +127,10 @@ object EclairInternalsSerializer {
       ("maxOnionMessagesPerSecond" | int32) ::
       ("maxGossipQueriesPerSecond" | int32) ::
       ("sendRemoteAddressInit" | bool(8)) ::
-      ("maxNoChannels" | int32)).as[PeerConnection.Conf]
+      ("maxNoChannels" | int32) ::
+      ("maxPendingIncomingConnections" | int32) ::
+      ("pendingConnectionMinAge" | finiteDurationCodec) ::
+      ("pendingConnectionAcceptDelay" | finiteDurationCodec)).as[PeerConnection.Conf]
 
   val peerConnectionDoSyncCodec: Codec[PeerConnection.DoSync] = bool(8).as[PeerConnection.DoSync]
 
@@ -136,6 +139,7 @@ object EclairInternalsSerializer {
     .typecase(1, provide(PeerConnection.KillReason.NoRemainingChannel))
     .typecase(2, provide(PeerConnection.KillReason.AllChannelsFail))
     .typecase(3, provide(PeerConnection.KillReason.ConnectionReplaced))
+    .typecase(4, provide(PeerConnection.KillReason.TooManyPendingConnections))
 
   val peerConnectionKillCodec: Codec[PeerConnection.Kill] = peerConnectionKillReasonCodec.as[PeerConnection.Kill]
 
