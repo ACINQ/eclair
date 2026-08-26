@@ -313,7 +313,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectMsg(revB)
     bob2alice.forward(alice)
     val bobCommitSig2 = bob2alice.expectMsgType[CommitSig]
-    assert(bobCommitSig2.sigOrPartialSig != bobCommitSig1.sigOrPartialSig)
+    assert(bobCommitSig2.partialSignature_opt.get != bobCommitSig1.partialSignature_opt.get)
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)

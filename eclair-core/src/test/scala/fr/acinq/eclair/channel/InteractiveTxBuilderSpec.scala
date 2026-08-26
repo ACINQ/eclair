@@ -524,9 +524,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
       // Bob sends signatures first as he did not contribute at all.
       val successA = alice2bob.expectMsgType[Succeeded]
-      assert(successA.commitSig.sigOrPartialSig.isInstanceOf[PartialSignatureWithNonce])
+      assert(successA.commitSig.partialSignature_opt.isDefined)
       val successB = bob2alice.expectMsgType[Succeeded]
-      assert(successB.commitSig.sigOrPartialSig.isInstanceOf[PartialSignatureWithNonce])
+      assert(successB.commitSig.partialSignature_opt.isDefined)
       val (txA, _, txB, _) = fixtureParams.exchangeSigsBobFirst(bobParams, successA, successB)
       assert(successA.nextRemoteCommitNonce_opt.contains((txA.txId, txCompleteB3.commitNonces_opt.get.nextCommitNonce)))
       assert(successB.nextRemoteCommitNonce_opt.contains((txB.txId, txCompleteA.commitNonces_opt.get.nextCommitNonce)))
@@ -1188,11 +1188,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val successA2 = alice2bob.expectMsgType[Succeeded]
       assert(successA2.signingSession.fundingTx.localSigs.previousFundingTxSig_opt.nonEmpty)
       assert(successA2.signingSession.fundingTx.localSigs.previousFundingTxPartialSig_opt.isEmpty)
-      assert(successA2.commitSig.sigOrPartialSig.isInstanceOf[PartialSignatureWithNonce])
+      assert(successA2.commitSig.partialSignature_opt.isDefined)
       val successB2 = bob2alice.expectMsgType[Succeeded]
       assert(successB2.signingSession.fundingTx.localSigs.previousFundingTxSig_opt.nonEmpty)
       assert(successB2.signingSession.fundingTx.localSigs.previousFundingTxPartialSig_opt.isEmpty)
-      assert(successB2.commitSig.sigOrPartialSig.isInstanceOf[PartialSignatureWithNonce])
+      assert(successB2.commitSig.partialSignature_opt.isDefined)
       val (spliceTxA, commitmentA2, spliceTxB, commitmentB2) = fixtureParams.exchangeSigsBobFirst(spliceFixtureParams.fundingParamsB, successA2, successB2)
       assert(successA2.nextRemoteCommitNonce_opt.contains((spliceTxA.txId, txCompleteB.commitNonces_opt.get.nextCommitNonce)))
       assert(successB2.nextRemoteCommitNonce_opt.contains((spliceTxB.txId, txCompleteA.commitNonces_opt.get.nextCommitNonce)))

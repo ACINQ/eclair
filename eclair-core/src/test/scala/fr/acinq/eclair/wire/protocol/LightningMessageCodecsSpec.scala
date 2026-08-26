@@ -154,9 +154,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val tlvTag = UInt64(hex"47010000")
 
     val refs = Map(
-      hex"0023" ++ channelId ++ signature -> FundingSigned(channelId, signature),
-      hex"0023" ++ channelId ++ signature ++ hex"fe47010000 00" -> FundingSigned(channelId, signature, TlvStream[FundingSignedTlv](Set.empty[FundingSignedTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
-      hex"0023" ++ channelId ++ signature ++ hex"fe47010000 07 cccccccccccccc" -> FundingSigned(channelId, signature, TlvStream[FundingSignedTlv](Set.empty[FundingSignedTlv], Set(GenericTlv(tlvTag, hex"cccccccccccccc")))),
+      hex"0023" ++ channelId ++ signature -> FundingSigned(channelId, IndividualSignature(signature)),
+      hex"0023" ++ channelId ++ signature ++ hex"fe47010000 00" -> FundingSigned(channelId, IndividualSignature(signature), TlvStream[FundingSignedTlv](Set.empty[FundingSignedTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
+      hex"0023" ++ channelId ++ signature ++ hex"fe47010000 07 cccccccccccccc" -> FundingSigned(channelId, IndividualSignature(signature), TlvStream[FundingSignedTlv](Set.empty[FundingSignedTlv], Set(GenericTlv(tlvTag, hex"cccccccccccccc")))),
 
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point),
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"00 20" ++ txId.value.reverse -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.ExperimentalNextFundingTlv(txId))),
@@ -620,8 +620,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val msgs = List(
       OpenChannel(BlockHash(randomBytes32()), randomBytes32(), 3 sat, 4 msat, 5 sat, UInt64(6), 7 sat, 8 msat, FeeratePerKw(9 sat), CltvExpiryDelta(10), 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), ChannelFlags(announceChannel = false)),
       AcceptChannel(randomBytes32(), 3 sat, UInt64(4), 5 sat, 6 msat, 7, CltvExpiryDelta(8), 9, publicKey(1), point(2), point(3), point(4), point(5), point(6)),
-      FundingCreated(randomBytes32(), TxId(ByteVector32.Zeroes), 3, randomBytes64()),
-      FundingSigned(randomBytes32(), randomBytes64()),
+      FundingCreated(randomBytes32(), TxId(ByteVector32.Zeroes), 3, IndividualSignature(randomBytes64())),
+      FundingSigned(randomBytes32(), IndividualSignature(randomBytes64())),
       ChannelReady(randomBytes32(), point(2)),
       ChannelReady(randomBytes32(), point(2), Alias(123456)),
       ChannelReady(randomBytes32(), point(2), Alias(123456), IndividualNonce(randomBytes(66))),

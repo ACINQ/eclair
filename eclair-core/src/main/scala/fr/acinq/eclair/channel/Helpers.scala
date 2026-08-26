@@ -920,14 +920,19 @@ object Helpers {
        * for their next closing_sig that will match our latest closing_complete.
        */
       def receiveSimpleClosingSig(channelKeys: ChannelKeys, commitment: FullCommitment, closingTxs: ClosingTxs, closingSig: ClosingSig, localClosingComplete_opt: Option[ClosingComplete], remoteNonce_opt: Option[IndividualNonce]): Either[ChannelException, ClosingTx] = {
-        val closingTxsWithSig = Seq(
-          closingSig.closerAndCloseeOutputsSig_opt.flatMap(sig => closingTxs.localAndRemote_opt.map(tx => (tx, IndividualSignature(sig)))),
-          closingSig.closerAndCloseeOutputsPartialSig_opt.flatMap(sig => remoteNonce_opt.flatMap(nonce => closingTxs.localAndRemote_opt.map(tx => (tx, PartialSignatureWithNonce(sig, nonce))))),
-          closingSig.closerOutputOnlySig_opt.flatMap(sig => closingTxs.localOnly_opt.map(tx => (tx, IndividualSignature(sig)))),
-          closingSig.closerOutputOnlyPartialSig_opt.flatMap(sig => remoteNonce_opt.flatMap(nonce => closingTxs.localOnly_opt.map(tx => (tx, PartialSignatureWithNonce(sig, nonce))))),
-          closingSig.closeeOutputOnlySig_opt.flatMap(sig => closingTxs.remoteOnly_opt.map(tx => (tx, IndividualSignature(sig)))),
-          closingSig.closeeOutputOnlyPartialSig_opt.flatMap(sig => remoteNonce_opt.flatMap(nonce => closingTxs.remoteOnly_opt.map(tx => (tx, PartialSignatureWithNonce(sig, nonce)))))
-        ).flatten
+        // We only consider the type of signature that matches our commitment format
+        val closingTxsWithSig: Seq[(ClosingTx, ChannelSpendSignature)] = commitment.commitmentFormat match {
+          case _: SegwitV0CommitmentFormat => Seq(
+            closingSig.closerAndCloseeOutputsSig_opt.flatMap(sig => closingTxs.localAndRemote_opt.map(tx => (tx, IndividualSignature(sig)))),
+            closingSig.closerOutputOnlySig_opt.flatMap(sig => closingTxs.localOnly_opt.map(tx => (tx, IndividualSignature(sig)))),
+            closingSig.closeeOutputOnlySig_opt.flatMap(sig => closingTxs.remoteOnly_opt.map(tx => (tx, IndividualSignature(sig)))),
+          ).flatten
+          case _: SimpleTaprootChannelCommitmentFormat => Seq(
+            closingSig.closerAndCloseeOutputsPartialSig_opt.flatMap(sig => remoteNonce_opt.flatMap(nonce => closingTxs.localAndRemote_opt.map(tx => (tx, PartialSignatureWithNonce(sig, nonce))))),
+            closingSig.closerOutputOnlyPartialSig_opt.flatMap(sig => remoteNonce_opt.flatMap(nonce => closingTxs.localOnly_opt.map(tx => (tx, PartialSignatureWithNonce(sig, nonce))))),
+            closingSig.closeeOutputOnlyPartialSig_opt.flatMap(sig => remoteNonce_opt.flatMap(nonce => closingTxs.remoteOnly_opt.map(tx => (tx, PartialSignatureWithNonce(sig, nonce))))),
+          ).flatten
+        }
         closingTxsWithSig.headOption match {
           case Some((closingTx, remoteSig)) =>
             val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)

@@ -23,6 +23,7 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Transaction, TxId, TxOut}
 import fr.acinq.eclair.TestUtils.randomTxId
+import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.filterPendingChannels
 import fr.acinq.eclair.router.Router.{GetNode, PublicNode, UnknownNode}
@@ -76,11 +77,11 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     val tx = Transaction.read("010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000")
     val closingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(10_000 sat, Nil)), tx, None)
     val channelsOnWhitelistAtLimit: Seq[PersistentChannelData] = Seq(
-      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerOnWhitelistAtLimit, randomBytes32()), BlockHeight(0), None, Left(FundingCreated(randomBytes32(), TxId(ByteVector32.Zeroes), 3, randomBytes64()))),
+      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerOnWhitelistAtLimit, randomBytes32()), BlockHeight(0), None, Left(FundingCreated(randomBytes32(), TxId(ByteVector32.Zeroes), 3, IndividualSignature(randomBytes64())))),
       DATA_WAIT_FOR_CHANNEL_READY(commitments(peerOnWhitelistAtLimit, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None)),
     )
     val channelsAtLimit1 = Seq(
-      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerAtLimit1, channelIdAtLimit1), BlockHeight(0), None, Left(FundingCreated(channelIdAtLimit1, TxId(ByteVector32.Zeroes), 3, randomBytes64()))),
+      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerAtLimit1, channelIdAtLimit1), BlockHeight(0), None, Left(FundingCreated(channelIdAtLimit1, TxId(ByteVector32.Zeroes), 3, IndividualSignature(randomBytes64())))),
       DATA_WAIT_FOR_CHANNEL_READY(commitments(peerAtLimit1, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None)),
     )
     val channelsAtLimit2 = Seq(
@@ -88,7 +89,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
       DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments(peerAtLimit2, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None)),
     )
     val channelsBelowLimit1 = Seq(
-      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerBelowLimit1, channelIdBelowLimit1), BlockHeight(0), None, Left(FundingCreated(channelIdBelowLimit1, TxId(ByteVector32.Zeroes), 3, randomBytes64()))),
+      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerBelowLimit1, channelIdBelowLimit1), BlockHeight(0), None, Left(FundingCreated(channelIdBelowLimit1, TxId(ByteVector32.Zeroes), 3, IndividualSignature(randomBytes64())))),
     )
     val channelsBelowLimit2 = Seq(
       DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments(peerBelowLimit2, channelIdBelowLimit2), ShortIdAliases(ShortChannelId.generateLocalAlias(), None)),
@@ -101,7 +102,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
       DATA_NORMAL(commitments(privatePeer2, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None), None, null, SpliceStatus.NoSplice, None, None, None),
     )
     val initiatorChannels = Seq(
-      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerBelowLimit1, randomBytes32(), isOpener = true), BlockHeight(0), None, Left(FundingCreated(channelIdAtLimit1, TxId(ByteVector32.Zeroes), 3, randomBytes64()))),
+      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerBelowLimit1, randomBytes32(), isOpener = true), BlockHeight(0), None, Left(FundingCreated(channelIdAtLimit1, TxId(ByteVector32.Zeroes), 3, IndividualSignature(randomBytes64())))),
       DATA_WAIT_FOR_CHANNEL_READY(commitments(peerBelowLimit1, randomBytes32(), isOpener = true), ShortIdAliases(ShortChannelId.generateLocalAlias(), None)),
       DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments(peerAtLimit1, randomBytes32(), isOpener = true), 0 msat, 0 msat, BlockHeight(0), BlockHeight(0), DualFundingStatus.WaitingForConfirmations, None),
       DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments(peerAtLimit1, randomBytes32(), isOpener = true), ShortIdAliases(ShortChannelId.generateLocalAlias(), None)),
@@ -323,7 +324,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
       DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments(randomKey().publicKey, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None)),
       DATA_NORMAL(commitments(randomKey().publicKey, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None), None, null, SpliceStatus.NoSplice, None, None, None),
       DATA_SHUTDOWN(commitments(randomKey().publicKey, randomBytes32()), Shutdown(randomBytes32(), ByteVector.empty), Shutdown(randomBytes32(), ByteVector.empty), CloseStatus.Initiator(None)),
-      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(randomKey().publicKey, randomBytes32()), BlockHeight(0), None, Left(FundingCreated(randomBytes32(), TxId(ByteVector32.Zeroes), 3, randomBytes64()))),
+      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(randomKey().publicKey, randomBytes32()), BlockHeight(0), None, Left(FundingCreated(randomBytes32(), TxId(ByteVector32.Zeroes), 3, IndividualSignature(randomBytes64())))),
     )
     val limiter = testKit.spawn(PendingChannelsRateLimiter(nodeParams, router.ref, channels))
 

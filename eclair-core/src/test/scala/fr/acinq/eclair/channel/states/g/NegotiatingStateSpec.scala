@@ -32,7 +32,7 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.ClosingSignedTlv.FeeRange
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingComplete, ClosingCompleteTlv, ClosingSig, ClosingSigTlv, ClosingSigned, ClosingTlv, Error, Shutdown, TlvStream, Warning}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -480,6 +480,37 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
     bob2blockchain.expectFinalTxPublished("local-main-delayed")
     bob2blockchain.expectWatchTxConfirmed(tx.txid)
+  }
+
+  def testReceiveClosingSigWrongSignatureType(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
+    import f._
+    aliceClose(f)
+    val aliceClosingComplete = alice2bob.expectMsgType[ClosingComplete]
+    bob2alice.expectMsgType[ClosingComplete]
+    alice2bob.forward(bob, aliceClosingComplete)
+    val bobClosingSig = bob2alice.expectMsgType[ClosingSig]
+    val bobTx = bob2blockchain.expectMsgType[PublishFinalTx]
+    bob2blockchain.expectWatchTxConfirmed(bobTx.tx.txid)
+    // Bob adds a signature that doesn't match our commitment format: we must ignore it and use the one that matches.
+    val invalidSig: ClosingSigTlv = commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => ClosingSigTlv.CloserAndCloseeOutputsPartialSignature(randomBytes32())
+      case _: TaprootCommitmentFormat => ClosingTlv.CloserAndCloseeOutputs(randomBytes64())
+    }
+    bob2alice.forward(alice, bobClosingSig.copy(tlvStream = TlvStream(bobClosingSig.tlvStream.records + invalidSig, bobClosingSig.tlvStream.unknown)))
+    inside(alice2blockchain.expectMsgType[PublishFinalTx]) { p =>
+      assert(p.tx.txid == bobTx.tx.txid)
+      assert(p.fee > 0.sat)
+    }
+    alice2blockchain.expectWatchTxConfirmed(bobTx.tx.txid)
+    assert(alice.stateName == NEGOTIATING_SIMPLE)
+  }
+
+  test("recv ClosingSig (invalid signature type)", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+    testReceiveClosingSigWrongSignatureType(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv ClosingSig (invalid signature type, simple taproot channels)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testReceiveClosingSigWrongSignatureType(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
   }
 
   def testReceiveClosingCompleteBothOutputs(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {

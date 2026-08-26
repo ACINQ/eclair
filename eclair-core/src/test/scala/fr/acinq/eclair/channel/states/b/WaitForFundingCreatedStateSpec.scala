@@ -18,15 +18,17 @@ package fr.acinq.eclair.channel.states.b
 
 import akka.actor.ActorRef
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
+import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, toLongId}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, randomBytes, randomBytes32, toLongId}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -114,6 +116,17 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(channelId, InvalidFundingTx(channelId).getMessage))
     awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv invalid FundingCreated (non-taproot channels, but includes a partial signature)") { f =>
+    import f._
+    val fundingCreated = alice2bob.expectMsgType[FundingCreated]
+    // Alice's signature is genuine, but she also attaches an unsolicited partial_signature_with_nonce TLV
+    // filled with arbitrary bytes, on a channel that does not use taproot.
+    val poisonSig = PartialSignatureWithNonce(randomBytes32(), IndividualNonce(randomBytes(66)))
+    val poisoned = fundingCreated.copy(tlvStream = TlvStream(fundingCreated.tlvStream.records + ChannelTlv.PartialSignatureWithNonceTlv(poisonSig)))
+    alice2bob.forward(bob, poisoned)
+    bob2alice.expectMsgType[Error]
   }
 
   test("recv Error") { f =>
