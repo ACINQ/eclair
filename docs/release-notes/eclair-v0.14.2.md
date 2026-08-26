@@ -1,10 +1,19 @@
-# Eclair vnext
+# Eclair v0.14.2
 
-<insert here a high-level description of the release>
+This is a patch release that contains several bug fixes.
+We highly recommend upgrading, as some of these issues can be exploited by malicious nodes.
 
-We explicitly document that bitcoind should run on the same machine as eclair, or that a secure tunnel (providing encryption and authentication) must be setup between eclair and bitcoind.
+We now explicitly document that `bitcoind` should run on the same machine as `eclair`,
+or that a secure tunnel (providing encryption and authentication) must be setup between `eclair` and `bitcoind`.
+If you are running `bitcoind` on a remote machine without a secure tunnel, you should rework your setup.
 
 ## Major changes
+
+### Add support for fulfillment payload
+
+We include support for relaying a fulfillment payload and authenticating it with the attribution data.
+This was added to the BOLTs in https://github.com/lightning/bolts/pull/1344. This will be useful in the
+future to allow payment recipient to atomically send back some data to the sender on payment success.
 
 ### Advertize when onion messages require channels
 
@@ -86,7 +95,7 @@ authentication method used.
 
 ### API changes
 
-<insert changes>
+Nothing noteworthy.
 
 ### Miscellaneous improvements and bug fixes
 
@@ -139,4 +148,27 @@ This release is fully compatible with previous eclair versions. You don't need t
 
 ## Changelog
 
-<fill this section when publishing the release with `git log v0.14.1... --format=oneline --reverse`>
+- [ee7d9f6](https://github.com/ACINQ/eclair/commit/ee7d9f6dc53a4ee395f2486ab7ec8a13bd8b6a68) Back to dev (#3339)
+- [54912ef](https://github.com/ACINQ/eclair/commit/54912ef29a3e023324bf283debdefe40bfaf998c) Correctly handle unknown flags in `channel_update` (#3341)
+- [b6b89e0](https://github.com/ACINQ/eclair/commit/b6b89e0267aec2dc4426caafeb5ec8b70c613128) Improve liquidity ads codec performance (#3344)
+- [0c4ddc4](https://github.com/ACINQ/eclair/commit/0c4ddc4d3b98417f98033c31faa942732e48abb2) Multiple bug fixes found by AI scanning (#3346)
+- [95878dd](https://github.com/ACINQ/eclair/commit/95878ddb790335f188a04d18227f97bf3f250284) Gossip queries fixes and improvements (#3345)
+- [b5d2082](https://github.com/ACINQ/eclair/commit/b5d2082e94037967e59453e4034d1ff4bbcabe02) Improve defenses against malicious bitcoin RPC endpoint (#3343)
+- [fa10b0e](https://github.com/ACINQ/eclair/commit/fa10b0e0d664379f4b7deaba7a50271e97931466) Several improvements suggested by Loupe (#3348)
+- [17edd76](https://github.com/ACINQ/eclair/commit/17edd765b5b717246479a636dc2a3f20ed2a2ac5) Harden permissions of seeds and datadir (#3340)
+- [8436c50](https://github.com/ACINQ/eclair/commit/8436c50e9bc62a83192aa91de20d1a49172d062c) Use `min_final_expiry_delta` in trampoline test handler (#3353)
+- [48ff28a](https://github.com/ACINQ/eclair/commit/48ff28abdf9739ec2dc0d1cef12d9eb011d11dc2) Fix several on-the-fly-funding bugs (#3351)
+- [32b93b1](https://github.com/ACINQ/eclair/commit/32b93b1488be653c7c66a438b171759e77b058ad) Add more checks around funding amount and channel reserve (#3352)
+- [2422958](https://github.com/ACINQ/eclair/commit/24229589eb532df863a7445c876ededd76b0209e) Better documentation for remote `bitcoind` (#3359)
+- [aa321d6](https://github.com/ACINQ/eclair/commit/aa321d69d082d474be1f3b9d3362560cb8e9838e) Explicitly match on-the-fly HTLCs after a restart (#3357)
+- [06e0ff7](https://github.com/ACINQ/eclair/commit/06e0ff717b84fbcc11efc211c0fed4420fa7d289) Fix a batch of low-severity issues (#3355)
+- [1819a5e](https://github.com/ACINQ/eclair/commit/1819a5e80d03b3fecfada8adc58bb62dd7c1daba) Add support for fulfillment payload  (#3321)
+- [b358690](https://github.com/ACINQ/eclair/commit/b3586905c6b897dc9b2a06cd12bd0bd06154d390) Add support for `option_onion_messages_only_channels` (#3342)
+- [5b765e0](https://github.com/ACINQ/eclair/commit/5b765e026b64631043fa9bbdde2151b6e9cc854b) Force-close channels that our peer claims are late without proving it (#3360)
+- [141269f](https://github.com/ACINQ/eclair/commit/141269f516ab6ab07e1ffa2e5fdf1a7a41d71739) (Minor) Update claude gitignore files (#3363)
+- [23316e4](https://github.com/ACINQ/eclair/commit/23316e4ecdc606b66bd99980b4c4373dbb047cef) (Minor) Fix flaky test in `WaitForAcceptChannelStateSpec` (#3364)
+- [14d4093](https://github.com/ACINQ/eclair/commit/14d40937ba43e4c712392af8d932d0bf36166ddb) Emit `ChannelPersisted` event at channel creation (#3361)
+- [b7ebefd](https://github.com/ACINQ/eclair/commit/b7ebefdbb7131774df27b6cdd69471a4f9afec3f) Force-close on invalid HTLC `cltv_expiry` (#3367)
+- [1fc3dd7](https://github.com/ACINQ/eclair/commit/1fc3dd7ca140cff45debaa9ad9d3e40eeba4b512) Reject messages that include the wrong type of signatures (#3368)
+- [3d092da](https://github.com/ACINQ/eclair/commit/3d092da8c96a9999368a3ed7412486a6ef7dfbf4) Fix a batch of Tor-related issues (#3354)
+- [a2fe6c7](https://github.com/ACINQ/eclair/commit/a2fe6c7472c1f55e465f18a6cd05ae202131bbd8) Add optional rate-limit on incoming pre-auth connections (#3356)
