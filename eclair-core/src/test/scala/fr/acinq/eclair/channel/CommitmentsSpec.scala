@@ -85,7 +85,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac1.availableBalanceForSend == a - p - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
-    val Right(bc1) = bc0.receiveAdd(add)
+    val Right(bc1) = bc0.receiveAdd(add, currentBlockHeight)
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -170,7 +170,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac1.availableBalanceForSend == a - p - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
-    val Right(bc1) = bc0.receiveAdd(add)
+    val Right(bc1) = bc0.receiveAdd(add, currentBlockHeight)
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -268,15 +268,15 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc1.availableBalanceForSend == b - p3) // bob doesn't pay the fee
     assert(bc1.availableBalanceForReceive == a)
 
-    val Right(bc2) = bc1.receiveAdd(add1)
+    val Right(bc2) = bc1.receiveAdd(add1, currentBlockHeight)
     assert(bc2.availableBalanceForSend == b - p3)
     assert(bc2.availableBalanceForReceive == a - p1 - htlcOutputFee)
 
-    val Right(bc3) = bc2.receiveAdd(add2)
+    val Right(bc3) = bc2.receiveAdd(add2, currentBlockHeight)
     assert(bc3.availableBalanceForSend == b - p3)
     assert(bc3.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
-    val Right(ac3) = ac2.receiveAdd(add3)
+    val Right(ac3) = ac2.receiveAdd(add3, currentBlockHeight)
     assert(ac3.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b - p3)
 
@@ -409,7 +409,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     for (isInitiator <- Seq(true, false)) {
       val c = CommitmentsSpec.makeCommitments(31000000 msat, 702000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator)
       val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, accountable = false, None)
-      c.receiveAdd(add)
+      c.receiveAdd(add, f.currentBlockHeight)
     }
   }
 
@@ -432,7 +432,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         val (_, cmdAdd) = makeCmdAdd(amount, randomKey().publicKey, f.currentBlockHeight)
         c.sendAdd(cmdAdd, f.currentBlockHeight, TestConstants.Alice.nodeParams.channelConf, feeConfNoMismatch) match {
           case Right((cc, _)) => c = cc
-          case Left(e) => // we ignore failures (the HTLC amount probably exceeded availableBalanceForSend)
+          case Left(_) => // we ignore failures (the HTLC amount probably exceeded availableBalanceForSend)
         }
       }
       if (c.availableBalanceForSend > 0.msat) {
@@ -460,14 +460,14 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       for (_ <- 1 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
         val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, accountable = false, None)
-        c.receiveAdd(add) match {
+        c.receiveAdd(add, f.currentBlockHeight) match {
           case Right(cc) => c = cc
-          case Left(e) => // we ignore failures (the HTLC amount probably exceeded availableBalanceForReceive)
+          case Left(_) => // we ignore failures (the HTLC amount probably exceeded availableBalanceForReceive)
         }
       }
       if (c.availableBalanceForReceive > 0.msat) {
         val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, accountable = false, None)
-        c.receiveAdd(add) match {
+        c.receiveAdd(add, f.currentBlockHeight) match {
           case Right(_) => ()
           case Left(e) => fail(s"$t -> $e")
         }

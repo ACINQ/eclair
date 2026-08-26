@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
+import fr.acinq.bitcoin.Script.LOCKTIME_THRESHOLD
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, SatoshiLong, Transaction, TxId}
@@ -953,9 +954,14 @@ case class Commitments(channelParams: ChannelParams,
     }
   }
 
-  def receiveAdd(add: UpdateAddHtlc): Either[ChannelException, Commitments] = {
+  def receiveAdd(add: UpdateAddHtlc, currentBlockHeight: BlockHeight): Either[ChannelException, Commitments] = {
     if (add.id != changes.remoteNextHtlcId) {
       return Left(UnexpectedHtlcId(channelId, expected = changes.remoteNextHtlcId, actual = add.id))
+    }
+
+    // CLTV expiry values >= 500_000_000 would indicate a time in seconds instead of a block height.
+    if (add.cltvExpiry >= CltvExpiry(LOCKTIME_THRESHOLD)) {
+      return Left(ExpiryTooBig(channelId, CltvExpiry(LOCKTIME_THRESHOLD), add.cltvExpiry, currentBlockHeight))
     }
 
     // we used to not enforce a strictly positive minimum, hence the max(1 msat)

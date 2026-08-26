@@ -622,6 +622,19 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2blockchain.expectWatchTxConfirmed(tx.txid)
   }
 
+  test("recv UpdateAddHtlc (invalid cltv_expiry)") { f =>
+    import f._
+    val tx = bob.signCommitTx()
+    bob ! UpdateAddHtlc(ByteVector32.Zeroes, 0, 150000 msat, randomBytes32(), CltvExpiry(500_000_000), TestConstants.emptyOnionPacket, None, accountable = false, None)
+    val error = bob2alice.expectMsgType[Error]
+    assert(new String(error.data.toArray) == ExpiryTooBig(channelId(bob), CltvExpiry(500_000_000), CltvExpiry(500_000_000), BlockHeight(TestConstants.defaultBlockHeight)).getMessage)
+    awaitCond(bob.stateName == CLOSING)
+    bob2blockchain.expectFinalTxPublished(tx.txid)
+    bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    bob2blockchain.expectFinalTxPublished("local-main-delayed")
+    bob2blockchain.expectWatchTxConfirmed(tx.txid)
+  }
+
   test("recv UpdateAddHtlc (value too small)") { f =>
     import f._
     val tx = bob.signCommitTx()

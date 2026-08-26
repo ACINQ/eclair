@@ -26,7 +26,6 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
-import fr.acinq.secp256k1.Secp256k1
 import scodec.bits.ByteVector
 
 import scala.util.{Success, Try}
@@ -100,7 +99,7 @@ object Scripts {
    * @return the block height before which this tx cannot be published.
    */
   def cltvTimeout(tx: Transaction): BlockHeight =
-    if (tx.lockTime <= LOCKTIME_THRESHOLD) {
+    if (tx.lockTime < LOCKTIME_THRESHOLD) {
       // locktime is a number of blocks
       BlockHeight(tx.lockTime)
     } else {
