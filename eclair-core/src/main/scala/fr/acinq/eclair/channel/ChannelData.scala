@@ -525,6 +525,15 @@ sealed trait SpliceStatus {
     case SpliceStatus.NoSplice | _: SpliceStatus.NegotiatingQuiescence => false
     case _ => true
   }
+  /** Our peer has sent stfu: they must not send any update until the quiescence session ends. */
+  def remoteIsQuiescing: Boolean = this match {
+    case SpliceStatus.NegotiatingQuiescence(_, status) => status match {
+      case _: QuiescenceNegotiation.NonInitiator.ReceivedStfu => true
+      case _: QuiescenceNegotiation.Initiator => false
+    }
+    case SpliceStatus.NoSplice => false
+    case _ => true
+  }
 }
 object SpliceStatus {
   case object NoSplice extends SpliceStatus
@@ -687,6 +696,7 @@ final case class DATA_NORMAL(commitments: Commitments,
   val lastAnnouncedFundingTxId_opt: Option[TxId] = lastAnnouncedCommitment_opt.map(_.fundingTxId)
   val isNegotiatingQuiescence: Boolean = spliceStatus.isNegotiatingQuiescence
   val isQuiescent: Boolean = spliceStatus.isQuiescent
+  val remoteIsQuiescing: Boolean = spliceStatus.remoteIsQuiescing
 }
 final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closeStatus: CloseStatus) extends ChannelDataWithCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,

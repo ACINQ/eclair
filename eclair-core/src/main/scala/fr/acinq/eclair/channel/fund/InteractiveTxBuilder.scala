@@ -1218,6 +1218,11 @@ object InteractiveTxSigningSession {
     // If we haven't received the remote commit_sig, we will request a retransmission on reconnection.
     val retransmitRemoteCommitSig: Boolean = localCommit.isLeft
 
+    /** Verify that the pending commitment number matches the other commitments before accepting commit_sig. */
+    def isConsistentWith(commitments: Commitments): Boolean = {
+      localCommitIndex == commitments.localCommitIndex && remoteCommit.index == commitments.remoteCommitIndex
+    }
+
     // For the legacy splice protocol, we use the next_commitment_number to let our peer know whether they needed to
     // retransmit commit_sig or not. We're now using an explicit bit instead, but need to maintain backwards-compatibility.
     def nextLocalCommitmentNumber(useLegacySpliceProtocol: Boolean): Long = localCommit match {

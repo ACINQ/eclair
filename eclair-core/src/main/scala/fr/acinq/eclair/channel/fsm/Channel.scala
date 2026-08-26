@@ -538,6 +538,26 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       context.system.scheduler.scheduleOnce(1 second, peer, Peer.Disconnect(remoteNodeId))
       stay() sending Warning(d.channelId, error.getMessage)
 
+    case Event(msg: ForbiddenMessageWhenQuiescent, d: DATA_NORMAL) if d.remoteIsQuiescing =>
+      // Our peer has sent stfu: they must not send any update until the quiescence session ends, even though we may
+      // still be signing our own pending updates. If we applied their update, our local and remote commitments would
+      // stop being mirror images of each other, and the splice commitment that we're about to create from them would
+      // have inconsistent balances.
+      log.warning("received forbidden message {} after our peer sent stfu", msg.getClass.getSimpleName)
+      val error = ForbiddenDuringQuiescence(d.channelId, msg.getClass.getSimpleName)
+      // We forward preimages as soon as possible to the upstream channel because it allows us to pull funds.
+      msg match {
+        case fulfill: UpdateFulfillHtlc => d.commitments.receiveFulfill(fulfill) match {
+          case Right((_, origin, htlc)) => relayer ! RES_ADD_SETTLED(origin, remoteNodeId, htlc, HtlcResult.RemoteFulfill(fulfill))
+          case _ => ()
+        }
+        case _ => ()
+      }
+      // Instead of force-closing (which would cost us on-chain fees), we disconnect: this cancels the quiescence
+      // negotiation and restores the channel to a clean state.
+      context.system.scheduler.scheduleOnce(1 second, peer, Peer.Disconnect(remoteNodeId))
+      stay() sending Warning(d.channelId, error.getMessage)
+
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined || d.remoteShutdown.isDefined =>
       // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
       // but we want to converge as fast as possible and they would probably not route them anyway
@@ -675,40 +695,68 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(commit: CommitSigs, d: DATA_NORMAL) =>
-      (d.spliceStatus, commit) match {
-        case (s: SpliceStatus.SpliceInProgress, sig: CommitSig) =>
-          log.debug("received their commit_sig, deferring message")
-          stay() using d.copy(spliceStatus = s.copy(remoteCommitSig = Some(sig)))
-        case (SpliceStatus.SpliceAborted, _: CommitSig) =>
+      d.spliceStatus match {
+        case s: SpliceStatus.SpliceInProgress =>
+          commit match {
+            case sig: CommitSig =>
+              log.debug("received their commit_sig, deferring message")
+              stay() using d.copy(spliceStatus = s.copy(remoteCommitSig = Some(sig)))
+            case _: CommitSigBatch =>
+              log.warning("ignoring received commit_sig batch while splice is in progress")
+              // This should never happen if our peer follows the spec: we just ignore the batch, which may or may not
+              // lead to a force-close depending on how our peer behaves.
+              stay()
+          }
+        case SpliceStatus.SpliceAborted =>
           log.warning("received commit_sig after sending tx_abort, they probably sent it before receiving our tx_abort, ignoring...")
           stay()
-        case (SpliceStatus.SpliceWaitingForSigs(signingSession), sig: CommitSig) =>
-          signingSession.receiveCommitSig(d.commitments.channelParams, channelKeys, sig, nodeParams.currentBlockHeight) match {
-            case Left(f) =>
+        case SpliceStatus.SpliceWaitingForSigs(signingSession) =>
+          commit match {
+            case batch: CommitSigBatch =>
+              log.warning("we're expecting a single commit_sig for splice with txId={} but received a batch of commit_sig for txIds={}", signingSession.fundingTxId, batch.messages.flatMap(_.fundingTxId_opt).mkString(","))
               rollbackFundingAttempt(signingSession.fundingTx.tx, Nil)
-              stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, f.getMessage)
-            case Right(signingSession1) => signingSession1 match {
-              case signingSession1: InteractiveTxSigningSession.WaitingForSigs =>
-                // In theory we don't have to store their commit_sig here, as they would re-send it if we disconnect, but
-                // it is more consistent with the case where we send our tx_signatures first.
-                val d1 = d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(signingSession1))
-                stay() using d1 storing()
-              case signingSession1: InteractiveTxSigningSession.SendingSigs =>
-                // We don't have their tx_sigs, but they have ours, and could publish the funding tx without telling us.
-                // That's why we move on immediately to the next step, and will update our unsigned funding tx when we
-                // receive their tx_sigs.
-                val minDepth_opt = d.commitments.channelParams.minDepth(nodeParams.channelConf.minDepth)
-                watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
-                val commitments1 = d.commitments.add(signingSession1.commitment)
-                context.system.eventStream.publish(ChannelFundingCreated(self, d.channelId, remoteNodeId, Right(signingSession1.fundingTx.signedTx_opt.getOrElse(signingSession1.fundingTx.sharedTx.tx.buildUnsignedTx())), signingSession1.commitment.fundingTxIndex, commitments1))
-                val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
-                stay() using d1 storing() sending signingSession1.localSigs calling endQuiescence(d1)
-            }
+              reportLiquidityPurchaseAborted(d.channelId, signingSession)
+              handleLocalError(CommitSigCountMismatch(d.channelId, 1, batch.batchSize), d, Some(commit))
+            case _: CommitSig if !signingSession.isConsistentWith(d.commitments) =>
+              log.warning("aborting splice: commitment number mismatch")
+              rollbackFundingAttempt(signingSession.fundingTx.tx, Nil)
+              reportLiquidityPurchaseAborted(d.channelId, signingSession)
+              handleLocalError(InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId), d, Some(commit))
+            case sig: CommitSig =>
+              signingSession.receiveCommitSig(d.commitments.channelParams, channelKeys, sig, nodeParams.currentBlockHeight) match {
+                case Left(f) =>
+                  rollbackFundingAttempt(signingSession.fundingTx.tx, Nil)
+                  stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, f.getMessage)
+                case Right(signingSession1) => signingSession1 match {
+                  case signingSession1: InteractiveTxSigningSession.WaitingForSigs =>
+                    // In theory we don't have to store their commit_sig here, as they would re-send it if we disconnect, but
+                    // it is more consistent with the case where we send our tx_signatures first.
+                    val d1 = d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(signingSession1))
+                    stay() using d1 storing()
+                  case signingSession1: InteractiveTxSigningSession.SendingSigs =>
+                    // We don't have their tx_sigs, but they have ours, and could publish the funding tx without telling us.
+                    // That's why we move on immediately to the next step, and will update our unsigned funding tx when we
+                    // receive their tx_sigs.
+                    val minDepth_opt = d.commitments.channelParams.minDepth(nodeParams.channelConf.minDepth)
+                    watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
+                    val commitments1 = d.commitments.add(signingSession1.commitment)
+                    context.system.eventStream.publish(ChannelFundingCreated(self, d.channelId, remoteNodeId, Right(signingSession1.fundingTx.signedTx_opt.getOrElse(signingSession1.fundingTx.sharedTx.tx.buildUnsignedTx())), signingSession1.commitment.fundingTxIndex, commitments1))
+                    val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
+                    stay() using d1 storing() sending signingSession1.localSigs calling endQuiescence(d1)
+                }
+              }
           }
+        case spliceStatus if spliceStatus.isQuiescent =>
+          // The channel is quiescent and we're negotiating a splice or an rbf attempt: our peer must not send
+          // commit_sig. We don't have a signing session yet, so applying it wouldn't let them steal our funds, but it
+          // would move our commitment index right before we create a commitment at the current commitment index.
+          // Instead of force-closing (which would cost us on-chain fees), we disconnect: this aborts the splice
+          // attempt, restores the channel to a clean state, and gives our peer the opportunity to fix their node.
+          log.warning("received commit_sig while quiescent with status {}, disconnecting", spliceStatus.getClass.getSimpleName)
+          context.system.scheduler.scheduleOnce(1 second, peer, Peer.Disconnect(remoteNodeId))
+          stay() sending Warning(d.channelId, ForbiddenDuringSplice(d.channelId, commit.getClass.getSimpleName).getMessage)
         case _ =>
-          // NB: in all other cases we process the commit_sigs normally. We could do a full pattern matching on all
-          // splice statuses, but it would force us to handle every corner case where our peer doesn't behave correctly
-          // whereas they will all simply lead to a force-close.
+          // NB: in all other cases we process the commit_sigs normally, since we're not in the middle of splicing.
           d.commitments.receiveCommit(commit, channelKeys) match {
             case Right((commitments1, revocation)) =>
               log.debug("received a new sig, spec:\n{}", commitments1.latest.specs2String)
@@ -727,7 +775,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   val stfu = Stfu(d.channelId, initiator = true)
                   val spliceStatus1 = SpliceStatus.NegotiatingQuiescence(cmd_opt, QuiescenceNegotiation.Initiator.SentStfu(stfu))
                   (d.copy(commitments = commitments1, spliceStatus = spliceStatus1), Seq(revocation, stfu))
-                case SpliceStatus.NegotiatingQuiescence(_, _: QuiescenceNegotiation.NonInitiator.ReceivedStfu) if commitments1.localIsQuiescent =>
+                // Note that we check that *both* sides are quiescent: our peer must not have sent updates after their
+                // stfu, otherwise the commitment we create during the splice would have inconsistent balances.
+                case SpliceStatus.NegotiatingQuiescence(_, _: QuiescenceNegotiation.NonInitiator.ReceivedStfu) if commitments1.isQuiescent =>
                   val stfu = Stfu(d.channelId, initiator = false)
                   (d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NonInitiatorQuiescent), Seq(revocation, stfu))
                 case _ =>
@@ -1248,6 +1298,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(msg: TxInitRbf, d: DATA_NORMAL) =>
       d.spliceStatus match {
+        case SpliceStatus.NonInitiatorQuiescent if !d.commitments.isQuiescent =>
+          log.info("rejecting rbf request: channel not quiescent")
+          stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
         case SpliceStatus.NonInitiatorQuiescent =>
           getSpliceRbfContext(None, d) match {
             case Right(rbf) if msg.feerate < rbf.latestFundingTx.fundingParams.minNextFeerate =>
@@ -1475,6 +1528,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           }
         case _ =>
           d.spliceStatus match {
+            case SpliceStatus.SpliceWaitingForSigs(signingSession) if !signingSession.isConsistentWith(d.commitments) =>
+              log.warning("aborting splice RBF: commitment number mismatch")
+              rollbackFundingAttempt(signingSession.fundingTx.tx, previousTxs = Seq.empty) // no splice rbf yet
+              reportLiquidityPurchaseAborted(d.channelId, signingSession)
+              handleLocalError(InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId), d, Some(msg))
             case SpliceStatus.SpliceWaitingForSigs(signingSession) =>
               // we have not yet sent our tx_signatures
               signingSession.receiveTxSigs(channelKeys, msg, nodeParams.currentBlockHeight) match {
@@ -2660,6 +2718,14 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           channelReestablish.nextFundingTxId_opt match {
             case Some(fundingTxId) =>
               d.status match {
+                case DualFundingStatus.RbfWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId && !signingSession.isConsistentWith(d.commitments) =>
+                  // This should never happen, but if our commitments somehow moved to the next commitment numbers while
+                  // this RBF attempt was being signed, we must not complete it: it would create a commitment at
+                  // commitment numbers that we have already revoked.
+                  log.warning("aborting rbf attempt: commitment number mismatch")
+                  rollbackRbfAttempt(signingSession, d)
+                  reportLiquidityPurchaseAborted(d.channelId, signingSession)
+                  goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId).getMessage)
                 case DualFundingStatus.RbfWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
                   if (retransmitCommitSig) {
                     // They haven't received our commit_sig: we retransmit it.
@@ -3541,6 +3607,15 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     val spliceStatus1 = channelReestablish.nextFundingTxId_opt match {
       case Some(fundingTxId) =>
         d.spliceStatus match {
+          case SpliceStatus.SpliceWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId && !signingSession.isConsistentWith(d.commitments) =>
+            // This should never happen, but if our commitments somehow moved to the next commitment numbers while this
+            // splice was being signed, we must not complete it: it would create a commitment at commitment numbers that
+            // we have already revoked. We abort the splice attempt instead.
+            log.warning("aborting splice attempt: commitment number mismatch")
+            rollbackFundingAttempt(signingSession.fundingTx.tx, previousTxs = Seq.empty) // no splice rbf yet
+            reportLiquidityPurchaseAborted(d.channelId, signingSession)
+            sendQueue = sendQueue :+ TxAbort(d.channelId, InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId).getMessage)
+            SpliceStatus.SpliceAborted
           case SpliceStatus.SpliceWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
             if (retransmitCommitSig) {
               // They haven't received our commit_sig: we retransmit it.
