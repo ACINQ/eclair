@@ -151,12 +151,12 @@ object LightningMessageCodecs {
     ("temporaryChannelId" | bytes32) ::
       ("fundingTxHash" | txIdAsHash) ::
       ("fundingOutputIndex" | uint16) ::
-      ("signature" | bytes64) ::
+      ("signature" | bytes64.as[ChannelSpendSignature.IndividualSignature]) ::
       ("tlvStream" | FundingCreatedTlv.fundingCreatedTlvCodec)).as[FundingCreated]
 
   val fundingSignedCodec: Codec[FundingSigned] = (
     ("channelId" | bytes32) ::
-      ("signature" | bytes64) ::
+      ("signature" | bytes64.as[ChannelSpendSignature.IndividualSignature]) ::
       ("tlvStream" | FundingSignedTlv.fundingSignedTlvCodec)).as[FundingSigned]
 
   val channelReadyCodec: Codec[ChannelReady] = (

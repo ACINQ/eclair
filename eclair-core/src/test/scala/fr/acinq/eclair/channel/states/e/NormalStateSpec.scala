@@ -21,13 +21,14 @@ import akka.testkit.TestProbe
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, SatoshiLong, Script, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
-import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
+import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
@@ -43,6 +44,7 @@ import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.lightningMessageCodec
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelReestablishTlv, ChannelUpdate, ClosingSigned, CommitSig, CommitSigTlv, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, RevokeAndAckTlv, Shutdown, TemporaryNodeFailure, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateFulfillHtlcTlv, Warning}
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -1058,6 +1060,22 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.htlcs.collect(outgoing).exists(_.id == htlc.id))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.htlcRemoteSigs.size == 1)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == initialState.commitments.latest.localCommit.spec.toLocal)
+  }
+
+  test("recv invalid CommitSig (non-taproot channels, but includes a partial signature)") { f =>
+    import f._
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    alice ! CMD_SIGN()
+    val commitSig = alice2bob.expectMsgType[CommitSig]
+    // Alice's signature is genuine, but she also attaches an unsolicited partial_signature_with_nonce TLV
+    // filled with arbitrary bytes, on a channel that does not use taproot.
+    val poisonSig = PartialSignatureWithNonce(randomBytes32(), IndividualNonce(randomBytes(66)))
+    val poisoned = commitSig.copy(tlvStream = TlvStream(commitSig.tlvStream.records + CommitSigTlv.PartialSignatureWithNonceTlv(poisonSig)))
+    // The poisoned message is valid on the wire.
+    val bin = lightningMessageCodec.encode(poisoned).require
+    assert(lightningMessageCodec.decode(bin).require.value == poisoned)
+    alice2bob.forward(bob, poisoned)
+    bob2alice.expectMsgType[Error]
   }
 
   def testRecvCommitSigMultipleHtlcs(f: FixtureParam): Unit = {

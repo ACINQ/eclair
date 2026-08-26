@@ -173,10 +173,10 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     alice.underlyingActor.context.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
 
     val commitSigB = bob2alice.expectMsgType[CommitSig]
-    assert(commitSigB.sigOrPartialSig.isInstanceOf[PartialSignatureWithNonce])
+    assert(commitSigB.partialSignature_opt.isDefined)
     bob2alice.forward(alice, commitSigB)
     val commitSigA = alice2bob.expectMsgType[CommitSig]
-    assert(commitSigA.sigOrPartialSig.isInstanceOf[PartialSignatureWithNonce])
+    assert(commitSigA.partialSignature_opt.isDefined)
     alice2bob.forward(bob, commitSigA)
 
     val expectedBalanceAlice = TestConstants.fundingSatoshis.toMilliSatoshi + TestConstants.nonInitiatorPushAmount - TestConstants.initiatorPushAmount
