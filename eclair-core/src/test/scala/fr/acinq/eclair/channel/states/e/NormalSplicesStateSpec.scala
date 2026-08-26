@@ -2117,6 +2117,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(purchase.fundingTxIndex == 1)
     alice2bob.expectMsgType[CommitSig] // we don't forward it
     bob2alice.expectMsgType[CommitSig] // we don't forward it
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceWaitingForSigs])
 
     // Bob's signing session isn't consistent with his commitments anymore: he aborts the splice on reconnection, and
     // must tell his peer actor so that it fails the corresponding upstream HTLCs instead of holding them.
