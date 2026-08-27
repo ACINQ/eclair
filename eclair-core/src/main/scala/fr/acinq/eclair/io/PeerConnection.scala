@@ -144,7 +144,6 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         d.transport ! TransportHandler.ReadAck(remoteInit)
         log.info(s"peer is using features=${remoteInit.features}, networks=${remoteInit.networks.mkString(",")}")
         remoteInit.remoteAddress_opt.foreach(address => log.info("peer reports that our IP address is {} (public={})", address.toString, NodeAddress.isPublicIPAddress(address)))
-
         val featureGraphErr_opt = Features.validateFeatureGraph(remoteInit.features)
         val featuresCompatibilityResult = Features.testCompatible(d.localInit.features, remoteInit.features)
         if (remoteInit.networks.nonEmpty && remoteInit.networks.intersect(d.localInit.networks).isEmpty) {
@@ -161,6 +160,13 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         } else if (!featuresCompatibilityResult.areCompatible) {
           log.warning(s"incompatible features (${featuresCompatibilityResult.errorHints.mkString(",")}), disconnecting")
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed(s"incompatible features (${featuresCompatibilityResult.errorHints.mkString(",")})"))
+          d.transport ! PoisonPill
+          stay()
+        } else if (remoteInit.features.encoded_opt.exists(f => f.hasFeatureBit(154) || f.hasFeatureBit(155))) {
+          // We refuse connections from old phoenix wallets that use the legacy splice protocol.
+          // They must update their application to use the official splice protocol instead.
+          log.warning("disconnecting peer using legacy splice protocol")
+          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("disconnecting peer using legacy splice protocol"))
           d.transport ! PoisonPill
           stay()
         } else {
