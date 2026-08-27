@@ -26,7 +26,6 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
-import fr.acinq.secp256k1.Secp256k1
 import scodec.bits.ByteVector
 
 import scala.util.{Success, Try}
@@ -100,7 +99,7 @@ object Scripts {
    * @return the block height before which this tx cannot be published.
    */
   def cltvTimeout(tx: Transaction): BlockHeight =
-    if (tx.lockTime <= LOCKTIME_THRESHOLD) {
+    if (tx.lockTime < LOCKTIME_THRESHOLD) {
       // locktime is a number of blocks
       BlockHeight(tx.lockTime)
     } else {
@@ -247,8 +246,9 @@ object Scripts {
 
   /** Extract the payment preimage from from a fulfilled offered htlc. */
   def extractPreimageFromClaimHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
-    case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
-    case ScriptWitness(Seq(_, paymentPreimage, _, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
+    case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // segwit v0
+    case ScriptWitness(Seq(_, paymentPreimage, _, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // taproot
+    case ScriptWitness(Seq(_, paymentPreimage, _, _, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // taproot with annex
   }
 
   /** Extract payment preimages from a (potentially batched) claim HTLC transaction's witnesses. */

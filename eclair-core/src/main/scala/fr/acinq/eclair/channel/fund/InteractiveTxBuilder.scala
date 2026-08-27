@@ -432,6 +432,9 @@ object InteractiveTxBuilder {
               if (fundingParams.fundingAmount < fundingParams.dustLimit) {
                 replyTo ! LocalFailure(FundingAmountTooLow(channelParams.channelId, fundingParams.fundingAmount, fundingParams.dustLimit))
                 Behaviors.stopped
+              } else if (fundingParams.fundingAmount > nodeParams.channelConf.maxFundingSatoshis) {
+                replyTo ! LocalFailure(FundingAmountTooHigh(channelParams.channelId, fundingParams.fundingAmount, nodeParams.channelConf.maxFundingSatoshis))
+                Behaviors.stopped
               } else if (nextLocalBalance < 0.msat || nextRemoteBalance < 0.msat) {
                 replyTo ! LocalFailure(InvalidFundingBalances(channelParams.channelId, fundingParams.fundingAmount, nextLocalBalance, nextRemoteBalance))
                 Behaviors.stopped
@@ -790,10 +793,13 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "funding script included multiple times"))
     }
     val sharedOutput = sharedOutputs.headOption match {
-      case Some(output) => output
       case None =>
         log.warn("invalid interactive tx: funding outpoint not included")
         return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "funding outpoint not included"))
+      case Some(output) if output.amount != fundingParams.fundingAmount =>
+        log.warn("invalid interactive tx: funding amount doesn't match ({} != {})", sharedOutputs.map(_.amount).sum, fundingParams.fundingAmount)
+        return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "funding amount mismatch"))
+      case Some(output) => output
     }
 
     val sharedInput_opt = fundingParams.sharedInput_opt.map(sharedInput => {
@@ -1211,6 +1217,11 @@ object InteractiveTxSigningSession {
     val localCommitIndex: Long = localCommit.fold(_.index, _.index)
     // If we haven't received the remote commit_sig, we will request a retransmission on reconnection.
     val retransmitRemoteCommitSig: Boolean = localCommit.isLeft
+
+    /** Verify that the pending commitment number matches the other commitments before accepting commit_sig. */
+    def isConsistentWith(commitments: Commitments): Boolean = {
+      localCommitIndex == commitments.localCommitIndex && remoteCommit.index == commitments.remoteCommitIndex
+    }
 
     // For the legacy splice protocol, we use the next_commitment_number to let our peer know whether they needed to
     // retransmit commit_sig or not. We're now using an explicit bit instead, but need to maintain backwards-compatibility.

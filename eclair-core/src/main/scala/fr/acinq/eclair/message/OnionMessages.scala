@@ -159,6 +159,7 @@ object OnionMessages {
   case class CannotDecodeOnion(message: String) extends DropReason { override def toString = s"can't decode onion: $message" }
   case class CannotDecryptBlindedPayload(message: String) extends DropReason { override def toString = s"can't decrypt blinded payload: $message" }
   case class CannotDecodeBlindedPayload(message: String) extends DropReason { override def toString = s"can't decode blinded payload: $message" }
+  case class TooManyDummyHops(max: Int) extends DropReason { override def toString = s"onion message contains too many dummy hops (max=$max)" }
   // @formatter:on
 
   case class DecodedOnionPacket(payload: TlvStream[OnionMessagePayloadTlv], next_opt: Option[OnionRoutingPacket])

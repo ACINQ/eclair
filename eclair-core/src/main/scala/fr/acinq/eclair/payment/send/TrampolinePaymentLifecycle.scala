@@ -133,7 +133,12 @@ object TrampolinePaymentLifecycle {
             val holdTimes = fulfill match {
               case HtlcResult.RemoteFulfill(updateFulfill) =>
                 updateFulfill.attribution_opt match {
-                  case Some(attribution) => Sphinx.SuccessPacket.decrypt(Some(attribution), outerOnionSecrets).holdTimes
+                  // Note that we only use the outer onion shared secrets here: this actor only exists to help other
+                  // implementations run cross-compatibility tests, so we don't bother fully decrypting the fulfillment
+                  // payload, which would require appending the trampoline onion shared secrets (see Sphinx.SuccessPacket.decrypt).
+                  // This means that PaymentSent below contains an encrypted payload and that hold times may be missing
+                  // when a fulfillment payload is used.
+                  case Some(attribution) => Sphinx.SuccessPacket.decrypt(updateFulfill.fulfillmentPayload_opt, Some(attribution), outerOnionSecrets).holdTimes
                   case None => Nil
                 }
               case _: HtlcResult.OnChainFulfill => Nil
@@ -193,7 +198,11 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
         case _ => None
       }
     })
-    val expiry = CltvExpiry(nodeParams.currentBlockHeight) + CltvExpiryDelta(36)
+    val minFinalExpiryDelta = cmd.invoice match {
+      case invoice: Bolt11Invoice => invoice.minFinalCltvExpiryDelta
+      case _ => CltvExpiryDelta(42)
+    }
+    val expiry = CltvExpiry(nodeParams.currentBlockHeight + 1) + minFinalExpiryDelta
     if (filtered.isEmpty) {
       context.log.warn("no usable channel with trampoline node {}", cmd.trampolineNodeId)
       cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("no usable channel with trampoline node")) :: Nil, startedAt, settledAt = TimestampMilli.now())
@@ -237,7 +246,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
               waitForSettlement(remaining - 1, attemptNumber, part +: fulfilledParts)
             } else {
               context.log.info("trampoline payment succeeded")
-              cmd.replyTo ! PaymentSent(cmd.paymentId, fulfill.paymentPreimage, totalAmount, cmd.invoice.nodeId, part +: fulfilledParts, None, startedAt)
+              cmd.replyTo ! PaymentSent(cmd.paymentId, fulfill.paymentPreimage, totalAmount, cmd.invoice.nodeId, part +: fulfilledParts, fulfill.fulfillmentPayload_opt, None, startedAt)
               Behaviors.stopped
             }
           case fail: HtlcResult.Fail =>

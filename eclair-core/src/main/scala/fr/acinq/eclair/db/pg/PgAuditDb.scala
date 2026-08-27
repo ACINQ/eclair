@@ -592,6 +592,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
                 PublicKey(rs.getByteVectorFromHex("recipient_node_id")),
                 Seq(part),
                 None,
+                None,
                 part.startedAt)
             }
             sentByParentId + (parentId -> sent)

@@ -17,12 +17,13 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
+import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
@@ -30,8 +31,8 @@ import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, Error, FundingCreated, FundingSigned, OpenChannel}
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -112,7 +113,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val listener = TestProbe()
     alice.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
     val fundingSigned = bob2alice.expectMsgType[FundingSigned]
-    assert(fundingSigned.sigOrPartialSig.isInstanceOf[PartialSignatureWithNonce])
+    assert(fundingSigned.partialSignature_opt.isDefined)
     bob2alice.forward(alice, fundingSigned)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
@@ -137,7 +138,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv FundingSigned with invalid signature") { f =>
     import f._
     // sending an invalid sig
-    alice ! FundingSigned(ByteVector32.Zeroes, ByteVector64.Zeroes)
+    alice ! FundingSigned(ByteVector32.Zeroes, IndividualSignature(ByteVector64.Zeroes))
     awaitCond(alice.stateName == CLOSED)
     alice2bob.expectMsgType[Error]
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
@@ -152,6 +153,18 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice2bob.expectMsgType[Error]
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
     listener.expectMsgType[ChannelAborted]
+  }
+
+  test("recv invalid FundingSigned (non-taproot channels, but includes a partial signature)") { f =>
+    import f._
+    val fundingSigned = bob2alice.expectMsgType[FundingSigned]
+
+    // Alice's signature is genuine, but she also attaches an unsolicited partial_signature_with_nonce TLV
+    // filled with arbitrary bytes, on a channel that does not use taproot.
+    val poisonSig = PartialSignatureWithNonce(randomBytes32(), IndividualNonce(randomBytes(66)))
+    val poisoned = fundingSigned.copy(tlvStream = TlvStream(fundingSigned.tlvStream.records + ChannelTlv.PartialSignatureWithNonceTlv(poisonSig)))
+    bob2alice.forward(alice, poisoned)
+    alice2bob.expectMsgType[Error]
   }
 
   test("recv FundingSigned (channel already exists)") { f =>

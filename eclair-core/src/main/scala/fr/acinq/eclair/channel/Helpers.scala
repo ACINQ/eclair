@@ -107,6 +107,7 @@ object Helpers {
     // BOLT #2: Channel funding limits
     if (open.fundingSatoshis < nodeParams.channelConf.minFundingSatoshis(open.channelFlags)) return Left(FundingAmountTooLow(open.temporaryChannelId, open.fundingSatoshis, nodeParams.channelConf.minFundingSatoshis(open.channelFlags)))
     if (open.fundingSatoshis >= Channel.MAX_FUNDING_WITHOUT_WUMBO && !localFeatures.hasFeature(Features.Wumbo)) return Left(FundingAmountTooHigh(open.temporaryChannelId, open.fundingSatoshis, Channel.MAX_FUNDING_WITHOUT_WUMBO))
+    if (open.fundingSatoshis > nodeParams.channelConf.maxFundingSatoshis) return Left(FundingAmountTooHigh(open.temporaryChannelId, open.fundingSatoshis, nodeParams.channelConf.maxFundingSatoshis))
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (open.pushMsat > open.fundingSatoshis) return Left(InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi))
@@ -126,6 +127,10 @@ object Helpers {
     if (toLocalMsat < open.channelReserveSatoshis && toRemoteMsat < open.channelReserveSatoshis) {
       return Left(ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis))
     }
+
+    // BOLT #2: The receiving node MUST fail the channel if channel_reserve_satoshis is less than dust_limit_satoshis.
+    if (nodeParams.channelConf.dustLimit > open.channelReserveSatoshis) return Left(ChannelReserveBelowOurDustLimit(open.temporaryChannelId, open.channelReserveSatoshis, nodeParams.channelConf.dustLimit))
+    if (open.dustLimitSatoshis > open.fundingSatoshis * nodeParams.channelConf.reserveToFundingRatio) return Left(DustLimitAboveOurChannelReserve(open.temporaryChannelId, open.dustLimitSatoshis, open.fundingSatoshis * nodeParams.channelConf.reserveToFundingRatio))
 
     val channelType = ChannelTypes.areCompatible(open.temporaryChannelId, localFeatures, open.channelType_opt) match {
       case Left(f) => return Left(f)
@@ -171,6 +176,7 @@ object Helpers {
     // BOLT #2: Channel funding limits
     if (open.fundingAmount < nodeParams.channelConf.minFundingSatoshis(open.channelFlags)) return Left(FundingAmountTooLow(open.temporaryChannelId, open.fundingAmount, nodeParams.channelConf.minFundingSatoshis(open.channelFlags)))
     if (open.fundingAmount >= Channel.MAX_FUNDING_WITHOUT_WUMBO && !localFeatures.hasFeature(Features.Wumbo)) return Left(FundingAmountTooHigh(open.temporaryChannelId, open.fundingAmount, Channel.MAX_FUNDING_WITHOUT_WUMBO))
+    if (open.fundingAmount + addFunding_opt.map(_.fundingAmount).getOrElse(0 sat) > nodeParams.channelConf.maxFundingSatoshis) return Left(FundingAmountTooHigh(open.temporaryChannelId, open.fundingAmount + addFunding_opt.map(_.fundingAmount).getOrElse(0 sat), nodeParams.channelConf.maxFundingSatoshis))
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (open.pushAmount > open.fundingAmount) return Left(InvalidPushAmount(open.temporaryChannelId, open.pushAmount, open.fundingAmount.toMilliSatoshi))
@@ -264,6 +270,7 @@ object Helpers {
     // BOLT #2: Channel funding limits
     if (accept.fundingAmount < 0.sat) return Left(FundingAmountTooLow(accept.temporaryChannelId, accept.fundingAmount, 0 sat))
     if (accept.fundingAmount > Channel.MAX_FUNDING_WITHOUT_WUMBO && !localFeatures.hasFeature(Features.Wumbo)) return Left(FundingAmountTooHigh(accept.temporaryChannelId, accept.fundingAmount, Channel.MAX_FUNDING_WITHOUT_WUMBO))
+    if (open.fundingAmount + accept.fundingAmount > nodeParams.channelConf.maxFundingSatoshis) return Left(FundingAmountTooHigh(accept.temporaryChannelId, open.fundingAmount + accept.fundingAmount, nodeParams.channelConf.maxFundingSatoshis))
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (accept.pushAmount > accept.fundingAmount) return Left(InvalidPushAmount(accept.temporaryChannelId, accept.pushAmount, accept.fundingAmount.toMilliSatoshi))
@@ -923,14 +930,19 @@ object Helpers {
        * for their next closing_sig that will match our latest closing_complete.
        */
       def receiveSimpleClosingSig(channelKeys: ChannelKeys, commitment: FullCommitment, closingTxs: ClosingTxs, closingSig: ClosingSig, localClosingComplete_opt: Option[ClosingComplete], remoteNonce_opt: Option[IndividualNonce]): Either[ChannelException, ClosingTx] = {
-        val closingTxsWithSig = Seq(
-          closingSig.closerAndCloseeOutputsSig_opt.flatMap(sig => closingTxs.localAndRemote_opt.map(tx => (tx, IndividualSignature(sig)))),
-          closingSig.closerAndCloseeOutputsPartialSig_opt.flatMap(sig => remoteNonce_opt.flatMap(nonce => closingTxs.localAndRemote_opt.map(tx => (tx, PartialSignatureWithNonce(sig, nonce))))),
-          closingSig.closerOutputOnlySig_opt.flatMap(sig => closingTxs.localOnly_opt.map(tx => (tx, IndividualSignature(sig)))),
-          closingSig.closerOutputOnlyPartialSig_opt.flatMap(sig => remoteNonce_opt.flatMap(nonce => closingTxs.localOnly_opt.map(tx => (tx, PartialSignatureWithNonce(sig, nonce))))),
-          closingSig.closeeOutputOnlySig_opt.flatMap(sig => closingTxs.remoteOnly_opt.map(tx => (tx, IndividualSignature(sig)))),
-          closingSig.closeeOutputOnlyPartialSig_opt.flatMap(sig => remoteNonce_opt.flatMap(nonce => closingTxs.remoteOnly_opt.map(tx => (tx, PartialSignatureWithNonce(sig, nonce)))))
-        ).flatten
+        // We only consider the type of signature that matches our commitment format
+        val closingTxsWithSig: Seq[(ClosingTx, ChannelSpendSignature)] = commitment.commitmentFormat match {
+          case _: SegwitV0CommitmentFormat => Seq(
+            closingSig.closerAndCloseeOutputsSig_opt.flatMap(sig => closingTxs.localAndRemote_opt.map(tx => (tx, IndividualSignature(sig)))),
+            closingSig.closerOutputOnlySig_opt.flatMap(sig => closingTxs.localOnly_opt.map(tx => (tx, IndividualSignature(sig)))),
+            closingSig.closeeOutputOnlySig_opt.flatMap(sig => closingTxs.remoteOnly_opt.map(tx => (tx, IndividualSignature(sig)))),
+          ).flatten
+          case _: SimpleTaprootChannelCommitmentFormat => Seq(
+            closingSig.closerAndCloseeOutputsPartialSig_opt.flatMap(sig => remoteNonce_opt.flatMap(nonce => closingTxs.localAndRemote_opt.map(tx => (tx, PartialSignatureWithNonce(sig, nonce))))),
+            closingSig.closerOutputOnlyPartialSig_opt.flatMap(sig => remoteNonce_opt.flatMap(nonce => closingTxs.localOnly_opt.map(tx => (tx, PartialSignatureWithNonce(sig, nonce))))),
+            closingSig.closeeOutputOnlyPartialSig_opt.flatMap(sig => remoteNonce_opt.flatMap(nonce => closingTxs.remoteOnly_opt.map(tx => (tx, PartialSignatureWithNonce(sig, nonce))))),
+          ).flatten
+        }
         closingTxsWithSig.headOption match {
           case Some((closingTx, remoteSig)) =>
             val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
@@ -1219,9 +1231,13 @@ object Helpers {
         // In that case, we don't need to create a dedicated anchor transaction which avoids using wallet inputs.
         val useMainTxForAnchor = commitment.commitmentFormat match {
           case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => false
-          case ZeroFeeCommitmentFormat =>
-            val commitFee = Transactions.weight2fee(feerates.fastest, commitTx.weight())
-            mainTx_opt.exists(_.tx.txOut.map(_.amount).sum > commitFee)
+          case ZeroFeeCommitmentFormat => mainTx_opt match {
+            case Some(mainTx) =>
+              val packageWeight = commitTx.weight() + mainTx.expectedWeight + commitment.commitmentFormat.anchorInputWeight
+              val packageFee = Transactions.weight2fee(feerates.fastest, packageWeight)
+              mainTx.tx.txOut.map(_.amount).sum > packageFee + commitment.localCommitParams.dustLimit
+            case None => false
+          }
         }
         val spendAnchor = incomingHtlcs.nonEmpty || outgoingHtlcs.nonEmpty || spendAnchorWithoutHtlcs
         val anchorTx_opt = if (spendAnchor && !useMainTxForAnchor) {

@@ -170,9 +170,21 @@
       "unix" : 1757057697
     },
     "messageFlags" : {
+      "flag7" : false,
+      "flag6" : false,
+      "flag5" : false,
+      "flag4" : false,
+      "flag3" : false,
+      "flag2" : false,
       "dontForward" : true
     },
     "channelFlags" : {
+      "flag7" : false,
+      "flag6" : false,
+      "flag5" : false,
+      "flag4" : false,
+      "flag3" : false,
+      "flag2" : false,
       "isEnabled" : true,
       "isNode1" : false
     },

@@ -28,7 +28,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, InitFeature, Logs, TimestampMilli, TimestampSecond, getSimpleClassName}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -62,6 +62,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
   val incomingRateLimiter: RateLimiter = new RateLimiter(conf.maxOnionMessagesPerSecond)
   val outgoingRateLimiter: RateLimiter = new RateLimiter(conf.maxOnionMessagesPerSecond)
+  val gossipQueriesRateLimiter: RateLimiter = new RateLimiter(conf.maxGossipQueriesPerSecond)
 
   startWith(BEFORE_AUTH, Nothing)
 
@@ -85,16 +86,16 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
   when(AUTHENTICATING) {
     case Event(TransportHandler.HandshakeCompleted(remoteNodeId), d: AuthenticatingData) =>
-      cancelTimer(AUTH_TIMER)
       Logs.withMdc(diagLog)(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
         log.info(s"connection authenticated (direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"})")
       }
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
+      d.pendingAuth.authTracker_opt.foreach(_ ! Authenticated(self, remoteNodeId, d.pendingAuth.outgoing))
       switchboard ! Authenticated(self, remoteNodeId, d.pendingAuth.outgoing)
       goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport, d.isPersistent)
 
     case Event(AuthTimeout, d: AuthenticatingData) =>
-      log.warning(s"authentication timed out after ${conf.authTimeout}")
+      log.warning("authentication timed out after {}", conf.authTimeout)
       d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.AuthenticationFailed("authentication timed out"))
       stop(FSM.Normal)
 
@@ -106,6 +107,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
   when(BEFORE_INIT) {
     case Event(InitializeConnection(peer, chainHash, localFeatures, doSync, fundingRates_opt), d: BeforeInitData) =>
+      cancelTimer(AUTH_TIMER)
       d.transport ! TransportHandler.Listener(self)
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       log.debug(s"using features=$localFeatures")
@@ -123,6 +125,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       startSingleTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
       unstashAll() // unstash remote init if it already arrived
       goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, doSync, d.isPersistent)
+
+    case Event(AuthTimeout, d: BeforeInitData) =>
+      log.warning("connection was not initialized within {}", conf.authTimeout)
+      d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("connection was never initialized"))
+      stop(FSM.Normal)
 
     case Event(_: protocol.Init, _) =>
       log.debug("stashing remote init")
@@ -225,6 +232,8 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         msg match {
           // If we send any channel management message to this peer, the connection should be persistent.
           case _: ChannelMessage if !d.isPersistent => stay() using d.copy(isPersistent = true)
+          // We're done answering their query_short_channel_ids: they may now send us another one.
+          case _: ReplyShortChannelIdsEnd => stay() using d.copy(queryShortChannelIdsPending = false)
           case _ => stay()
         }
 
@@ -343,14 +352,55 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             // this is actually for the channel
             d.transport ! TransportHandler.ReadAck(msg)
             d.peer ! msg
+            stay()
           case _: ChannelAnnouncement | _: ChannelUpdate | _: NodeAnnouncement if d.behavior.ignoreNetworkAnnouncement =>
             // this peer is currently under embargo!
             d.transport ! TransportHandler.ReadAck(msg)
+            stay()
+          case SyncMessage(chainHash) if chainHash != d.chainHash =>
+            // We must never answer gossip queries for another chain: we would leak our routing table to nodes that
+            // aren't even on our network, and let them use us as an amplifier.
+            log.debug("received {} for chain {}, we're on {}", getSimpleClassName(msg), chainHash, d.chainHash)
+            d.transport ! TransportHandler.ReadAck(msg)
+            stay()
+          case _: QueryChannelRange if !gossipQueriesRateLimiter.tryAcquire() =>
+            // A query_channel_range is a few dozen bytes to send, but answering one requires scanning our whole routing
+            // table and sending back megabytes of data, so a peer flooding us with those could easily saturate our
+            // router. Peers only need to send a handful of them per connection, so we can safely throttle them.
+            // NB: we don't log a warning here: this fires precisely when we're being flooded, so it would turn into a
+            // log flood of its own. The metric below is what should be monitored.
+            log.debug("rate-limiting query_channel_range")
+            Metrics.GossipQueriesThrottled.withoutTags().increment()
+            d.transport ! TransportHandler.ReadAck(msg)
+            stay()
+          case _: QueryShortChannelIds if !gossipQueriesRateLimiter.tryAcquire() =>
+            // same reasoning as for query_channel_range
+            log.debug("rate-limiting query_channel_range")
+            Metrics.GossipQueriesThrottled.withoutTags().increment()
+            d.transport ! TransportHandler.ReadAck(msg)
+            stay()
+          case q: QueryShortChannelIds if q.queryFlags_opt.exists(_.array.size != q.shortChannelIds.array.size) =>
+            // BOLT 7: `encoded_query_flags` must decode to exactly one flag per `short_channel_id`. We must reject those
+            // queries, because a missing flag means "send everything you have" for the corresponding channel.
+            log.debug("received query_short_channel_ids with {} flags for {} ids", q.queryFlags_opt.map(_.array.size), q.shortChannelIds.array.size)
+            d.transport ! TransportHandler.ReadAck(msg)
+            stay()
+          case _: QueryShortChannelIds if d.queryShortChannelIdsPending =>
+            // BOLT 7: our peer must not send another query_short_channel_ids until we've sent them the
+            // reply_short_channel_ids_end for the previous one. Answering a query is expensive, so we don't let them
+            // pipeline queries: the spec explicitly allows us to reject those.
+            log.debug("received query_short_channel_ids while the previous one is still pending")
+            d.transport ! TransportHandler.ReadAck(msg)
+            stay()
+          case _: QueryShortChannelIds =>
+            // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
+            router ! Peer.PeerRoutingMessage(self, d.remoteNodeId, msg)
+            stay() using d.copy(queryShortChannelIdsPending = true)
           case _ =>
             // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
             router ! Peer.PeerRoutingMessage(self, d.remoteNodeId, msg)
+            stay()
         }
-        stay()
 
       case Event(msg: LightningMessage, d: ConnectedData) =>
         // We immediately acknowledge all other messages.
@@ -374,7 +424,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
                   log.warning("starting batch with incomplete previous batch ({}/{} received)", pending.received.size, pending.batchSize)
                   // This is a spec violation from our peer: this will likely lead to a force-close.
                   d.transport ! Warning(msg.channelId, "invalid start_batch message: the previous batch is not done yet")
-                  d.peer ! CommitSigBatch(pending.received)
+                  d.peer ! CommitSigs(pending.received)
                 case _ => ()
               }
               stay() using d.copy(commitSigBatch_opt = Some(PendingCommitSigBatch(msg.channelId, msg.batchSize, Nil)))
@@ -395,7 +445,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
                 }
               case _ =>
                 log.warning("received {} as part of a batch: we don't support batching that kind of messages", msg.getClass.getSimpleName)
-                if (pending.received.nonEmpty) d.peer ! CommitSigBatch(pending.received)
+                if (pending.received.nonEmpty) d.peer ! CommitSigs(pending.received)
                 d.peer ! msg
                 stay() using d.copy(commitSigBatch_opt = None)
             }
@@ -413,7 +463,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
                   case Some(pending) if pending.channelId != msg.channelId || pending.batchSize != batchSize =>
                     log.warning("received invalid commit_sig batch while a different batch isn't complete")
                     // This should never happen, otherwise it will likely lead to a force-close.
-                    d.peer ! CommitSigBatch(pending.received)
+                    d.peer ! CommitSigs(pending.received)
                     stay() using d.copy(legacyCommitSigBatch_opt = Some(PendingCommitSigBatch(msg.channelId, batchSize, Seq(msg))))
                   case Some(pending) =>
                     val received1 = pending.received :+ msg
@@ -656,8 +706,26 @@ object PeerConnection {
                   maxRebroadcastDelay: FiniteDuration,
                   killIdleDelay: FiniteDuration,
                   maxOnionMessagesPerSecond: Int,
+                  maxGossipQueriesPerSecond: Int,
                   sendRemoteAddressInit: Boolean,
-                  maxNoChannels: Int)
+                  maxNoChannels: Int,
+                  maxPendingIncomingConnections: Int,
+                  pendingConnectionMinAge: FiniteDuration,
+                  pendingConnectionAcceptDelay: FiniteDuration)
+
+  /**
+   * Gossip sync messages, which all carry a chain hash. Unlike gossip announcements, which we validate and may ignore,
+   * we answer those directly, so we must make sure that they are for the chain we're running on.
+   */
+  object SyncMessage {
+    def unapply(msg: RoutingMessage): Option[BlockHash] = msg match {
+      case q: QueryChannelRange => Some(q.chainHash)
+      case r: ReplyChannelRange => Some(r.chainHash)
+      case q: QueryShortChannelIds => Some(q.chainHash)
+      case r: ReplyShortChannelIdsEnd => Some(r.chainHash)
+      case _ => None
+    }
+  }
 
   // @formatter:off
 
@@ -678,6 +746,9 @@ object PeerConnection {
                            expectedPong_opt: Option[ExpectedPong] = None,
                            commitSigBatch_opt: Option[PendingCommitSigBatch] = None,
                            legacyCommitSigBatch_opt: Option[PendingCommitSigBatch] = None,
+                           // set while we're answering a query_short_channel_ids: our peer must wait for our
+                           // reply_short_channel_ids_end before sending us another one
+                           queryShortChannelIdsPending: Boolean = false,
                            isPersistent: Boolean) extends Data with HasTransport
 
   case class PendingCommitSigBatch(channelId: ByteVector32, batchSize: Int, received: Seq[CommitSig])
@@ -691,7 +762,7 @@ object PeerConnection {
   case object INITIALIZING extends State
   case object CONNECTED extends State
 
-  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: NodeAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None, isPersistent: Boolean) {
+  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: NodeAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None, isPersistent: Boolean, authTracker_opt: Option[ActorRef] = None) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey, outgoing: Boolean) extends RemoteTypes
@@ -732,6 +803,7 @@ object PeerConnection {
     case object NoRemainingChannel extends KillReason
     case object AllChannelsFail extends KillReason
     case object ConnectionReplaced extends KillReason
+    case object TooManyPendingConnections extends KillReason
   }
   // @formatter:on
 

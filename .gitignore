@@ -32,7 +32,10 @@ jdbcUrlFile_*.tmp
 
 .DS_Store
 
-.claude*
+.claude
+claude-root
+claude.Dockerfile
+claude.yml
 
 .bloop/
 .metals/

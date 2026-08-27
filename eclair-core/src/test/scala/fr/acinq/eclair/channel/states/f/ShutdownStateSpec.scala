@@ -35,8 +35,9 @@ import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelUpdate, ClosingComplete, ClosingSig, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelUpdate, ClosingComplete, ClosingSig, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, Shutdown, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateFulfillHtlcTlv}
+import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -154,7 +155,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_FULFILL_HTLC") { f =>
     import f._
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    bob ! CMD_FULFILL_HTLC(0, r1, None)
+    bob ! CMD_FULFILL_HTLC(0, r1, None, None)
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
     awaitCond(bob.stateData == initialState.modify(_.commitments.changes.localChanges.proposed).using(_ :+ fulfill)
     )
@@ -163,7 +164,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_FULFILL_HTLC (taproot)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    bob ! CMD_FULFILL_HTLC(0, r1, None)
+    bob ! CMD_FULFILL_HTLC(0, r1, None, None)
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
     awaitCond(bob.stateData == initialState.modify(_.commitments.changes.localChanges.proposed).using(_ :+ fulfill))
   }
@@ -172,7 +173,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    bob ! CMD_FULFILL_HTLC(42, randomBytes32(), None, replyTo_opt = Some(sender.ref))
+    bob ! CMD_FULFILL_HTLC(42, randomBytes32(), None, None, replyTo_opt = Some(sender.ref))
     sender.expectMsgType[RES_FAILURE[CMD_FULFILL_HTLC, UnknownHtlcId]]
     assert(initialState == bob.stateData)
   }
@@ -181,7 +182,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val c = CMD_FULFILL_HTLC(1, ByteVector32.Zeroes, None, replyTo_opt = Some(sender.ref))
+    val c = CMD_FULFILL_HTLC(1, ByteVector32.Zeroes, None, None, replyTo_opt = Some(sender.ref))
     bob ! c
     sender.expectMsg(RES_FAILURE(c, InvalidHtlcPreimage(channelId(bob), 1)))
 
@@ -194,7 +195,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val c = CMD_FULFILL_HTLC(0, r1, None, replyTo_opt = Some(sender.ref))
+    val c = CMD_FULFILL_HTLC(0, r1, None, None, replyTo_opt = Some(sender.ref))
     // this would be done automatically when the relayer calls safeSend
     bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(initialState.channelId, c)
     bob ! c
@@ -209,7 +210,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
 
-    val c = CMD_FULFILL_HTLC(42, randomBytes32(), None, replyTo_opt = Some(sender.ref))
+    val c = CMD_FULFILL_HTLC(42, randomBytes32(), None, None, replyTo_opt = Some(sender.ref))
     sender.send(bob, c) // this will fail
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     awaitCond(bob.underlyingActor.nodeParams.db.pendingCommands.listSettlementCommands(initialState.channelId).isEmpty)
@@ -221,6 +222,21 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val fulfill = UpdateFulfillHtlc(ByteVector32.Zeroes, 0, r1)
     alice ! fulfill
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.modify(_.changes.remoteChanges).setTo(initialState.commitments.changes.remoteChanges.copy(initialState.commitments.changes.remoteChanges.proposed :+ fulfill)))
+  }
+
+  test("recv UpdateFulfillHtlc (fulfillment payload too large)") { f =>
+    import f._
+    val tx = alice.signCommitTx()
+
+    // Our peer includes a fulfillment payload that is larger than what is specified in the BOLTs.
+    val payload = randomBytes(Sphinx.SuccessPacket.MAX_LENGTH + 1)
+    alice ! UpdateFulfillHtlc(ByteVector32.Zeroes, 0, r1, TlvStream(UpdateFulfillHtlcTlv.FulfillmentPayload(payload)))
+    // We relay the preimage upstream before force-closing, to make sure that we don't lose funds.
+    val forward = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFulfill]]
+    assert(forward.result.fulfillmentPayload_opt.contains(payload.take(Sphinx.SuccessPacket.MAX_LENGTH)))
+    alice2bob.expectMsgType[Error]
+    awaitCond(alice.stateName == CLOSING)
+    alice2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv UpdateFulfillHtlc (unknown htlc id)") { f =>
@@ -357,7 +373,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     // we need to have something to sign so we first send a fulfill and acknowledge (=sign) it
-    bob ! CMD_FULFILL_HTLC(0, r1, None)
+    bob ! CMD_FULFILL_HTLC(0, r1, None, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
@@ -373,7 +389,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_SIGN (taproot)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
     val sender = TestProbe()
-    bob ! CMD_FULFILL_HTLC(0, r1, None)
+    bob ! CMD_FULFILL_HTLC(0, r1, None, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
@@ -397,7 +413,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_SIGN (while waiting for RevokeAndAck)") { f =>
     import f._
     val sender = TestProbe()
-    bob ! CMD_FULFILL_HTLC(0, r1, None)
+    bob ! CMD_FULFILL_HTLC(0, r1, None, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
@@ -413,7 +429,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv CommitSig") { f =>
     import f._
-    bob ! CMD_FULFILL_HTLC(0, r1, None)
+    bob ! CMD_FULFILL_HTLC(0, r1, None, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     bob ! CMD_SIGN()
@@ -484,7 +500,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv RevokeAndAck (invalid preimage)") { f =>
     import f._
     val tx = bob.signCommitTx()
-    bob ! CMD_FULFILL_HTLC(0, r1, None)
+    bob ! CMD_FULFILL_HTLC(0, r1, None, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     bob ! CMD_SIGN()

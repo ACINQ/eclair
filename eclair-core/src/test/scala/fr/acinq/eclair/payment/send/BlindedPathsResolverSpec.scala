@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.send.BlindedPathsResolver.{FullBlindedRoute, Part
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams}
 import fr.acinq.eclair.router.{BlindedRouteCreation, Router}
 import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, MilliSatoshiLong, NodeParams, RealShortChannelId, TestConstants, randomBytes32, randomKey}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, EncodedNodeId, MilliSatoshiLong, NodeParams, RealShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -172,6 +172,25 @@ class BlindedPathsResolverSpec extends ScalaTestWithActorTestKit(ConfigFactory.l
     assert(partialRoute.blindedHops == route.subsequentNodes)
     assert(partialRoute.nextPathKey != route.firstPathKey)
     // We don't need to resolve the nodeId.
+    register.expectNoMessage(100 millis)
+    router.expectNoMessage(100 millis)
+  }
+
+  test("resolve wallet-encoded route starting at our node") { f =>
+    import f._
+
+    val probe = TestProbe()
+    val walletNodeId = randomKey().publicKey
+    val edge = ExtraEdge(nodeParams.nodeId, walletNodeId, Alias(561), 100 msat, 5, CltvExpiryDelta(144), 1 msat, None)
+    val hop = ChannelHop(edge.shortChannelId, nodeParams.nodeId, walletNodeId, HopRelayParams.FromHint(edge))
+    val route = BlindedRouteCreation.createBlindedRouteToWallet(hop, hex"deadbeef", 1 msat, CltvExpiry(800_000)).route
+      .copy(firstNodeId = EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId))
+    val paymentInfo = BlindedRouteCreation.aggregatePaymentInfo(100_000_000 msat, Seq(hop), CltvExpiryDelta(12))
+
+    resolver ! Resolve(probe.ref, Seq(PaymentBlindedRoute(route, paymentInfo)))
+
+    // The wallet encoding must not bypass decryption and local relay fee validation.
+    probe.expectMsg(Seq.empty[ResolvedPath])
     register.expectNoMessage(100 millis)
     router.expectNoMessage(100 millis)
   }

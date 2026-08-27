@@ -22,7 +22,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel.{InvalidLiquidityAdsAmount, InvalidLiquidityAdsSig, MissingLiquidityAds}
 import fr.acinq.eclair.{randomBytes32, randomBytes64}
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.HexStringSyntax
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 class LiquidityAdsSpec extends AnyFunSuite {
 
@@ -37,7 +37,7 @@ class LiquidityAdsSpec extends AnyFunSuite {
     assert(fundingRate.fees(FeeratePerByte(5 sat).perKw, 500_000 sat, 400_000 sat, isChannelCreation = false).total == 4635.sat)
     assert(fundingRate.fees(FeeratePerByte(10 sat).perKw, 500_000 sat, 500_000 sat, isChannelCreation = false).total == 6260.sat)
 
-    val fundingRates = LiquidityAds.WillFundRates(fundingRate :: Nil, Set(LiquidityAds.PaymentType.FromChannelBalance))
+    val fundingRates = LiquidityAds.WillFundRates(fundingRates = fundingRate :: Nil, paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalance))
     val Some(request) = LiquidityAds.requestFunding(500_000 sat, LiquidityAds.PaymentDetails.FromChannelBalance, fundingRates)
     val fundingScript = hex"00202395c9c52c02ca069f1d56a3c6124bf8b152a617328c76e6b31f83ace370c2ff"
     val Right(willFund) = fundingRates.validateRequest(nodeKey, randomBytes32(), fundingScript, FeeratePerKw(1000 sat), request, isChannelCreation = true, None).map(_.willFund)
@@ -60,6 +60,13 @@ class LiquidityAdsSpec extends AnyFunSuite {
           case None => assert(result.isRight)
         }
     }
+  }
+
+  test("codec round-trip funding rates with no payment types") {
+    // A remote peer can send this valid wire encoding: zero funding rates followed by a 0-length payment-type bitfield.
+    val decoded = LiquidityAds.Codecs.willFundRates.decode(hex"00000000".bits).require.value
+    assert(decoded == LiquidityAds.WillFundRates(Nil, ByteVector.empty))
+    assert(LiquidityAds.Codecs.willFundRates.encode(decoded).isSuccessful)
   }
 
 }

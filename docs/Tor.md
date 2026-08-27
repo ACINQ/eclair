@@ -4,25 +4,25 @@ Current supported version of Tor is 0.3.3.6 or higher.
 
 ### Installing Tor on your node
 
-#### Linux:
+#### Linux
 
 ```shell
 sudo apt install tor
 ```
 
-#### Mac OS X:
+#### Mac OS X
 
 ```shell
 brew install tor
 ```
 
-#### Windows:
+#### Windows
   
 [Download the "Expert Bundle"](https://www.torproject.org/download/tor/) from Tor's website and extract it to `C:\tor`.
 
 ### Configuring Tor
 
-#### Linux and Max OS X:
+#### Linux and Max OS X
 
 Eclair requires safe cookie authentication as well as SOCKS5 and control connections to be enabled.
 
@@ -37,7 +37,7 @@ ExitPolicy reject *:* # don't change this unless you really know what you are do
 
 Make sure eclair is allowed to read Tor's cookie file (typically `/var/run/tor/control.authcookie`).
 
-#### Windows:
+#### Windows
 
 On Windows, it is easier to use the password authentication mechanism.
 
@@ -60,19 +60,19 @@ ExitPolicy reject *:* # don't change this unless you really know what you are do
 
 ### Start Tor
 
-#### Linux:
+#### Linux
 
 ```shell
 sudo systemctl start tor
 ```
 
-#### Mac OS X:
+#### Mac OS X
 
 ```shell
 brew services start tor
 ```
 
-#### Windows:
+#### Windows
 
 Open a CMD with administrator access
 
@@ -84,6 +84,7 @@ tor --service install -options -f "c:\tor\Conf\torrc"
 ### Configure Tor hidden service
 
 To create a Tor hidden service endpoint simply set the `eclair.tor.enabled` parameter in `eclair.conf` to true.
+
 ```
 eclair.tor.enabled = true
 ```
@@ -94,16 +95,25 @@ eclair.tor.auth = safecookie
 # eclair.tor.password = ""      # Needed if you set auth to password
 ```
 
+:warning: The Tor control port is a trusted local interface and must not be exposed to other machines. Eclair sends its
+onion private key to the control port on every startup, so anything that can read that connection can impersonate your
+node's onion address. With `password` authentication, the Tor control protocol also gives eclair no way of verifying
+that it is really talking to Tor: the password is sent in cleartext to whatever process is listening on the control
+port. Eclair therefore refuses to use `password` authentication unless `eclair.tor.host` is a local address. If your Tor
+daemon runs on another host or in a separate container, use `safecookie`, which authenticates the Tor server.
+
 Eclair will automatically set up a hidden service endpoint and add its onion address to the `server.public-ips` list.
 You can see what onion address is assigned using `eclair-cli`:
 
 ```shell
 eclair-cli getinfo
 ```
-Eclair saves the Tor endpoint's private key in `~/.eclair/tor.dat`, so that it can recreate the endpoint address after 
-a restart. If you remove the private key Eclair will regenerate the endpoint address.   
- 
+
+Eclair saves the Tor endpoint's private key in `~/.eclair/tor.dat`, so that it can recreate the endpoint address after
+a restart. If you remove the private key Eclair will regenerate the endpoint address.
+
 For increased privacy do not advertise your IP address in the `server.public-ips` list, and set your binding IP to `localhost`:
+
 ```
 eclair.server.binding-ip = "127.0.0.1"
 ```
@@ -118,11 +128,13 @@ You can always see your node's onion address using `getinfo` CLI command.
 
 ### Configure SOCKS5 proxy
 
-By default, all incoming connections will be established via Tor network, but all outgoing will be created via the 
+By default, all incoming connections will be established via Tor network, but all outgoing will be created via the
 clearnet. To route them through Tor you can use Tor's SOCKS5 proxy. Add this line in your `eclair.conf`:
+
 ```
 eclair.socks5.enabled = true
 ```
+
 You can use SOCKS5 proxy only for specific types of addresses. Use `eclair.socks5.use-for-ipv4`, `eclair.socks5.use-for-ipv6`
 or `eclair.socks5.use-for-tor` for fine-tuning.
 
@@ -132,14 +144,14 @@ To create a new Tor circuit for every connection, use `randomize-credentials` pa
 eclair.socks5.randomize-credentials = true
 ```
 
-:warning: Tor hidden service and SOCKS5 are independent options. You can use just one of them, but if you want to get most privacy 
+:warning: Tor hidden service and SOCKS5 are independent options. You can use just one of them, but if you want to get most privacy
 features from using Tor, use both.
 
 Note, that bitcoind should be configured to use Tor as well (https://en.bitcoin.it/wiki/Setting_up_a_Tor_hidden_service).
 
 ### Blockchain watchdogs
 
-Eclair version 0.5.0 introduced blockchain watchdogs, that fetch bitcoin headers from various sources in 
+Eclair version 0.5.0 introduced blockchain watchdogs, that fetch bitcoin headers from various sources in
 order to detect whether the node is being eclipsed. Eclair supports four sources at the moment:
 
 * blockchainheaders.net
@@ -166,6 +178,6 @@ eclair.blockchain-watchdog.sources = [
 
 Also, you can disable Tor for all watchdog sources altogether using:
 
-```s
+```
 eclair.socks5.use-for-watchdogs = false
 ```

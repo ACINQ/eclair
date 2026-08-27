@@ -135,7 +135,9 @@
   "waitingSince" : 400000,
   "lastSent" : {
     "channelId" : "54e64a242e3ddebf0ae861177c9527cab2590753ff06e083447058c14e52df16",
-    "signature" : "31b9111f33d0905f65b7b2f8fc879af706334c78c0e38b981717ef28674cade56b0cd9af2269e139a087cb1ffbca9db5366f69b9aff2b801df0b1ea1017d32b7",
+    "signature" : {
+      "sig" : "31b9111f33d0905f65b7b2f8fc879af706334c78c0e38b981717ef28674cade56b0cd9af2269e139a087cb1ffbca9db5366f69b9aff2b801df0b1ea1017d32b7"
+    },
     "tlvStream" : { }
   }
 }

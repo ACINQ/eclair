@@ -33,7 +33,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.{BitcoinReq, SignTran
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType.{P2tr, P2wpkh}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCClient, JsonRPCError}
+import fr.acinq.eclair.blockchain.bitcoind.rpc._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.crypto.keymanager.LocalOnChainKeyManager
 import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
@@ -1999,6 +1999,22 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     }
     wallet.fundTransaction(txNotFunded, FeeratePerKw(5000 sat), replaceable = true).pipeTo(sender.ref)
     sender.expectMsgType[FundTransactionResponse]
+  }
+
+  test("check that batching client correctly maps responses to request ids") {
+    val sender = TestProbe()
+    val rpcClient = new BasicBitcoinJsonRPCClient(Block.RegtestGenesisBlock.hash, rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
+    val batchingClient = new BatchingBitcoinJsonRPCClient(rpcClient)
+    val bitcoinClient = new BitcoinCoreClient(batchingClient, false)
+    bitcoinClient.getReceiveAddress(None).pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+    val txs = (1 to 10).map(_ => sendToAddress(address, 100_000 sat))
+    generateBlocks(1)
+    // We send many concurrent requests that try to fetch transactions and verify that the returned transaction matches,
+    // indicating that the response was correctly mapped to the right request.
+    val checks = (1 to 200).map(i => bitcoinClient.getTransaction(txs(i % 10).txid).map(tx => tx == txs(i % 10)))
+    Future.sequence(checks).pipeTo(sender.ref)
+    sender.expectMsg(Vector.fill(200)(true))
   }
 
 }

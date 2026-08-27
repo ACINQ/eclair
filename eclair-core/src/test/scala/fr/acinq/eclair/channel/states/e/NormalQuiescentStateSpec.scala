@@ -28,6 +28,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.crypto.keymanager.RemoteCommitmentKeys
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.relay.Relayer.RelayForward
 import fr.acinq.eclair.reputation.Reputation
@@ -190,7 +191,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
     val (preimage, add) = addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
     val cmd = c match {
-      case FulfillHtlc => CMD_FULFILL_HTLC(add.id, preimage, None)
+      case FulfillHtlc => CMD_FULFILL_HTLC(add.id, preimage, None, None)
       case FailHtlc => CMD_FAIL_HTLC(add.id, FailureReason.EncryptedDownstreamFailure(randomBytes(252), None), None)
     }
     crossSign(bob, alice, bob2alice, alice2bob)
@@ -360,6 +361,57 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     bob2alice.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateAddHtlc").getMessage))
   }
 
+  test("recv (forbidden) UpdateAddHtlc message after our peer sent stfu") { f =>
+    import f._
+    initiateQuiescence(f, sendInitialStfu = false)
+    // Bob has a pending local change, so he doesn't send his stfu yet: he is still allowed to receive updates at that
+    // point, but Alice isn't allowed to send any since she already sent her stfu.
+    addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
+    alice2bob.forward(bob)
+    bob2alice.expectNoMessage(100 millis)
+    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].remoteIsQuiescing)
+    // If Bob applied that update, his local and remote commitments would stop being mirror images of each other, and
+    // the splice commitment created from them would have inconsistent balances.
+    val forbiddenMsg = UpdateAddHtlc(channelId = channelId(bob), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, pathKey_opt = None, accountable = false, fundingFee_opt = None)
+    alice2bob.forward(bob, forbiddenMsg)
+    bob2alice.expectMsg(Warning(channelId(bob), ForbiddenDuringQuiescence(channelId(bob), "UpdateAddHtlc").getMessage))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteChanges == bobCommitments.changes.remoteChanges)
+  }
+
+  test("recv (forbidden) commit_sig while quiescent") { f =>
+    import f._
+    initiateQuiescence(f, sendInitialStfu = true)
+    // Alice is waiting for Bob's splice_ack while Bob is waiting for Alice's splice_init: neither of them must apply a
+    // commit_sig, which would move their commitment index while the splice commitment is about to be created at the
+    // current commitment index.
+    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceRequested])
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NonInitiatorQuiescent)
+
+    val commitSigAlice = {
+      val channelKeys = alice.underlyingActor.channelKeys
+      val nextPerCommitmentPoint = aliceCommitments.remoteNextCommitInfo.toOption.get
+      val remoteKeys = RemoteCommitmentKeys(aliceCommitments.channelParams, channelKeys, nextPerCommitmentPoint)
+      aliceCommitments.active.head.sendCommit(aliceCommitments.channelParams, channelKeys, remoteKeys, aliceCommitments.changes, nextPerCommitmentPoint, batchSize = 1, nextRemoteNonce_opt = None).toOption.get._2
+    }
+    val commitSigBob = {
+      val channelKeys = bob.underlyingActor.channelKeys
+      val nextPerCommitmentPoint = bobCommitments.remoteNextCommitInfo.toOption.get
+      val remoteKeys = RemoteCommitmentKeys(bobCommitments.channelParams, channelKeys, nextPerCommitmentPoint)
+      bobCommitments.active.head.sendCommit(bobCommitments.channelParams, channelKeys, remoteKeys, bobCommitments.changes, nextPerCommitmentPoint, batchSize = 1, nextRemoteNonce_opt = None).toOption.get._2
+    }
+
+    // Both parties respond with a warning (and disconnect) instead of revoking their current commitment.
+    alice2bob.forward(bob, commitSigAlice)
+    bob2alice.expectMsg(Warning(channelId(bob), ForbiddenDuringSplice(channelId(bob), "CommitSig").getMessage))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex == bobCommitments.localCommitIndex)
+    bob2alice.forward(alice, commitSigBob)
+    alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "CommitSig").getMessage))
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex == aliceCommitments.localCommitIndex)
+  }
+
   test("recv stfu from splice initiator that is not quiescent") { f =>
     import f._
     addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
@@ -482,7 +534,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     bob2blockchain.expectNoMessage(100 millis)
 
     // bob receives the fulfill for htlc, which is ignored because the channel is quiescent
-    val fulfillHtlc = CMD_FULFILL_HTLC(add.id, preimage, None)
+    val fulfillHtlc = CMD_FULFILL_HTLC(add.id, preimage, None, None)
     safeSend(bob, Seq(fulfillHtlc))
 
     // the HTLC timeout from alice is near, bob needs to close the channel to avoid an on-chain race condition

@@ -48,7 +48,7 @@ object Graph {
    * @param cltv               sum of each edge's cltv
    * @param successProbability estimate of the probability that the payment would succeed using this path
    * @param fees               total fees of the path
-   * @param weight             cost multiplied by a factor based on heuristics (see [[PaymentWeightRatios]]).
+   * @param weight             cost multiplied by a factor based on heuristics
    * @param outboundFee        outbound fee of the last edge added to the path (paths are computed backwards, so this is
    *                           the fee of the node closest to the sender so far): it caps the inbound fee discount
    *                           (bLIP-18) of the next edge we add.
@@ -69,7 +69,7 @@ object Graph {
    * The cumulative weight of a set of edges (path in the graph).
    *
    * @param length number of edges in the path
-   * @param weight cost multiplied by a factor based on heuristics (see [[PaymentWeightRatios]]).
+   * @param weight cost multiplied by a factor based on heuristics (see [[PaymentPathWeight]]).
    */
   case class MessagePathWeight(length: Int, weight: Double) extends PathWeight {
     override def canUseEdge(edge: GraphEdge): Boolean = true
@@ -199,7 +199,7 @@ object Graph {
    * Yen's algorithm to find the k-shortest (loop-less) paths in a graph, uses dijkstra as search algo. Is guaranteed to
    * terminate finding at most @pathsToFind paths sorted by cost (the cheapest is in position 0).
    *
-   * @param graph                   the graph on which will be performed the search
+   * @param g                       the graph on which will be performed the search
    * @param sourceNode              the starting node of the path we're looking for (payer)
    * @param targetNode              the destination node of the path (recipient)
    * @param amount                  amount to send to the last node
@@ -227,7 +227,9 @@ object Graph {
                         blip18: Blip18Params = Blip18Params.disabled): Seq[WeightedPath[PaymentPathWeight]] = {
     // find the shortest path (k = 0)
     val targetWeight = PaymentPathWeight(amount)
-    dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, Features.empty, currentBlockHeight, wr, includeLocalChannelCost, blip18) match {
+    // we don't require any specific feature for intermediate nodes
+    val validateNodeFeatures = (_: Features[NodeFeature]) => true
+    dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost, blip18) match {
       case None => Seq.empty // if we can't even find a single path, avoid returning a Seq(Seq.empty)
       case Some(shortestPath) =>
 
@@ -268,7 +270,7 @@ object Graph {
               val alreadyExploredVertices = rootPathEdges.map(_.desc.b).toSet
               val rootPathWeight = pathWeight(g.balances, sourceNode, rootPathEdges, amount, currentBlockHeight, wr, includeLocalChannelCost, g.graph, blip18)
               // find the "spur" path, a sub-path going from the spur node to the target avoiding previously found sub-paths
-              dijkstraShortestPath(g, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, Features.empty, currentBlockHeight, wr, includeLocalChannelCost, blip18) match {
+              dijkstraShortestPath(g, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost, blip18) match {
                 case Some(spurPath) =>
                   // The root-path edges were enriched relative to their predecessor in the previous shortest path; after
                   // concatenation with the spur path their actual predecessor changes, so we recompute inbound fees.
@@ -311,10 +313,11 @@ object Graph {
    * @param extraEdges              additional edges that can be used (e.g. private channels from invoices)
    * @param initialWeight           weight that will be applied to the target node
    * @param boundaries              a predicate function that can be used to impose limits on the outcome of the search
-   * @param nodeFeatures            features required for nodes on the path
+   * @param validateNodeFeatures    must return true if the node's features are compatible with the path we want
    * @param currentBlockHeight      the height of the chain tip (latest block)
    * @param wr                      ratios used to 'weight' edges when searching for the shortest path
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
+   * @param blip18                  enable BLIP-18
    */
   private def dijkstraShortestPath[RichWeight <: PathWeight](g: GraphWithBalanceEstimates,
                                                              sourceNode: PublicKey,
@@ -324,7 +327,7 @@ object Graph {
                                                              extraEdges: Set[GraphEdge],
                                                              initialWeight: RichWeight,
                                                              boundaries: RichWeight => Boolean,
-                                                             nodeFeatures: Features[NodeFeature],
+                                                             validateNodeFeatures: Features[NodeFeature] => Boolean,
                                                              currentBlockHeight: BlockHeight,
                                                              wr: WeightRatios[RichWeight],
                                                              includeLocalChannelCost: Boolean,
@@ -367,7 +370,7 @@ object Graph {
           if (current.weight.canUseEdge(edge) &&
             !ignoredEdges.contains(edge.desc) &&
             !ignoredVertices.contains(neighbor) &&
-            (neighbor == sourceNode || g.graph.getVertexFeatures(neighbor).areSupported(nodeFeatures))) {
+            (neighbor == sourceNode || validateNodeFeatures(g.graph.getVertexFeatures(neighbor)))) {
             // Inbound fees never apply to the last edge of the path: the recipient doesn't relay the payment, so it
             // cannot charge relay fees, regardless of what its channel_update advertises.
             val inboundFees_opt = if (blip18.enableInboundFees && edge.desc.b != targetNode) getInboundFees(g.graph, edge) else None
@@ -416,8 +419,10 @@ object Graph {
                           ignoredVertices: Set[PublicKey],
                           boundaries: MessagePathWeight => Boolean,
                           currentBlockHeight: BlockHeight,
-                          wr: MessageWeightRatios): Option[Seq[GraphEdge]] =
-    dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges = Set.empty, ignoredVertices, extraEdges = Set.empty, MessagePathWeight.zero, boundaries, Features(Features.OnionMessages -> FeatureSupport.Mandatory), currentBlockHeight, wr, includeLocalChannelCost = true, Blip18Params.disabled)
+                          wr: MessageWeightRatios): Option[Seq[GraphEdge]] = {
+    val validateNodeFeatures = (f: Features[NodeFeature]) => f.hasFeature(Features.OnionMessages) || f.hasFeature(Features.OnionMessagesChannelsOnly)
+    dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges = Set.empty, ignoredVertices, extraEdges = Set.empty, MessagePathWeight.zero, boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost = true, Blip18Params.disabled)
+  }
 
   /**
    * Find non-overlapping (no vertices shared) payment paths that support route blinding
@@ -439,8 +444,9 @@ object Graph {
     val paths = new mutable.ArrayBuffer[WeightedPath[PaymentPathWeight]](pathsToFind)
     val verticesToIgnore = new mutable.HashSet[PublicKey]()
     verticesToIgnore.addAll(ignoredVertices)
+    val validateNodeFeatures = (f: Features[NodeFeature]) => f.hasFeature(Features.RouteBlinding)
     for (_ <- 1 to pathsToFind) {
-      dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges, verticesToIgnore.toSet, extraEdges = Set.empty, PaymentPathWeight(amount), boundaries, Features(Features.RouteBlinding -> FeatureSupport.Mandatory), currentBlockHeight, wr, includeLocalChannelCost = true, blip18) match {
+      dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges, verticesToIgnore.toSet, extraEdges = Set.empty, PaymentPathWeight(amount), boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost = true, blip18) match {
         case Some(path) =>
           val weight = pathWeight(g.balances, sourceNode, path, amount, currentBlockHeight, wr, includeLocalChannelCost = true, g.graph, blip18)
           paths += WeightedPath(path, weight)
@@ -574,10 +580,6 @@ object Graph {
     // Low/High bound for channel capacity
     val CAPACITY_CHANNEL_LOW: MilliSatoshi = MilliBtc(1).toMilliSatoshi
     val CAPACITY_CHANNEL_HIGH: MilliSatoshi = Btc(1).toMilliSatoshi
-
-    // Low/High bound for CLTV channel value
-    val CLTV_LOW: Int = 9
-    val CLTV_HIGH: Int = 2016
 
     /**
      * Normalize the given value between (0, 1). If the @param value is outside the min/max window we flatten it to something very close to the
@@ -767,7 +769,7 @@ object Graph {
         })
       }
 
-      def addVertices(announcements: Iterable[NodeAnnouncement]): DirectedGraph = announcements.foldLeft(this)((acc, ann) => acc.addOrUpdateVertex(ann))
+      private def addVertices(announcements: Iterable[NodeAnnouncement]): DirectedGraph = announcements.foldLeft(this)((acc, ann) => acc.addOrUpdateVertex(ann))
 
       /**
        * Note this operation will traverse all edges in the graph (expensive)

@@ -25,7 +25,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelSpendSignature, ChannelType}
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.transactions.Transactions.InputInfo
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo, SegwitV0CommitmentFormat, TaprootCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.ChannelReadyTlv.ShortChannelIdTlv
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, isAsciiPrintable}
 import scodec.bits.ByteVector
@@ -338,16 +338,19 @@ case class AcceptDualFundedChannel(temporaryChannelId: ByteVector32,
 case class FundingCreated(temporaryChannelId: ByteVector32,
                           fundingTxId: TxId,
                           fundingOutputIndex: Int,
-                          signature: ByteVector64,
+                          signature: IndividualSignature,
                           tlvStream: TlvStream[FundingCreatedTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId {
-  val sigOrPartialSig: ChannelSpendSignature = tlvStream.get[ChannelTlv.PartialSignatureWithNonceTlv].map(_.partialSigWithNonce).getOrElse(IndividualSignature(signature))
-}
+  val partialSignature_opt: Option[ChannelSpendSignature.PartialSignatureWithNonce] = tlvStream.get[ChannelTlv.PartialSignatureWithNonceTlv].map(_.partialSigWithNonce)
+  def signatureFor(commitmentFormat: CommitmentFormat): Option[ChannelSpendSignature] = commitmentFormat match {
+    case _: SegwitV0CommitmentFormat => if (partialSignature_opt.isDefined) None else Some(signature)
+    case _: TaprootCommitmentFormat => partialSignature_opt
+  }}
 
 object FundingCreated {
   def apply(temporaryChannelId: ByteVector32, fundingTxId: TxId, fundingOutputIndex: Int, sig: ChannelSpendSignature): FundingCreated = {
     val individualSig = sig match {
-      case IndividualSignature(sig) => sig
-      case _: PartialSignatureWithNonce => ByteVector64.Zeroes
+      case sig: IndividualSignature => sig
+      case _: PartialSignatureWithNonce => IndividualSignature(ByteVector64.Zeroes)
     }
     val tlvs = sig match {
       case _: IndividualSignature => TlvStream.empty[FundingCreatedTlv]
@@ -358,16 +361,20 @@ object FundingCreated {
 }
 
 case class FundingSigned(channelId: ByteVector32,
-                         signature: ByteVector64,
+                         signature: IndividualSignature,
                          tlvStream: TlvStream[FundingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
-  val sigOrPartialSig: ChannelSpendSignature = tlvStream.get[ChannelTlv.PartialSignatureWithNonceTlv].map(_.partialSigWithNonce).getOrElse(IndividualSignature(signature))
+  val partialSignature_opt: Option[PartialSignatureWithNonce] = tlvStream.get[ChannelTlv.PartialSignatureWithNonceTlv].map(_.partialSigWithNonce)
+  def signatureFor(commitmentFormat: CommitmentFormat): Option[ChannelSpendSignature] = commitmentFormat match {
+    case _: SegwitV0CommitmentFormat => if (partialSignature_opt.isDefined) None else Some(signature)
+    case _: TaprootCommitmentFormat => partialSignature_opt
+  }
 }
 
 object FundingSigned {
   def apply(channelId: ByteVector32, sig: ChannelSpendSignature): FundingSigned = {
     val individualSig = sig match {
-      case IndividualSignature(sig) => sig
-      case _: PartialSignatureWithNonce => ByteVector64.Zeroes
+      case sig: IndividualSignature => sig
+      case _: PartialSignatureWithNonce => IndividualSignature(ByteVector64.Zeroes)
     }
     val tlvs = sig match {
       case _: IndividualSignature => TlvStream.empty[FundingSignedTlv]
@@ -580,6 +587,7 @@ case class UpdateFulfillHtlc(channelId: ByteVector32,
                              paymentPreimage: ByteVector32,
                              tlvStream: TlvStream[UpdateFulfillHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage {
   val attribution_opt: Option[ByteVector] = tlvStream.get[UpdateFulfillHtlcTlv.AttributionData].map(_.data)
+  val fulfillmentPayload_opt: Option[ByteVector] = tlvStream.get[UpdateFulfillHtlcTlv.FulfillmentPayload].map(_.data)
 }
 
 case class UpdateFailHtlc(channelId: ByteVector32,
@@ -611,7 +619,10 @@ case class CommitSig(channelId: ByteVector32,
                      tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends CommitSigs {
   val fundingTxId_opt: Option[TxId] = tlvStream.get[CommitSigTlv.FundingTx].map(_.txId)
   val partialSignature_opt: Option[PartialSignatureWithNonce] = tlvStream.get[CommitSigTlv.PartialSignatureWithNonceTlv].map(_.partialSigWithNonce)
-  val sigOrPartialSig: ChannelSpendSignature = partialSignature_opt.getOrElse(signature)
+  def signatureFor(commitmentFormat: CommitmentFormat): Option[ChannelSpendSignature] = commitmentFormat match {
+    case _: SegwitV0CommitmentFormat => if (partialSignature_opt.isDefined) None else Some(signature)
+    case _: TaprootCommitmentFormat => partialSignature_opt
+  }
 }
 
 object CommitSig {
@@ -781,13 +792,19 @@ case class ChannelUpdate(signature: ByteVector64,
 }
 
 object ChannelUpdate {
-  case class MessageFlags(dontForward: Boolean)
+  case class MessageFlags(flag7: Boolean, flag6: Boolean, flag5: Boolean, flag4: Boolean, flag3: Boolean, flag2: Boolean, dontForward: Boolean)
 
-  case class ChannelFlags(isEnabled: Boolean, isNode1: Boolean)
+  object MessageFlags {
+    def apply(dontForward: Boolean): MessageFlags = MessageFlags(flag7 = false, flag6 = false, flag5 = false, flag4 = false, flag3 = false, flag2 = false, dontForward)
+  }
+
+  case class ChannelFlags(flag7: Boolean, flag6: Boolean, flag5: Boolean, flag4: Boolean, flag3: Boolean, flag2: Boolean, isEnabled: Boolean, isNode1: Boolean)
 
   object ChannelFlags {
     /** for tests */
-    val DUMMY: ChannelFlags = ChannelFlags(isEnabled = true, isNode1 = true)
+    val DUMMY: ChannelFlags = ChannelFlags(flag7 = false, flag6 = false, flag5 = false, flag4 = false, flag3 = false, flag2 = false, isEnabled = true, isNode1 = true)
+
+    def apply(isEnabled: Boolean, isNode1: Boolean): ChannelFlags = ChannelFlags(flag7 = false, flag6 = false, flag5 = false, flag4 = false, flag3 = false, flag2 = false, isEnabled = isEnabled, isNode1 = isNode1)
   }
 }
 

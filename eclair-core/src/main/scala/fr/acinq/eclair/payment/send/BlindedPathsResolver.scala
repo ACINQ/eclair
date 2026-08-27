@@ -80,10 +80,10 @@ private class BlindedPathsResolver(nodeParams: NodeParams,
   private def resolveBlindedPaths(toResolve: Seq[PaymentBlindedRoute], resolved: Seq[ResolvedPath]): Behavior[Command] = {
     toResolve.headOption match {
       case Some(paymentRoute) => paymentRoute.route.firstNodeId match {
-        case EncodedNodeId.WithPublicKey.Plain(ourNodeId) if ourNodeId == nodeParams.nodeId && paymentRoute.route.length == 0 =>
+        case ourNodeId: EncodedNodeId.WithPublicKey if ourNodeId.publicKey == nodeParams.nodeId && paymentRoute.route.length == 0 =>
           context.log.warn("ignoring blinded path (empty route with ourselves as the introduction node)")
           resolveBlindedPaths(toResolve.tail, resolved)
-        case EncodedNodeId.WithPublicKey.Plain(ourNodeId) if ourNodeId == nodeParams.nodeId =>
+        case ourNodeId: EncodedNodeId.WithPublicKey if ourNodeId.publicKey == nodeParams.nodeId =>
           // We are the introduction node of the blinded route: we need to decrypt the first payload.
           val firstPathKey = paymentRoute.route.firstNode.pathKey
           val firstEncryptedPayload = paymentRoute.route.firstNode.encryptedPayload

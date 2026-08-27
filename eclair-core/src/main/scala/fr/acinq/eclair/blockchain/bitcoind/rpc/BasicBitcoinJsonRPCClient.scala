@@ -49,10 +49,12 @@ class BasicBitcoinJsonRPCClient(override val chainHash: BlockHash, rpcAuthMethod
   private val credentials = new AtomicReference[BitcoinJsonRPCCredentials](rpcAuthMethod.credentials)
   implicit val serialization: JacksonSerialization = Serialization
 
-  override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] =
-    invoke(Seq(JsonRPCRequest(method = method, params = params))).map(l => jsonResponse2Exception(l.head).result)
+  override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = {
+    val request = JsonRPCRequest(id = JsonRPCRequest.nextRequestId(), method = method, params = params)
+    invoke(Seq(request)).map(l => jsonResponse2Exception(l.head).result)
+  }
 
-  def jsonResponse2Exception(jsonRPCResponse: JsonRPCResponse): JsonRPCResponse = jsonRPCResponse match {
+  private def jsonResponse2Exception(jsonRPCResponse: JsonRPCResponse): JsonRPCResponse = jsonRPCResponse match {
     case JsonRPCResponse(_, Some(error), _) => throw JsonRPCError(error)
     case o => o
   }

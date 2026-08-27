@@ -338,7 +338,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.Succeeded(status, commitSig, liquidityPurchase_opt, nextRemoteCommitNonce_opt) =>
         nextRemoteCommitNonce_opt.foreach { case (txId, nonce) => remoteNextCommitNonces = remoteNextCommitNonces + (txId -> nonce) }
         val d1 = DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(d.channelParams, d.secondRemotePerCommitmentPoint, d.localPushAmount, d.remotePushAmount, status)
-        nodeParams.db.channels.addChannel(d1) match {
+        store(d1) match {
           case None =>
             d.deferred.foreach(self ! _)
             d.replyTo_opt.foreach(_ ! OpenChannelResponse.Created(d.channelId, status.fundingTx.txId, status.fundingTx.tx.localFees.truncateToSatoshi))
@@ -495,6 +495,11 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           }
         case _: FullySignedSharedTransaction =>
           d.status match {
+            case DualFundingStatus.RbfWaitingForSigs(signingSession) if !signingSession.isConsistentWith(d.commitments) =>
+              log.warning("aborting RBF attempt: commitment number mismatch")
+              rollbackRbfAttempt(signingSession, d)
+              reportLiquidityPurchaseAborted(d.channelId, signingSession)
+              handleLocalError(InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId), d, Some(txSigs))
             case DualFundingStatus.RbfWaitingForSigs(signingSession) =>
               signingSession.receiveTxSigs(channelKeys, txSigs, nodeParams.currentBlockHeight) match {
                 case Left(f) =>
@@ -680,6 +685,11 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case s: DualFundingStatus.RbfInProgress =>
           log.debug("received their commit_sig, deferring message")
           stay() using d.copy(status = s.copy(remoteCommitSig = Some(commitSig)))
+        case DualFundingStatus.RbfWaitingForSigs(signingSession) if !signingSession.isConsistentWith(d.commitments) =>
+          log.warning("aborting RBF attempt: commitment number mismatch")
+          rollbackRbfAttempt(signingSession, d)
+          reportLiquidityPurchaseAborted(d.channelId, signingSession)
+          handleLocalError(InvalidCommitmentNumber(d.channelId, signingSession.fundingTxId), d, Some(commitSig))
         case DualFundingStatus.RbfWaitingForSigs(signingSession) =>
           signingSession.receiveCommitSig(d.commitments.channelParams, channelKeys, commitSig, nodeParams.currentBlockHeight) match {
             case Left(f) =>
@@ -759,7 +769,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           // We still watch the funding tx for confirmation even if we can use the zero-conf channel right away.
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepth), delay_opt = None)
           val shortIds = createShortIdAliases(d.channelId)
-          val channelReady = createChannelReady(shortIds, d.commitments)
+          val channelReady = createChannelReady(shortIds, commitments1)
           d.deferred.foreach(self ! _)
           invalidTxSigsReceived = Map.empty
           goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, shortIds) storing() sending channelReady
@@ -770,7 +780,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       acceptFundingTxConfirmed(w, d) match {
         case Right((commitments1, _)) =>
           val shortIds = createShortIdAliases(d.channelId)
-          val channelReady = createChannelReady(shortIds, d.commitments)
+          val channelReady = createChannelReady(shortIds, commitments1)
           reportRbfFailure(d.status, InvalidRbfTxConfirmed(d.channelId))
           val toSend = d.status match {
             case DualFundingStatus.WaitingForConfirmations | DualFundingStatus.RbfAborted => Seq(channelReady)

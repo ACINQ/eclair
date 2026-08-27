@@ -115,20 +115,20 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       router ! Router.RouteDidRelay(d.route)
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
       val p = PaymentPart(id, PaymentEvent.OutgoingPayment(htlc.channelId, remoteNodeId, d.cmd.amount, settledAt = TimestampMilli.now()), d.cmd.amount - d.request.amount, Some(d.route.fullRoute), startedAt = d.sentAt)
-      val remainingAttribution_opt = fulfill match {
-        case HtlcResult.RemoteFulfill(updateFulfill) =>
-          updateFulfill.attribution_opt match {
-            case Some(attribution) =>
-              val attributionDetails = Sphinx.SuccessPacket.decrypt(Some(attribution), d.sharedSecrets)
-              if (attributionDetails.holdTimes.nonEmpty) {
-                context.system.eventStream.publish(Router.ReportedHoldTimes(attributionDetails.holdTimes))
-              }
-              attributionDetails.remainingAttribution_opt
-            case None => None
+      val success_opt = fulfill match {
+        case HtlcResult.RemoteFulfill(f) =>
+          // When we're relaying a payment, the last hop of our route isn't the node that created the fulfillment
+          // payload: it is an intermediate node that only wrapped it, and we must forward it to our upstream node.
+          val lastSecretIsRecipient = cfg.upstream match {
+            case _: Upstream.Local => true
+            case _: Upstream.Hot.Channel => false
+            case _: Upstream.Hot.Trampoline => false
           }
+          Some(Sphinx.SuccessPacket.decrypt(f.fulfillmentPayload_opt, f.attribution_opt, d.sharedSecrets, lastSecretIsRecipient))
         case _: HtlcResult.OnChainFulfill => None
       }
-      myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, remainingAttribution_opt, start)))
+      success_opt.foreach(s => if (s.holdTimes.nonEmpty) context.system.eventStream.publish(Router.ReportedHoldTimes(s.holdTimes)))
+      myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, success_opt.flatMap(_.fulfillmentPayload_opt), success_opt.flatMap(_.remainingAttribution_opt), start)))
 
     case Event(RES_ADD_SETTLED(_, _, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
       fail match {
@@ -203,26 +203,31 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(UnreadableRemoteFailure(request.amount, Nil, e, startedAt = d.sentAt, failedAt = now, htlcFailure.holdTimes))).increment()
         failure
     }) match {
-      case res@Right(Sphinx.DecryptedFailurePacket(_, index, failureMessage)) =>
-        // We have discovered some liquidity information with this payment: we update the router accordingly.
-        val stoppedRoute = route.stopAt(index)
-        if (stoppedRoute.hops.length > 1) {
-          router ! Router.RouteCouldRelay(stoppedRoute)
-        }
-        failureMessage match {
-          case TemporaryChannelFailure(update_opt, _) =>
-            val failingHop = route.hops(index)
-            val isLiquidityIssue = update_opt match {
-              // If the relay parameters have changed, it's not necessarily a liquidity issue. We ignore inbound fees in
-              // this comparison: the failing hop's inbound fees were derived from its predecessor's channel_update during
-              // path-finding, whereas `update` is the failing hop's own channel_update, so the two aren't comparable.
-              case Some(update) => HopRelayParams.areSame(failingHop.params, HopRelayParams.FromAnnouncement(update), ignoreHtlcSize = true, ignoreInboundFees = true)
-              case None => true
-            }
-            if (isLiquidityIssue) {
-              router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
-            }
-          case _ => // other errors should not be used for liquidity issues
+      case res@Right(Sphinx.DecryptedFailurePacket(nodeId, index, failureMessage)) =>
+        val isRecipient = nodeId == recipient.nodeId || route.finalHop_opt.collect { case h: NodeHop => h.nodeId }.contains(nodeId)
+        if (!isRecipient && index >= 1 && index < route.hops.length) {
+          // We have discovered some liquidity information with this payment: we update the router accordingly.
+          val stoppedRoute = route.stopAt(index)
+          if (stoppedRoute.hops.length > 1) {
+            router ! Router.RouteCouldRelay(stoppedRoute)
+          }
+          failureMessage match {
+            case TemporaryChannelFailure(update_opt, _) =>
+              val failingHop = route.hops(index)
+              val isLiquidityIssue = update_opt match {
+                // If the relay parameters have changed, it's not necessarily a liquidity issue. We ignore inbound fees in
+                // this comparison: the failing hop's inbound fees were derived from its predecessor's channel_update during
+                // path-finding, whereas `update` is the failing hop's own channel_update, so the two aren't comparable.
+                case Some(update) => HopRelayParams.areSame(failingHop.params, HopRelayParams.FromAnnouncement(update), ignoreHtlcSize = true, ignoreInboundFees = true)
+                case None => true
+              }
+              if (isLiquidityIssue) {
+                router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
+              }
+            case _ => // other errors should not be used for liquidity issues
+          }
+        } else if (!isRecipient) {
+          log.warning("ignoring failure with invalid route position: node={} index={} hops={}", nodeId, index, route.hops.length)
         }
         res
       case res => res
@@ -246,7 +251,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             }
             RemoteFailure(request.amount, route.fullRoute, e, startedAt = d.sentAt, failedAt = now)
           case Left(e@Sphinx.CannotDecryptFailurePacket(unwrapped, _)) =>
-            log.warning(s"cannot parse returned error ${fail.reason.toHex} with sharedSecrets=$sharedSecrets: unwrapped=$unwrapped")
+            log.warning(s"cannot parse returned error ${fail.reason.toHex}: unwrapped=$unwrapped")
             UnreadableRemoteFailure(request.amount, route.fullRoute, e, startedAt = d.sentAt, failedAt = now, htlcFailure.holdTimes)
         }
         log.warning(s"too many failed attempts, failing the payment")

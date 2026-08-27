@@ -151,12 +151,12 @@ object LightningMessageCodecs {
     ("temporaryChannelId" | bytes32) ::
       ("fundingTxHash" | txIdAsHash) ::
       ("fundingOutputIndex" | uint16) ::
-      ("signature" | bytes64) ::
+      ("signature" | bytes64.as[ChannelSpendSignature.IndividualSignature]) ::
       ("tlvStream" | FundingCreatedTlv.fundingCreatedTlvCodec)).as[FundingCreated]
 
   val fundingSignedCodec: Codec[FundingSigned] = (
     ("channelId" | bytes32) ::
-      ("signature" | bytes64) ::
+      ("signature" | bytes64.as[ChannelSpendSignature.IndividualSignature]) ::
       ("tlvStream" | FundingSignedTlv.fundingSignedTlvCodec)).as[FundingSigned]
 
   val channelReadyCodec: Codec[ChannelReady] = (
@@ -335,12 +335,12 @@ object LightningMessageCodecs {
     ("signature" | bytes64) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
-  val messageFlagsCodec = ("messageFlags" | (ignore(6) :: bool :: constant(bin"1"))).as[ChannelUpdate.MessageFlags]
+  val messageFlagsCodec = ("messageFlags" | (bool :: bool :: bool :: bool :: bool :: bool :: bool :: constant(bin"1"))).as[ChannelUpdate.MessageFlags]
 
   val reverseBool: Codec[Boolean] = bool.xmap[Boolean](b => !b, b => !b)
 
-  /** BOLT 7 defines a 'disable' bit and a 'direction' bit, but it's easier to understand if we take the reverse. */
-  val channelFlagsCodec = ("channelFlags" | (ignore(6) :: reverseBool :: reverseBool)).as[ChannelUpdate.ChannelFlags]
+  /** BOLT 7 defines a 'disable' bit (position 1) and a 'direction' bit (position 0), but it's easier to understand if we take the reverse. */
+  val channelFlagsCodec = ("channelFlags" | (bool :: bool :: bool :: bool :: bool :: bool :: reverseBool :: reverseBool)).as[ChannelUpdate.ChannelFlags]
 
   val channelUpdateChecksumCodec =
     ("chainHash" | blockHash) ::

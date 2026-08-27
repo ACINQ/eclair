@@ -23,6 +23,7 @@ import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.reputation.Reputation
@@ -242,7 +243,7 @@ case class FailureAttributionData(htlcReceivedAt: TimestampMilli, trampolineRece
 case class FulfillAttributionData(htlcReceivedAt: TimestampMilli, trampolineReceivedAt_opt: Option[TimestampMilli], downstreamAttribution_opt: Option[ByteVector])
 
 sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent { def id: Long }
-final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, attribution_opt: Option[FulfillAttributionData], commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
+final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, fulfillmentPayload_opt: Option[ByteVector], attribution_opt: Option[FulfillAttributionData], commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_HTLC(id: Long, reason: FailureReason, attribution_opt: Option[FailureAttributionData], delay_opt: Option[FiniteDuration] = None, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
@@ -304,7 +305,13 @@ final case class RES_FAILURE[+C <: Command, +T <: Throwable](cmd: C, t: T) exten
 final case class RES_ADD_FAILED[+T <: ChannelException](c: CMD_ADD_HTLC, t: T, channelUpdate: Option[ChannelUpdate]) extends CommandFailure[CMD_ADD_HTLC, T] { override def toString = s"cannot add htlc with origin=${c.origin} reason=${t.getMessage}" }
 sealed trait HtlcResult
 object HtlcResult {
-  sealed trait Fulfill extends HtlcResult { def paymentPreimage: ByteVector32 }
+  sealed trait Fulfill extends HtlcResult {
+    def paymentPreimage: ByteVector32
+    def fulfillmentPayload_opt: Option[ByteVector] = this match {
+      case RemoteFulfill(fulfill) => fulfill.fulfillmentPayload_opt.map(_.take(Sphinx.SuccessPacket.MAX_LENGTH))
+      case _: OnChainFulfill => None
+    }
+  }
   case class RemoteFulfill(fulfill: UpdateFulfillHtlc) extends Fulfill { override val paymentPreimage: ByteVector32 = fulfill.paymentPreimage }
   case class OnChainFulfill(paymentPreimage: ByteVector32) extends Fulfill
   sealed trait Fail extends HtlcResult
@@ -518,6 +525,15 @@ sealed trait SpliceStatus {
     case SpliceStatus.NoSplice | _: SpliceStatus.NegotiatingQuiescence => false
     case _ => true
   }
+  /** Our peer has sent stfu: they must not send any update until the quiescence session ends. */
+  def remoteIsQuiescing: Boolean = this match {
+    case SpliceStatus.NegotiatingQuiescence(_, status) => status match {
+      case _: QuiescenceNegotiation.NonInitiator.ReceivedStfu => true
+      case _: QuiescenceNegotiation.Initiator => false
+    }
+    case SpliceStatus.NoSplice => false
+    case _ => true
+  }
 }
 object SpliceStatus {
   case object NoSplice extends SpliceStatus
@@ -680,6 +696,7 @@ final case class DATA_NORMAL(commitments: Commitments,
   val lastAnnouncedFundingTxId_opt: Option[TxId] = lastAnnouncedCommitment_opt.map(_.fundingTxId)
   val isNegotiatingQuiescence: Boolean = spliceStatus.isNegotiatingQuiescence
   val isQuiescent: Boolean = spliceStatus.isQuiescent
+  val remoteIsQuiescing: Boolean = spliceStatus.remoteIsQuiescing
 }
 final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closeStatus: CloseStatus) extends ChannelDataWithCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
@@ -709,7 +726,8 @@ final case class DATA_CLOSING(commitments: Commitments,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               revokedCommitPublished: List[RevokedCommitPublished] = Nil,
-                              maxClosingFeerate_opt: Option[FeeratePerKw] = None) extends ChannelDataWithCommitments {
+                              maxClosingFeerate_opt: Option[FeeratePerKw] = None,
+                              remoteFuturePerCommitmentPoint_opt: Option[PublicKey] = None) extends ChannelDataWithCommitments {
   val spendingTxs: List[Transaction] = mutualClosePublished.map(_.tx) ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
   require(spendingTxs.nonEmpty, "there must be at least one tx published in this state")
 }

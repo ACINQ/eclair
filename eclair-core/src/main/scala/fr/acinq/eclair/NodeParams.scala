@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
+import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly}
 import fr.acinq.eclair.io.{PeerConnection, PeerReadyNotifier}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.offer.OffersConfig
@@ -211,13 +211,14 @@ object NodeParams extends Logging {
   }
 
   private def writeSeedToFile(path: File, seed: ByteVector): Unit = {
-    Files.write(path.toPath, seed.toArray)
+    writeSecret(path.toPath, seed.toArray)
     logger.info(s"create new seed file: ${path.getCanonicalPath}")
   }
 
   private def migrateSeedFile(source: File, destination: File): Unit = {
     if (source.exists() && !destination.exists()) {
-      Files.copy(source.toPath, destination.toPath)
+      val seed = readSeedFromFile(source)
+      writeSecret(destination.toPath, seed.toArray)
       logger.info(s"migrate seed file: ${source.getCanonicalPath} → ${destination.getCanonicalPath}")
     }
   }
@@ -347,6 +348,8 @@ object NodeParams extends Logging {
       // v0.12.0
       "channel.mindepth-blocks" -> "channel.min-depth-blocks",
       "sync-whitelist" -> "router.sync.whitelist",
+      // v0.14.0
+      "onion-messages.relay-policy" -> "features.option_onion_messages, features.option_onion_messages_only_channels",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -366,6 +369,8 @@ object NodeParams extends Logging {
 
     val watchSpentWindow = FiniteDuration(config.getDuration("router.watch-spent-window").getSeconds, TimeUnit.SECONDS)
     require(watchSpentWindow > 0.seconds, "router.watch-spent-window must be strictly greater than 0")
+
+    require(config.getInt("router.sync.max-queries-per-second") > 0, "router.sync.max-queries-per-second must be strictly greater than 0")
 
     val dustLimitSatoshis = Satoshi(config.getLong("channel.dust-limit-satoshis"))
     if (chainHash == Block.LivenetGenesisBlock.hash) {
@@ -514,10 +519,7 @@ object NodeParams extends Logging {
       case "stop" => UnhandledExceptionStrategy.Stop
     }
 
-    val onionMessageRelayPolicy: RelayPolicy = config.getString("onion-messages.relay-policy") match {
-      case "channels-only" => RelayChannelsOnly
-      case "relay-all" => RelayAll
-    }
+    val onionMessageRelayPolicy = if (features.hasFeature(Features.OnionMessages)) RelayAll else RelayChannelsOnly
 
     val purgeInvoicesInterval = if (config.getBoolean("purge-expired-invoices.enabled")) {
       Some(FiniteDuration(config.getDuration("purge-expired-invoices.interval").toMinutes, TimeUnit.MINUTES))
@@ -537,6 +539,14 @@ object NodeParams extends Logging {
 
     val maxNoChannels = config.getInt("peer-connection.max-no-channels")
     require(maxNoChannels > 0, "peer-connection.max-no-channels must be > 0")
+
+    val maxPendingIncomingConnections = config.getInt("peer-connection.max-pending-incoming-connections")
+    require(maxPendingIncomingConnections >= 0, "peer-connection.max-pending-incoming-connections must be >= 0 (0 disables the limit)")
+    // Those two durations may be set to 0 to disable the corresponding protection.
+    val pendingConnectionMinAge = FiniteDuration(config.getDuration("peer-connection.pending-connection-min-age").toMillis, TimeUnit.MILLISECONDS)
+    require(pendingConnectionMinAge >= Duration.Zero, "peer-connection.pending-connection-min-age must be >= 0")
+    val pendingConnectionAcceptDelay = FiniteDuration(config.getDuration("peer-connection.pending-connection-accept-delay").toMillis, TimeUnit.MILLISECONDS)
+    require(pendingConnectionAcceptDelay >= Duration.Zero, "peer-connection.pending-connection-accept-delay must be >= 0")
 
     val willFundRates_opt = {
       val supportedPaymentTypes = Map(
@@ -594,6 +604,7 @@ object NodeParams extends Logging {
         maxReserveToFundingRatio = config.getDouble("channel.max-reserve-to-funding-ratio"),
         minFundingPublicSatoshis = Satoshi(config.getLong("channel.min-public-funding-satoshis")),
         minFundingPrivateSatoshis = Satoshi(config.getLong("channel.min-private-funding-satoshis")),
+        maxFundingSatoshis = Satoshi(config.getLong("channel.max-funding-satoshis")),
         toRemoteDelay = offeredCLTV,
         maxToLocalDelay = maxToLocalCLTV,
         minDepth = config.getInt("channel.min-depth-blocks"),
@@ -680,8 +691,12 @@ object NodeParams extends Logging {
         maxRebroadcastDelay = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS), // it makes sense to not delay rebroadcast by more than the rebroadcast period
         killIdleDelay = FiniteDuration(config.getDuration("onion-messages.kill-transient-connection-after").getSeconds, TimeUnit.SECONDS),
         maxOnionMessagesPerSecond = config.getInt("onion-messages.max-per-peer-per-second"),
+        maxGossipQueriesPerSecond = config.getInt("router.sync.max-queries-per-second"),
         sendRemoteAddressInit = config.getBoolean("peer-connection.send-remote-address-init"),
         maxNoChannels = maxNoChannels,
+        maxPendingIncomingConnections = maxPendingIncomingConnections,
+        pendingConnectionMinAge = pendingConnectionMinAge,
+        pendingConnectionAcceptDelay = pendingConnectionAcceptDelay,
       ),
       routerConf = RouterConf(
         watchSpentWindow = watchSpentWindow,
@@ -693,6 +708,7 @@ object NodeParams extends Logging {
           encodingType = EncodingType.UNCOMPRESSED,
           channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
           channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
+          maxQueriesPerSync = config.getInt("router.sync.max-queries-per-sync"),
           peerLimit = config.getInt("router.sync.peer-limit"),
           whitelist = config.getStringList("router.sync.whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
         ),

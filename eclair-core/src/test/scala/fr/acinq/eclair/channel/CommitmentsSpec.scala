@@ -24,7 +24,6 @@ import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
 import fr.acinq.eclair.transactions.{CommitmentSpec, Transactions}
 import fr.acinq.eclair.wire.protocol._
@@ -86,7 +85,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac1.availableBalanceForSend == a - p - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
-    val Right(bc1) = bc0.receiveAdd(add)
+    val Right(bc1) = bc0.receiveAdd(add, currentBlockHeight)
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -114,7 +113,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc4.availableBalanceForSend == b)
     assert(bc4.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val cmdFulfill = CMD_FULFILL_HTLC(0, payment_preimage, None)
+    val cmdFulfill = CMD_FULFILL_HTLC(0, payment_preimage, None, None)
     val Right((bc5, fulfill)) = bc4.sendFulfill(cmdFulfill, bob.underlyingActor.nodeParams.privateKey, useAttributionData = false)
     assert(bc5.availableBalanceForSend == b + p) // as soon as we have the fulfill, the balance increases
     assert(bc5.availableBalanceForReceive == a - p - htlcOutputFee)
@@ -171,7 +170,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac1.availableBalanceForSend == a - p - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
-    val Right(bc1) = bc0.receiveAdd(add)
+    val Right(bc1) = bc0.receiveAdd(add, currentBlockHeight)
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -269,15 +268,15 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc1.availableBalanceForSend == b - p3) // bob doesn't pay the fee
     assert(bc1.availableBalanceForReceive == a)
 
-    val Right(bc2) = bc1.receiveAdd(add1)
+    val Right(bc2) = bc1.receiveAdd(add1, currentBlockHeight)
     assert(bc2.availableBalanceForSend == b - p3)
     assert(bc2.availableBalanceForReceive == a - p1 - htlcOutputFee)
 
-    val Right(bc3) = bc2.receiveAdd(add2)
+    val Right(bc3) = bc2.receiveAdd(add2, currentBlockHeight)
     assert(bc3.availableBalanceForSend == b - p3)
     assert(bc3.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
-    val Right(ac3) = ac2.receiveAdd(add3)
+    val Right(ac3) = ac2.receiveAdd(add3, currentBlockHeight)
     assert(ac3.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b - p3)
 
@@ -317,7 +316,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac8.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
     assert(ac8.availableBalanceForReceive == b - p3)
 
-    val cmdFulfill1 = CMD_FULFILL_HTLC(0, payment_preimage1, None)
+    val cmdFulfill1 = CMD_FULFILL_HTLC(0, payment_preimage1, None, None)
     val Right((bc8, fulfill1)) = bc7.sendFulfill(cmdFulfill1, bob.underlyingActor.nodeParams.privateKey, useAttributionData = false)
     assert(bc8.availableBalanceForSend == b + p1 - p3) // as soon as we have the fulfill, the balance increases
     assert(bc8.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
@@ -327,7 +326,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc9.availableBalanceForSend == b + p1 - p3)
     assert(bc9.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee) // a's balance won't return to previous before she acknowledges the fail
 
-    val cmdFulfill3 = CMD_FULFILL_HTLC(0, payment_preimage3, None)
+    val cmdFulfill3 = CMD_FULFILL_HTLC(0, payment_preimage3, None, None)
     val Right((ac9, fulfill3)) = ac8.sendFulfill(cmdFulfill3, alice.underlyingActor.nodeParams.privateKey, useAttributionData = false)
     assert(ac9.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3) // as soon as we have the fulfill, the balance increases
     assert(ac9.availableBalanceForReceive == b - p3)
@@ -410,7 +409,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     for (isInitiator <- Seq(true, false)) {
       val c = CommitmentsSpec.makeCommitments(31000000 msat, 702000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator)
       val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, accountable = false, None)
-      c.receiveAdd(add)
+      c.receiveAdd(add, f.currentBlockHeight)
     }
   }
 
@@ -433,7 +432,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         val (_, cmdAdd) = makeCmdAdd(amount, randomKey().publicKey, f.currentBlockHeight)
         c.sendAdd(cmdAdd, f.currentBlockHeight, TestConstants.Alice.nodeParams.channelConf, feeConfNoMismatch) match {
           case Right((cc, _)) => c = cc
-          case Left(e) => // we ignore failures (the HTLC amount probably exceeded availableBalanceForSend)
+          case Left(_) => // we ignore failures (the HTLC amount probably exceeded availableBalanceForSend)
         }
       }
       if (c.availableBalanceForSend > 0.msat) {
@@ -461,14 +460,14 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       for (_ <- 1 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
         val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, accountable = false, None)
-        c.receiveAdd(add) match {
+        c.receiveAdd(add, f.currentBlockHeight) match {
           case Right(cc) => c = cc
-          case Left(e) => // we ignore failures (the HTLC amount probably exceeded availableBalanceForReceive)
+          case Left(_) => // we ignore failures (the HTLC amount probably exceeded availableBalanceForReceive)
         }
       }
       if (c.availableBalanceForReceive > 0.msat) {
         val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, accountable = false, None)
-        c.receiveAdd(add) match {
+        c.receiveAdd(add, f.currentBlockHeight) match {
           case Right(_) => ()
           case Left(e) => fail(s"$t -> $e")
         }

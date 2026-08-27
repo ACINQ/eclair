@@ -33,10 +33,15 @@ object Monitoring {
     val OnionMessagesThrottled = Kamon.counter("onionmessages.throttled")
     val OnionMessagesNotRelayed = Kamon.counter("onionmessages.not-relayed")
 
+    val GossipQueriesThrottled = Kamon.counter("gossipqueries.throttled")
+
     val OpenChannelRequestsPending = Kamon.gauge("openchannelrequests.pending")
 
     val IncomingConnectionsNoChannels = Kamon.gauge("incomingconnections.nochannels")
     val IncomingConnectionsDisconnected = Kamon.counter("incomingconnections.disconnected")
+    val IncomingConnectionsPending = Kamon.gauge("incomingconnections.pending")
+    val IncomingConnectionsEvicted = Kamon.counter("incomingconnections.evicted")
+    val IncomingConnectionsRejected = Kamon.counter("incomingconnections.rejected")
 
     val OnTheFlyFunding = Kamon.counter("on-the-fly-funding.attempts")
     val OnTheFlyFundingFees = Kamon.histogram("on-the-fly-funding.fees-msat")

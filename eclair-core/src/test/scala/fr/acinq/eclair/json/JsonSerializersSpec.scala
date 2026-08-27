@@ -239,8 +239,25 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |     "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
         |     "shortChannelId": "0x0x0",
         |     "timestamp": { "iso": "1970-01-01T00:00:00Z", "unix": 0 },
-        |     "messageFlags": { "dontForward": false },
-        |     "channelFlags": { "isEnabled": true, "isNode1": true },
+        |     "messageFlags": {
+        |       "flag7" : false,
+        |       "flag6" : false,
+        |       "flag5" : false,
+        |       "flag4" : false,
+        |       "flag3" : false,
+        |       "flag2" : false,
+        |       "dontForward": false
+        |     },
+        |     "channelFlags": {
+        |       "flag7" : false,
+        |       "flag6" : false,
+        |       "flag5" : false,
+        |       "flag4" : false,
+        |       "flag3" : false,
+        |       "flag2" : false,
+        |       "isEnabled": true,
+        |       "isNode1": true
+        |     },
         |     "cltvExpiryDelta": 12,
         |     "htlcMinimumMsat": 1,
         |     "feeBaseMsat": 100,

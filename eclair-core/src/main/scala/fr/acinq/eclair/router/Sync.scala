@@ -72,20 +72,28 @@ object Sync {
 
   def handleQueryChannelRange(channels: SortedMap[RealShortChannelId, PublicChannel], routerConf: RouterConf, origin: RemoteGossip, q: QueryChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    ctx.sender() ! TransportHandler.ReadAck(q)
-    Metrics.QueryChannelRange.Blocks.withoutTags().record(q.numberOfBlocks)
-    log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", q.firstBlock, q.numberOfBlocks, q.tlvStream)
-    // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-    val shortChannelIds: SortedSet[RealShortChannelId] = channels.keySet.filter(keep(q.firstBlock, q.numberOfBlocks, _))
-    log.info("replying with {} items for range=({}, {})", shortChannelIds.size, q.firstBlock, q.numberOfBlocks)
-    val chunks = split(shortChannelIds, q.firstBlock, q.numberOfBlocks, routerConf.syncConf.channelRangeChunkSize)
-    Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
-    chunks.zipWithIndex.foreach { case (chunk, i) =>
-      val syncComplete = i == chunks.size - 1
-      val reply = buildReplyChannelRange(chunk, syncComplete, q.chainHash, routerConf.syncConf.encodingType, q.queryFlags_opt, channels)
-      origin.peerConnection ! reply
-      Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.numberOfBlocks)
-      Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.shortChannelIds.array.size)
+    try {
+      Metrics.QueryChannelRange.Blocks.withoutTags().record(q.numberOfBlocks)
+      log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", q.firstBlock, q.numberOfBlocks, q.tlvStream)
+      // NB: we don't need to filter on [firstBlockNum, firstBlockNum + numberOfBlocks] here: `split` iterates in scid
+      // order, which is block height order, and only keeps ids inside that range. Filtering first would pointlessly
+      // build a copy of our whole routing table for every incoming query.
+      val chunks = split(channels.keySet, q.firstBlock, q.numberOfBlocks, routerConf.syncConf.channelRangeChunkSize)
+      log.info("replying with {} items in {} chunks for range=({}, {})", chunks.map(_.shortChannelIds.size).sum, chunks.size, q.firstBlock, q.numberOfBlocks)
+      Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
+      chunks.zipWithIndex.foreach { case (chunk, i) =>
+        val syncComplete = i == chunks.size - 1
+        val reply = buildReplyChannelRange(chunk, syncComplete, q.chainHash, routerConf.syncConf.encodingType, q.queryFlags_opt, channels)
+        origin.peerConnection ! reply
+        Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.numberOfBlocks)
+        Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.shortChannelIds.array.size)
+      }
+    } finally {
+      // NB: we only ack once we're done: acking earlier would let the peer keep sending queries while we're still
+      // answering the previous ones, which would defeat the transport-level back-pressure and fill up our mailbox.
+      // We ack in a `finally` because we must ack even if we failed to answer: the transport stops reading from the
+      // connection until we do, so skipping the ack would silently wedge that peer connection forever.
+      ctx.sender() ! TransportHandler.ReadAck(q)
     }
   }
 
@@ -143,10 +151,25 @@ object Sync {
           QueryShortChannelIds(r.chainHash, EncodedShortChannelIds(encoding, chunk.map(_.shortChannelId)), flags)
         }
 
-        // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
+        // We update our sync data to this node (there may be multiple channel range responses and we can only query one
+        // set of ids at a time). Our peer decides when the sync ends, so we must bound the number of queries we're
+        // willing to buffer for it: it could otherwise send us an endless stream of channel ids that don't exist and
+        // make us run out of memory.
+        val budget = (routerConf.syncConf.maxQueriesPerSync - currentSync.totalQueries).max(0)
+        val queryCount = (shortChannelIdAndFlags.size + routerConf.syncConf.channelQueryChunkSize - 1) / routerConf.syncConf.channelQueryChunkSize
+        if (queryCount > budget) {
+          // NB: we only warn when we cross the limit: once the budget is spent, a peer that keeps sending us replies
+          // would otherwise flood our logs.
+          if (budget > 0) {
+            log.warning("peer sent too many channel ids during sync (max={}), ignoring the extra ones", routerConf.syncConf.maxQueriesPerSync)
+          } else {
+            log.debug("ignoring {} queries from peer: sync budget is exhausted", queryCount)
+          }
+        }
         val replies = shortChannelIdAndFlags
           .grouped(routerConf.syncConf.channelQueryChunkSize)
           .map(buildQuery)
+          .take(budget)
           .toList
 
         val (sync1, replynow_opt) = addToSync(d.sync, currentSync, origin.nodeId, replies)
@@ -161,43 +184,49 @@ object Sync {
 
   def handleQueryShortChannelIds(nodes: Map[PublicKey, NodeAnnouncement], channels: SortedMap[RealShortChannelId, PublicChannel], origin: RemoteGossip, q: QueryShortChannelIds)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    ctx.sender() ! TransportHandler.ReadAck(q)
 
     val flags = q.queryFlags_opt.map(_.array).getOrElse(List.empty[Long])
     var channelCount = 0
     var updateCount = 0
     var nodeCount = 0
 
-    processChannelQuery(nodes, channels,
-      q.shortChannelIds.array,
-      flags,
-      ca => {
-        channelCount = channelCount + 1
-        origin.peerConnection ! ca
-      },
-      cu => {
-        updateCount = updateCount + 1
-        origin.peerConnection ! cu
-      },
-      na => {
-        nodeCount = nodeCount + 1
-        origin.peerConnection ! na
-      }
-    )
-    Metrics.QueryShortChannelIds.Nodes.withoutTags().record(nodeCount)
-    Metrics.QueryShortChannelIds.ChannelAnnouncements.withoutTags().record(channelCount)
-    Metrics.QueryShortChannelIds.ChannelUpdates.withoutTags().record(updateCount)
-    log.debug("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", q.shortChannelIds.array.size, channelCount, updateCount, nodeCount)
-    origin.peerConnection ! ReplyShortChannelIdsEnd(q.chainHash, 1)
+    try {
+      processChannelQuery(nodes, channels,
+        q.shortChannelIds.array,
+        flags,
+        ca => {
+          channelCount = channelCount + 1
+          origin.peerConnection ! ca
+        },
+        cu => {
+          updateCount = updateCount + 1
+          origin.peerConnection ! cu
+        },
+        na => {
+          nodeCount = nodeCount + 1
+          origin.peerConnection ! na
+        }
+      )
+      Metrics.QueryShortChannelIds.Nodes.withoutTags().record(nodeCount)
+      Metrics.QueryShortChannelIds.ChannelAnnouncements.withoutTags().record(channelCount)
+      Metrics.QueryShortChannelIds.ChannelUpdates.withoutTags().record(updateCount)
+      log.debug("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", q.shortChannelIds.array.size, channelCount, updateCount, nodeCount)
+    } finally {
+      // NB: see handleQueryChannelRange, we only ack once we're done building the reply.
+      // We must terminate the query and ack it even if we failed to answer it, otherwise our peer would wait for a
+      // reply_short_channel_ids_end forever and the transport would stop reading from that connection.
+      origin.peerConnection ! ReplyShortChannelIdsEnd(q.chainHash, 1)
+      ctx.sender() ! TransportHandler.ReadAck(q)
+    }
   }
 
   def handleReplyShortChannelIdsEnd(d: Data, origin: RemoteGossip, r: ReplyShortChannelIdsEnd)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender() ! TransportHandler.ReadAck(r)
     // do we have more channels to request from this peer?
-    val sync1 = d.sync.get(origin.nodeId) match {
-      case Some(sync) =>
-        sync.remainingQueries match {
+    d.sync.get(origin.nodeId) match {
+      case Some(sync) if sync.queryInFlight =>
+        val sync1 = sync.remainingQueries match {
           case nextRequest :: rest =>
             log.debug(s"asking for the next slice of short_channel_ids (remaining=${sync.remainingQueries.size}/${sync.totalQueries})")
             origin.peerConnection ! nextRequest
@@ -208,16 +237,41 @@ object Sync {
             log.info(s"sync complete (total=${sync.totalQueries})")
             d.sync - origin.nodeId
         }
-      case _ => d.sync
+        val progress = syncProgress(sync1)
+        ctx.system.eventStream.publish(progress)
+        ctx.self ! progress
+        d.copy(sync = sync1)
+      case _ =>
+        // NB: we can't correlate a reply_short_channel_ids_end with a specific query, so the best we can do is ignore
+        // the ones that don't answer a query we're waiting for. Otherwise a peer could send us one right after
+        // answering our query_channel_range, which would make us drop our sync state and ignore the rest of its replies.
+        log.debug("received unsolicited reply_short_channel_ids_end")
+        d
     }
-    val progress = syncProgress(sync1)
-    ctx.system.eventStream.publish(progress)
-    ctx.self ! progress
-    d.copy(sync = sync1)
   }
 
   /**
-   * Filters channels that we want to send to nodes asking for a channel range
+   * When a peer disconnects, we forget the sync state we were keeping for it: the queries we hadn't sent yet will never
+   * be answered on that connection, so keeping them around only wastes memory. It also ensures that a peer cannot make
+   * us keep sync state forever by starting a sync and disconnecting, and that we accept a fresh sync when it reconnects.
+   */
+  def handlePeerDisconnected(d: Data, nodeId: PublicKey)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+    d.sync.get(nodeId) match {
+      case Some(sync) =>
+        log.debug("peer disconnected during sync, forgetting {}/{} pending queries", sync.remainingQueries.size, sync.totalQueries)
+        val sync1 = d.sync - nodeId
+        val progress = syncProgress(sync1)
+        ctx.system.eventStream.publish(progress)
+        ctx.self ! progress
+        d.copy(sync = sync1)
+      case None => d
+    }
+  }
+
+  /**
+   * Whether a channel belongs to the range that a peer is asking for. [[split]] implements this by exploiting the fact
+   * that short channel ids are sorted by block height, so we don't call this on the hot path: it is kept as the
+   * reference definition of the range, which [[split]]'s output is checked against in tests.
    */
   def keep(firstBlock: BlockHeight, numberOfBlocks: Long, id: RealShortChannelId): Boolean = {
     val height = id.blockHeight
@@ -300,17 +354,20 @@ object Sync {
                                   onNode: NodeAnnouncement => Unit)(implicit log: LoggingAdapter): Unit = {
     import QueryShortChannelIdsTlv.QueryFlagType
 
-    // we loop over channel ids and query flag. We track node Ids for node announcement
-    // we've already sent to avoid sending them multiple times, as requested by the BOLTs
+    // We loop over channel ids and query flags. We track the ids we've already answered, and the node ids for node
+    // announcements we've already sent, to avoid sending them multiple times as requested by the BOLTs.
     @tailrec
-    def loop(ids: List[RealShortChannelId], flags: List[Long], numca: Int = 0, numcu: Int = 0, nodesSent: Set[PublicKey] = Set.empty[PublicKey]): (Int, Int, Int) = ids match {
-      case Nil => (numca, numcu, nodesSent.size)
+    def loop(ids: List[RealShortChannelId], flags: List[Long], idsSent: Set[RealShortChannelId] = Set.empty[RealShortChannelId], nodesSent: Set[PublicKey] = Set.empty[PublicKey]): Unit = ids match {
+      case Nil => ()
+      case head :: tail if idsSent.contains(head) =>
+        // The spec doesn't forbid duplicates, but answering them would let a peer get a large amplification factor by
+        // repeating the same scid: a single query is capped at 65kB, but our reply wouldn't be capped at all.
+        log.debug("ignoring duplicate shortChannelId={} in query_short_channel_ids", head)
+        loop(tail, flags.drop(1), idsSent, nodesSent)
       case head :: tail if !channels.contains(head) =>
         log.debug("received query for shortChannelId={} that we don't have", head)
-        loop(tail, flags.drop(1), numca, numcu, nodesSent)
+        loop(tail, flags.drop(1), idsSent + head, nodesSent)
       case head :: tail =>
-        val numca1 = numca
-        val numcu1 = numcu
         var sent1 = nodesSent
         val pc = channels(head)
         val flag_opt = flags.headOption
@@ -347,7 +404,7 @@ object Sync {
             sent1 = sent1 + pc.ann.nodeId2
           }
         }
-        loop(tail, flags.drop(1), numca1, numcu1, sent1)
+        loop(tail, flags.drop(1), idsSent + head, sent1)
     }
 
     loop(ids, flags)
@@ -370,13 +427,10 @@ object Sync {
     }
   }
 
+  // NB: the result is cached in [[PublicChannel.digest]]: without that cache, answering a single query_channel_range
+  // for the whole routing table would re-serialize every channel_update we know.
   def getChannelDigestInfo(channels: SortedMap[RealShortChannelId, PublicChannel])(shortChannelId: RealShortChannelId): (ReplyChannelRangeTlv.Timestamps, ReplyChannelRangeTlv.Checksums) = {
-    val c = channels(shortChannelId)
-    val timestamp1 = c.update_1_opt.map(_.timestamp).getOrElse(0L unixsec)
-    val timestamp2 = c.update_2_opt.map(_.timestamp).getOrElse(0L unixsec)
-    val checksum1 = c.update_1_opt.map(getChecksum).getOrElse(0L)
-    val checksum2 = c.update_2_opt.map(getChecksum).getOrElse(0L)
-    (ReplyChannelRangeTlv.Timestamps(timestamp1 = timestamp1, timestamp2 = timestamp2), ReplyChannelRangeTlv.Checksums(checksum1 = checksum1, checksum2 = checksum2))
+    channels(shortChannelId).digest
   }
 
   def crc32c(data: ByteVector): Long = {
@@ -505,12 +559,18 @@ object Sync {
       case head :: rest =>
         // they may send back several reply_channel_range messages for a single query_channel_range query, and we must not
         // send another query_short_channel_ids query if they're still processing one
-        if (current.started) {
+        if (current.queryInFlight) {
           // we already have a pending query with this peer, add missing ids to our "sync" state
-          (syncMap + (remoteNodeId -> Syncing(current.remainingQueries ++ pending, current.totalQueries + pending.size)), None)
+          (syncMap + (remoteNodeId -> current.copy(remainingQueries = current.remainingQueries ++ pending, totalQueries = current.totalQueries + pending.size)), None)
         } else {
-          // we don't have a pending query with this peer, let's send it
-          (syncMap + (remoteNodeId -> Syncing(rest, pending.size)), Some(head))
+          // We don't have a pending query with this peer, let's send the next one and queue the rest.
+          // NB: `current.remainingQueries` should always be empty when we don't have a query in flight, but we pop from
+          // it instead of overwriting it, to make sure we can never silently drop queries.
+          val (next, remaining) = current.remainingQueries match {
+            case queued :: queuedRest => (queued, queuedRest ++ pending)
+            case Nil => (head, rest)
+          }
+          (syncMap + (remoteNodeId -> current.copy(remainingQueries = remaining, totalQueries = current.totalQueries + pending.size, queryInFlight = true)), Some(next))
         }
       case Nil =>
         // there is nothing to send

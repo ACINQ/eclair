@@ -49,7 +49,7 @@ import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePay
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{AllowedFeatures, PathId, PaymentConstraints}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedNodeId, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TestConstants, TimestampMilli, TimestampMilliLong, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{Alias, BlockHeight, Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedNodeId, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TestConstants, TimestampMilli, TimestampMilliLong, UInt64, randomBytes, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -262,6 +262,12 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val failure = FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(extra.add.amountMsat, nodeParams.currentBlockHeight))
     assert(fwd.message == CMD_FAIL_HTLC(extra.add.id, failure, Some(FailureAttributionData(extraReceivedAt, None)), commit = true))
 
+    // the extra payment is not included in the downstream payment
+    val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
+    val outgoingUpstream = outgoingCfg.upstream.asInstanceOf[Upstream.Hot.Trampoline]
+    assert(outgoingUpstream.received.map(_.add.channelId).toSet == incomingMultiPart.map(_.add.channelId).toSet)
+    mockPayFSM.expectMessageType[SendMultiPartPayment]
+
     register.expectNoMessage(100 millis)
   }
 
@@ -387,11 +393,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
     // A first downstream HTLC is fulfilled: we should immediately forward the fulfill upstream.
-    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None)
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None, None)
     incomingAsyncPayment.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, Some(FulfillAttributionData(p.receivedAt, Some(incomingAsyncPayment.last.receivedAt), None)), commit = true))
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, None, Some(FulfillAttributionData(p.receivedAt, Some(incomingAsyncPayment.last.receivedAt), None)), commit = true))
     }
 
     // Once all the downstream payments have settled, we should emit the relayed event.
@@ -616,15 +622,15 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
     // A first downstream HTLC is fulfilled: we should immediately forward the fulfill upstream.
-    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None)
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None, None)
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, None, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
     }
 
     // If the payment FSM sends us duplicate preimage events, we should not fulfill a second time upstream.
-    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None)
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None, None)
     register.expectNoMessage(100 millis)
 
     // Once all the downstream payments have settled, we should emit the relayed event.
@@ -633,6 +639,68 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming.map(p => (p.amount, p.channelId)).toSet == incomingMultiPart.map(i => (i.add.amountMsat, i.add.channelId)).toSet)
     assert(relayEvent.outgoing.nonEmpty)
+    parent.expectMessageType[NodeRelayer.RelayComplete]
+    register.expectNoMessage(100 millis)
+  }
+
+  test("relay incoming multi-part payment with fulfillment payload") { f =>
+    import f._
+
+    // Receive an upstream multi-part payment.
+    val (nodeRelayer, parent) = f.createNodeRelay(incomingMultiPart.head)
+    incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p, randomKey().publicKey, 0.01))
+
+    val getPeerInfo = register.expectMessageType[Register.ForwardNodeId[Peer.GetPeerInfo]](100 millis)
+    getPeerInfo.message.replyTo.foreach(_ ! Peer.PeerNotFound(getPeerInfo.nodeId))
+
+    mockPayFSM.expectMessageType[SendPaymentConfig]
+    val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
+    validateOutgoingPayment(outgoingPayment)
+    val nodeRelayerAdapters = outgoingPayment.replyTo
+
+    // The downstream payment is fulfilled with a fulfillment payload that we must relay upstream.
+    val fulfillmentPayload = randomBytes(500)
+    val attribution = randomBytes(Sphinx.Attribution.totalLength)
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, Some(fulfillmentPayload), Some(attribution))
+    incomingMultiPart.foreach { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
+      assert(fwd.channelId == p.add.channelId)
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, Some(fulfillmentPayload), Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), Some(attribution))), commit = true))
+    }
+
+    nodeRelayerAdapters ! createSuccessEvent()
+    eventListener.expectMessageType[TrampolinePaymentRelayed]
+    parent.expectMessageType[NodeRelayer.RelayComplete]
+    register.expectNoMessage(100 millis)
+  }
+
+  test("relay incoming multi-part payment with fulfillment payload (without preimage event)") { f =>
+    import f._
+
+    // Receive an upstream multi-part payment.
+    val (nodeRelayer, parent) = f.createNodeRelay(incomingMultiPart.head)
+    incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p, randomKey().publicKey, 0.01))
+
+    val getPeerInfo = register.expectMessageType[Register.ForwardNodeId[Peer.GetPeerInfo]](100 millis)
+    getPeerInfo.message.replyTo.foreach(_ ! Peer.PeerNotFound(getPeerInfo.nodeId))
+
+    mockPayFSM.expectMessageType[SendPaymentConfig]
+    val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
+    validateOutgoingPayment(outgoingPayment)
+    val nodeRelayerAdapters = outgoingPayment.replyTo
+
+    // Some payment FSMs only send us the final PaymentSent event, without a preceding PreimageReceived event: we must
+    // then take the fulfillment payload and the attribution data from that event, without mixing them up.
+    val fulfillmentPayload = randomBytes(500)
+    val attribution = randomBytes(Sphinx.Attribution.totalLength)
+    nodeRelayerAdapters ! createSuccessEvent().copy(fulfillmentPayload_opt = Some(fulfillmentPayload), remainingAttribution_opt = Some(attribution))
+    incomingMultiPart.foreach { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
+      assert(fwd.channelId == p.add.channelId)
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, Some(fulfillmentPayload), Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), Some(attribution))), commit = true))
+    }
+
+    eventListener.expectMessageType[TrampolinePaymentRelayed]
     parent.expectMessageType[NodeRelayer.RelayComplete]
     register.expectNoMessage(100 millis)
   }
@@ -654,11 +722,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
     // A first downstream HTLC is fulfilled: we immediately forward the fulfill upstream.
-    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None)
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None, None)
     val fulfills = incomingMultiPart.map { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, None, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
       fwd
     }
     // We store the commands in our DB in case we restart before relaying them upstream.
@@ -697,11 +765,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
-    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None)
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None, None)
     val incomingAdd = incomingSinglePart.add
     val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
     assert(fwd.channelId == incomingAdd.channelId)
-    assert(fwd.message == CMD_FULFILL_HTLC(incomingAdd.id, paymentPreimage, Some(FulfillAttributionData(incomingSinglePart.receivedAt, Some(incomingSinglePart.receivedAt), None)), commit = true))
+    assert(fwd.message == CMD_FULFILL_HTLC(incomingAdd.id, paymentPreimage, None, Some(FulfillAttributionData(incomingSinglePart.receivedAt, Some(incomingSinglePart.receivedAt), None)), commit = true))
 
     nodeRelayerAdapters ! createSuccessEvent()
     val relayEvent = eventListener.expectMessageType[TrampolinePaymentRelayed]
@@ -828,11 +896,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
-    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None)
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None, None)
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, None, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
     }
 
     nodeRelayerAdapters ! createSuccessEvent()
@@ -876,11 +944,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
-    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None)
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None, None)
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, None, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
     }
 
     nodeRelayerAdapters ! createSuccessEvent()
@@ -909,11 +977,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
-    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None)
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None, None)
     incomingPayments.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, None, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
     }
 
     nodeRelayerAdapters ! createSuccessEvent()
@@ -942,11 +1010,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
-    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None)
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None, None)
     incomingPayments.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, None, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
     }
 
     nodeRelayerAdapters ! createSuccessEvent()
@@ -984,11 +1052,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
-    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None)
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None, None)
     incomingPayments.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, None, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
     }
 
     nodeRelayerAdapters ! createSuccessEvent()
@@ -1115,11 +1183,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
-    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None)
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage, None, None)
     incomingPayments.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, None, Some(FulfillAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt), None)), commit = true))
     }
 
     nodeRelayerAdapters ! createSuccessEvent()
@@ -1216,7 +1284,7 @@ object NodeRelayerSpec {
     (paymentPackets.map(_.outerPayload.expiry).min - nodeParams.relayParams.asyncPaymentsParams.cancelSafetyBeforeTimeout).blockHeight
 
   def createSuccessEvent(): PaymentSent =
-    PaymentSent(relayId, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PaymentPart(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, outgoingAmount, 50 unixms), 10 msat, None, 0 unixms)), None, 0 unixms)
+    PaymentSent(relayId, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PaymentPart(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, outgoingAmount, 50 unixms), 10 msat, None, 0 unixms)), None, None, 0 unixms)
 
   def createTrampolinePacket(amount: MilliSatoshi, expiry: CltvExpiry): OnionRoutingPacket = {
     val payload = NodePayload(outgoingNodeId, FinalPayload.Standard.createPayload(amount, amount, expiry, paymentSecret, upgradeAccountability = false))

@@ -30,6 +30,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.io.PeerDisconnected
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.BlindedPathsResolver.ResolvedPath
@@ -67,6 +68,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
       context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
       context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
+      context.system.eventStream.subscribe(self, classOf[PeerDisconnected])
       context.system.eventStream.publish(SubscriptionsComplete(this.getClass))
 
       startTimerWithFixedDelay(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval)
@@ -319,8 +321,8 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using Sync.handleSendChannelQuery(d, s)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d: Data) =>
-      val spentChannels = d.spentChannels.values.flatten.toSet
-      val channels = d.channels.filterNot { case (scid, _) => spentChannels.contains(scid) }
+      // NB: `--` only removes the (usually very few) spent channels, whereas `filterNot` would rebuild the whole map.
+      val channels = d.channels -- d.spentChannels.values.flatten.toSet
       Sync.handleQueryChannelRange(channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
       stay()
 
@@ -328,13 +330,15 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using Sync.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d: Data) =>
-      val spentChannels = d.spentChannels.values.flatten.toSet
-      val channels = d.channels.filterNot { case (scid, _) => spentChannels.contains(scid) }
+      val channels = d.channels -- d.spentChannels.values.flatten.toSet
       Sync.handleQueryShortChannelIds(d.nodes, channels, RemoteGossip(peerConnection, remoteNodeId), q)
       stay()
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d: Data) =>
       stay() using Sync.handleReplyShortChannelIdsEnd(d, RemoteGossip(peerConnection, remoteNodeId), r)
+
+    case Event(e: PeerDisconnected, d: Data) =>
+      stay() using Sync.handlePeerDisconnected(d, e.nodeId)
 
     case Event(RouteCouldRelay(route), d: Data) =>
       stay() using d.copy(graphWithBalances = d.graphWithBalances.routeCouldRelay(route))
@@ -357,6 +361,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       case lcu: LocalChannelUpdate => (Some(lcu.remoteNodeId), Some(lcu.channelId))
       case lcd: LocalChannelDown => (Some(lcd.remoteNodeId), Some(lcd.channelId))
       case abc: AvailableBalanceChanged => (Some(abc.commitments.remoteNodeId), Some(abc.channelId))
+      case pd: PeerDisconnected => (Some(pd.nodeId), None)
       case _ => (None, None)
     }
     Logs.mdc(category_opt, remoteNodeId_opt = remoteNodeId_opt, channelId_opt = channelId_opt, nodeAlias_opt = Some(nodeParams.alias))
@@ -394,10 +399,12 @@ object Router {
                       encodingType: EncodingType,
                       channelRangeChunkSize: Int,
                       channelQueryChunkSize: Int,
+                      maxQueriesPerSync: Int,
                       peerLimit: Int,
                       whitelist: Set[PublicKey]) {
     require(channelRangeChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel range chunk size exceeds the size of a lightning message")
     require(channelQueryChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel query chunk size exceeds the size of a lightning message")
+    require(maxQueriesPerSync > 0, "max queries per sync must be strictly greater than 0")
   }
 
   /**
@@ -456,6 +463,20 @@ object Router {
     val nodeId1: PublicKey = ann.nodeId1
     val nodeId2: PublicKey = ann.nodeId2
     val shortChannelId: RealShortChannelId = ann.shortChannelId
+
+    /**
+     * Timestamps and checksums of our updates, used to answer gossip queries (see [[Sync.getChannelDigestInfo]]).
+     * Computing a checksum requires re-serializing a channel_update, which is expensive when done for the whole routing
+     * table on every incoming query, so we compute it lazily and cache it: this instance is replaced whenever one of
+     * the updates changes, which transparently invalidates the cache.
+     */
+    lazy val digest: (ReplyChannelRangeTlv.Timestamps, ReplyChannelRangeTlv.Checksums) = {
+      val timestamp1 = update_1_opt.map(_.timestamp).getOrElse(0L unixsec)
+      val timestamp2 = update_2_opt.map(_.timestamp).getOrElse(0L unixsec)
+      val checksum1 = update_1_opt.map(Sync.getChecksum).getOrElse(0L)
+      val checksum2 = update_2_opt.map(Sync.getChecksum).getOrElse(0L)
+      (ReplyChannelRangeTlv.Timestamps(timestamp1 = timestamp1, timestamp2 = timestamp2), ReplyChannelRangeTlv.Checksums(checksum1 = checksum1, checksum2 = checksum2))
+    }
 
     def isStale(currentBlockHeight: BlockHeight): Boolean = StaleChannels.isStale(ann, update_1_opt, update_2_opt, currentBlockHeight)
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (u.channelFlags.isNode1) ann.nodeId1 else ann.nodeId2
@@ -826,10 +847,11 @@ object Router {
   /**
    * @param remainingQueries remaining queries to send, the next one will be popped after we receive a [[ReplyShortChannelIdsEnd]]
    * @param totalQueries     total number of *queries* (not channels) that will be sent during this syncing session
+   * @param queryInFlight    true if we sent a [[QueryShortChannelIds]] for which we haven't received a
+   *                         [[ReplyShortChannelIdsEnd]] yet: we must only send one at a time, and we must ignore
+   *                         [[ReplyShortChannelIdsEnd]] messages that don't answer one of our queries
    */
-  case class Syncing(remainingQueries: List[RoutingMessage], totalQueries: Int) {
-    def started: Boolean = totalQueries > 0
-  }
+  case class Syncing(remainingQueries: List[QueryShortChannelIds], totalQueries: Int, queryInFlight: Boolean = false)
 
   sealed trait RouterData {
     // @formatter:off

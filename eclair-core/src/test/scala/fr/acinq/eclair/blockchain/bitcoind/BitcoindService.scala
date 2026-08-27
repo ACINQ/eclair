@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, MilliBtc, MnemonicCode, Satoshi, Transaction, TxOut, addressToPublicKeyScript, computeP2WpkhAddress}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
-import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKB, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.FeeratePerByte
 import fr.acinq.eclair.crypto.keymanager.{LocalOnChainKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.integration.IntegrationSpec
 import fr.acinq.eclair.{BlockHeight, TestUtils, TimestampSecond, randomKey}
@@ -248,7 +248,8 @@ trait BitcoindService extends Logging {
     val tx = Transaction(version = 2, Nil, TxOut(amountSat, addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get) :: Nil, lockTime = 0)
     val client = makeBitcoinCoreClient()
     val f = for {
-      funded <- client.fundTransaction(tx, FeeratePerByte(Satoshi(10)).perKw, replaceable = true)
+      minFee <- client.mempoolMinFee()
+      funded <- client.fundTransaction(tx, minFee.perKw * 2, replaceable = true)
       signed <- client.signPsbt(new Psbt(funded.tx), funded.tx.txIn.indices, Nil)
       txid <- client.publishTransaction(signed.finalTx_opt.toOption.get)
       tx <- client.getTransaction(txid)

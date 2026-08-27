@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
+import fr.acinq.bitcoin.Script.LOCKTIME_THRESHOLD
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, SatoshiLong, Transaction, TxId}
@@ -173,17 +174,21 @@ object LocalCommit {
                     commit: CommitSig, localCommitIndex: Long, spec: CommitmentSpec, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): Either[ChannelException, LocalCommit] = {
     val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(channelParams, commitParams, commitKeys, localCommitIndex, fundingKey, remoteFundingPubKey, commitInput, commitmentFormat, spec)
     log.info(s"built local commit number=$localCommitIndex toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${localCommitTx.tx.txid} fundingTxId=$fundingTxId", spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","))
-    val remoteCommitSigOk = commitmentFormat match {
-      case _: SegwitV0CommitmentFormat => localCommitTx.checkRemoteSig(fundingKey.publicKey, remoteFundingPubKey, commit.signature)
-      case _: SimpleTaprootChannelCommitmentFormat => commit.sigOrPartialSig match {
-        case _: IndividualSignature => false
-        case remoteSig: PartialSignatureWithNonce =>
-          val localNonce = NonceGenerator.verificationNonce(fundingTxId, fundingKey, remoteFundingPubKey, localCommitIndex)
-          localCommitTx.checkRemotePartialSignature(fundingKey.publicKey, remoteFundingPubKey, remoteSig, localNonce.publicNonce)
-      }
-    }
-    if (!remoteCommitSigOk) {
-      return Left(InvalidCommitmentSignature(channelParams.channelId, fundingTxId, localCommitIndex, localCommitTx.tx))
+    val validRemoteCommitSig: ChannelSpendSignature = commit.signatureFor(commitmentFormat) match {
+      case Some(individualSig: IndividualSignature) =>
+        if (!localCommitTx.checkRemoteSig(fundingKey.publicKey, remoteFundingPubKey, individualSig)) {
+          return Left(InvalidCommitmentSignature(channelParams.channelId, fundingTxId, localCommitIndex, localCommitTx.tx))
+        } else {
+          individualSig
+        }
+      case Some(partialSig: PartialSignatureWithNonce) =>
+        val localNonce = NonceGenerator.verificationNonce(fundingTxId, fundingKey, remoteFundingPubKey, localCommitIndex)
+        if (!localCommitTx.checkRemotePartialSignature(fundingKey.publicKey, remoteFundingPubKey, partialSig, localNonce.publicNonce)) {
+          return Left(InvalidCommitmentSignature(channelParams.channelId, fundingTxId, localCommitIndex, localCommitTx.tx))
+        } else {
+          partialSig
+        }
+      case _ => return Left(InvalidCommitmentSignature(channelParams.channelId, fundingTxId, localCommitIndex, localCommitTx.tx))
     }
     val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
     if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
@@ -196,7 +201,7 @@ object LocalCommit {
         }
         remoteSig
     }
-    Right(LocalCommit(localCommitIndex, spec, localCommitTx.tx.txid, commit.sigOrPartialSig, htlcRemoteSigs))
+    Right(LocalCommit(localCommitIndex, spec, localCommitTx.tx.txid, validRemoteCommitSig, htlcRemoteSigs))
   }
 }
 
@@ -874,7 +879,13 @@ case class Commitments(channelParams: ChannelParams,
   val lastLocalLocked_opt: Option[Commitment] = active.filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).sortBy(_.fundingTxIndex).lastOption
   val lastRemoteLocked_opt: Option[Commitment] = active.filter(c => c.remoteFundingStatus == RemoteFundingStatus.Locked).sortBy(_.fundingTxIndex).lastOption
 
-  def add(commitment: Commitment): Commitments = copy(active = commitment +: active)
+  def add(commitment: Commitment): Commitments = {
+    // As part of a defense-in-depth strategy, we verify that the commitment indices always match (even though the
+    // caller should always enforce that, it's good to make it explicit here).
+    require(commitment.localCommit.index == localCommitIndex, s"cannot add commitment at localCommitIndex=${commitment.localCommit.index}, we're at localCommitIndex=$localCommitIndex")
+    require(commitment.remoteCommit.index == remoteCommitIndex, s"cannot add commitment at remoteCommitIndex=${commitment.remoteCommit.index}, we're at remoteCommitIndex=$remoteCommitIndex")
+    copy(active = commitment +: active)
+  }
 
   // @formatter:off
   def localIsQuiescent: Boolean = changes.localChanges.all.isEmpty
@@ -953,9 +964,14 @@ case class Commitments(channelParams: ChannelParams,
     }
   }
 
-  def receiveAdd(add: UpdateAddHtlc): Either[ChannelException, Commitments] = {
+  def receiveAdd(add: UpdateAddHtlc, currentBlockHeight: BlockHeight): Either[ChannelException, Commitments] = {
     if (add.id != changes.remoteNextHtlcId) {
       return Left(UnexpectedHtlcId(channelId, expected = changes.remoteNextHtlcId, actual = add.id))
+    }
+
+    // CLTV expiry values >= 500_000_000 would indicate a time in seconds instead of a block height.
+    if (add.cltvExpiry >= CltvExpiry(LOCKTIME_THRESHOLD)) {
+      return Left(ExpiryTooBig(channelId, CltvExpiry(LOCKTIME_THRESHOLD), add.cltvExpiry, currentBlockHeight))
     }
 
     // we used to not enforce a strictly positive minimum, hence the max(1 msat)

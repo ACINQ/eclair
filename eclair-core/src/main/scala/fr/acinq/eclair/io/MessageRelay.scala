@@ -29,7 +29,7 @@ import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.io.Peer.{PeerInfo, PeerInfoResponse}
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
 import fr.acinq.eclair.message.OnionMessages
-import fr.acinq.eclair.message.OnionMessages.DropReason
+import fr.acinq.eclair.message.OnionMessages.{DropReason, TooManyDummyHops}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OnionMessage
 import fr.acinq.eclair.{EncodedNodeId, Logs, NodeParams, ShortChannelId}
@@ -90,6 +90,7 @@ private class MessageRelay(nodeParams: NodeParams,
 
   import MessageRelay._
 
+  private var selfHopsCount = 0
   private val log = context.log
 
   def queryNextNodeId(msg: OnionMessage, nextNode: Either[ShortChannelId, EncodedNodeId]): Behavior[Command] = {
@@ -123,18 +124,29 @@ private class MessageRelay(nodeParams: NodeParams,
   private def withNextNodeId(msg: OnionMessage, nextNodeId: EncodedNodeId.WithPublicKey): Behavior[Command] = {
     nextNodeId match {
       case EncodedNodeId.WithPublicKey.Plain(nodeId) if nodeId == nodeParams.nodeId =>
-        OnionMessages.process(nodeParams.privateKey, msg) match {
-          case OnionMessages.DropMessage(reason) =>
-            Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, reason.getClass.getSimpleName).increment()
-            replyTo_opt.foreach(_ ! DroppedMessage(messageId, reason))
-            Behaviors.stopped
-          case OnionMessages.SendMessage(nextNode, nextMessage) =>
-            // We need to repeat the process until we identify the (real) next node, or find out that we're the recipient.
-            queryNextNodeId(nextMessage, nextNode)
-          case received: OnionMessages.ReceiveMessage =>
-            context.system.eventStream ! EventStream.Publish(received)
-            replyTo_opt.foreach(_ ! Sent(messageId))
-            Behaviors.stopped
+        if (selfHopsCount > 2 * nodeParams.offersConfig.messagePathMinLength + 1) {
+          // We only include ourselves multiple times in a path when using dummy hops.
+          // If we're included too many times in a path, that's most likely a remote node messing with us.
+          log.debug("too many self hops (max={})", 2 * nodeParams.offersConfig.messagePathMinLength + 1)
+          val reason = TooManyDummyHops(nodeParams.offersConfig.messagePathMinLength)
+          Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, reason.getClass.getSimpleName).increment()
+          replyTo_opt.foreach(_ ! DroppedMessage(messageId, reason))
+          Behaviors.stopped
+        } else {
+          selfHopsCount += 1
+          OnionMessages.process(nodeParams.privateKey, msg) match {
+            case OnionMessages.DropMessage(reason) =>
+              Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, reason.getClass.getSimpleName).increment()
+              replyTo_opt.foreach(_ ! DroppedMessage(messageId, reason))
+              Behaviors.stopped
+            case OnionMessages.SendMessage(nextNode, nextMessage) =>
+              // We need to repeat the process until we identify the (real) next node, or find out that we're the recipient.
+              queryNextNodeId(nextMessage, nextNode)
+            case received: OnionMessages.ReceiveMessage =>
+              context.system.eventStream ! EventStream.Publish(received)
+              replyTo_opt.foreach(_ ! Sent(messageId))
+              Behaviors.stopped
+          }
         }
       case EncodedNodeId.WithPublicKey.Plain(nodeId) =>
         policy match {
@@ -146,9 +158,16 @@ private class MessageRelay(nodeParams: NodeParams,
             waitForConnection(msg, nodeId)
         }
       case EncodedNodeId.WithPublicKey.Wallet(nodeId) =>
-        val notifier = context.spawnAnonymous(PeerReadyNotifier(nodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout))))
-        notifier ! PeerReadyNotifier.NotifyWhenPeerReady(context.messageAdapter(WrappedPeerReadyResult))
-        waitForWalletNodeUp(msg, nodeId)
+        if (nodeParams.peerWakeUpConfig.enabled) {
+          val notifier = context.spawnAnonymous(PeerReadyNotifier(nodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout))))
+          notifier ! PeerReadyNotifier.NotifyWhenPeerReady(context.messageAdapter(WrappedPeerReadyResult))
+          waitForWalletNodeUp(msg, nodeId)
+        } else {
+          Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.ConnectionFailure).increment()
+          log.info("could not wake up {}: peer wake-up is disabled", nodeId)
+          replyTo_opt.foreach(_ ! Disconnected(messageId))
+          Behaviors.stopped
+        }
     }
   }
 
