@@ -666,6 +666,7 @@ object NodeParams extends Logging {
         publicChannelFees = getRelayFees(config.getConfig("relay.fees.public-channels")),
         privateChannelFees = getRelayFees(config.getConfig("relay.fees.private-channels")),
         minTrampolineFees = getRelayFees(config.getConfig("relay.fees.min-trampoline")),
+        trampolineIgnoreLocalFees = config.getBoolean("relay.fees.trampoline-ignore-local-fees"),
         resetExistingChannels = config.getBoolean("relay.fees.reset-existing-channels"),
         enforcementDelay = FiniteDuration(config.getDuration("relay.fees.enforcement-delay").getSeconds, TimeUnit.SECONDS),
         asyncPaymentsParams = AsyncPaymentsParams(asyncPaymentHoldTimeoutBlocks, asyncPaymentCancelSafetyBeforeTimeoutBlocks),

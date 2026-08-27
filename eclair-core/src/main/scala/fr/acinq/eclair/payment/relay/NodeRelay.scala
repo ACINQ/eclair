@@ -141,7 +141,7 @@ object NodeRelay {
   }
 
   /** Compute route params that honor our fee and cltv requirements. */
-  private def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
+  private def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry, includeLocalChannelCost: Boolean): RouteParams = {
     val routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
     routeParams.copy(
       boundaries = routeParams.boundaries.copy(
@@ -149,7 +149,7 @@ object NodeRelay {
         maxFeeFlat = amountIn - amountOut,
         maxCltv = expiryIn - expiryOut
       ),
-      includeLocalChannelCost = true
+      includeLocalChannelCost = includeLocalChannelCost
     )
   }
 
@@ -357,7 +357,11 @@ class NodeRelay private(nodeParams: NodeParams,
       accountable0
     }
     val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, recipient.nodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, accountable)
-    val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, amountOut, expiryOut)
+    // We may allow dipping into our local channel fees to ensure that payments can be relayed. We will earn less than
+    // expected, but it's a better UX for users and allows other LSPs to earn a fee when their users receive payments
+    // (by setting a somewhat large fee in the routing hint or the blinded path).
+    val dipIntoTrampolineFees = nodeParams.relayParams.trampolineIgnoreLocalFees && recipient.extraEdges.nonEmpty
+    val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, amountOut, expiryOut, includeLocalChannelCost = !dipIntoTrampolineFees)
     // If the next node is using trampoline, we assume that they support MPP.
     val useMultiPart = recipient.features.hasFeature(Features.BasicMultiPartPayment) || packetOut_opt.nonEmpty
     val payFsmAdapters = {

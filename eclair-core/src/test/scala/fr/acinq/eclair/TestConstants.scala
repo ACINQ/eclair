@@ -176,15 +176,10 @@ object TestConstants {
         perNodeFeerateTolerance = Map.empty
       ),
       relayParams = RelayParams(
-        publicChannelFees = RelayFees(
-          feeBase = 546000 msat,
-          feeProportionalMillionths = 10),
-        privateChannelFees = RelayFees(
-          feeBase = 547000 msat,
-          feeProportionalMillionths = 20),
-        minTrampolineFees = RelayFees(
-          feeBase = 548000 msat,
-          feeProportionalMillionths = 30),
+        publicChannelFees = RelayFees(feeBase = 546000 msat, feeProportionalMillionths = 10),
+        privateChannelFees = RelayFees(feeBase = 547000 msat, feeProportionalMillionths = 20),
+        minTrampolineFees = RelayFees(feeBase = 548000 msat, feeProportionalMillionths = 30),
+        trampolineIgnoreLocalFees = false,
         resetExistingChannels = true,
         enforcementDelay = 10 minutes,
         asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
@@ -405,15 +400,10 @@ object TestConstants {
         perNodeFeerateTolerance = Map.empty
       ),
       relayParams = RelayParams(
-        publicChannelFees = RelayFees(
-          feeBase = 546000 msat,
-          feeProportionalMillionths = 10),
-        privateChannelFees = RelayFees(
-          feeBase = 547000 msat,
-          feeProportionalMillionths = 20),
-        minTrampolineFees = RelayFees(
-          feeBase = 548000 msat,
-          feeProportionalMillionths = 30),
+        publicChannelFees = RelayFees(feeBase = 546000 msat, feeProportionalMillionths = 10),
+        privateChannelFees = RelayFees(feeBase = 547000 msat, feeProportionalMillionths = 20),
+        minTrampolineFees = RelayFees(feeBase = 548000 msat, feeProportionalMillionths = 30),
+        trampolineIgnoreLocalFees = false,
         resetExistingChannels = true,
         enforcementDelay = 10 minutes,
         asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
