@@ -415,6 +415,14 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
     }
   }
 
+  private def volumeVariation(p: PeerInfo, lastTwoBucketsRatio: Double) = {
+    if (p.stats.slice(2, 3).map(_.totalAmountOut).sum != 0.msat) {
+      p.stats.take(2).map(_.totalAmountOut).sum.toLong.toDouble / (p.stats.slice(2, 3).map(_.totalAmountOut).sum.toLong * lastTwoBucketsRatio)
+    } else {
+      0.0
+    }
+  }
+
   /** We update the relay fees of our top peers to shape volume based on our available liquidity. */
   private def updateRelayFeesIfNeeded(peers: Seq[PeerInfo], history: DecisionHistory): (Set[PublicKey], DecisionHistory) = {
     // We configure *daily* absolute and proportional payment volume targets. We look at events from the current period
@@ -422,14 +430,6 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
     val now = TimestampMilli.now()
     val lastTwoBucketsRatio = 1.0 + Bucket.consumed(now)
     val lastTwoBucketsDailyRatio = (Bucket.duration * lastTwoBucketsRatio).toSeconds.toDouble / (24 * 3600)
-
-    def volumeVariation(p: PeerInfo) = {
-      if (p.stats.slice(2, 3).map(_.totalAmountOut).sum != 0.msat) {
-        p.stats.take(2).map(_.totalAmountOut).sum.toLong.toDouble / (p.stats.slice(2, 3).map(_.totalAmountOut).sum.toLong * lastTwoBucketsRatio)
-      } else {
-        0.0
-      }
-    }
 
     // We increase fees of channels that are performing better than we expected.
     val feeIncreases = peers
@@ -444,7 +444,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
           case Some(u) if u.timestamp <= now.toTimestampSecond - (Bucket.duration * 1.5).toSeconds =>
             val next = u.relayFees.copy(feeProportionalMillionths = u.feeProportionalMillionths + 500)
             if (next.feeBase <= config.relayFees.maxRelayFees.feeBase && next.feeProportionalMillionths <= config.relayFees.maxRelayFees.feeProportionalMillionths) {
-              Some(p.remoteNodeId -> FeeChangeDecision(FeeIncrease, u.relayFees, next, p.dailyVolumeOut, volumeVariation(p)))
+              Some(p.remoteNodeId -> FeeChangeDecision(FeeIncrease, u.relayFees, next, p.dailyVolumeOut, volumeVariation(p, lastTwoBucketsRatio)))
             } else {
               None
             }
@@ -466,7 +466,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
           case Some(u) if u.timestamp <= now.toTimestampSecond - (Bucket.duration * 1.5).toSeconds =>
             val next = u.relayFees.copy(feeProportionalMillionths = u.feeProportionalMillionths - 500)
             if (next.feeBase >= config.relayFees.minRelayFees.feeBase && next.feeProportionalMillionths >= config.relayFees.minRelayFees.feeProportionalMillionths) {
-              Some(p.remoteNodeId -> FeeChangeDecision(FeeDecrease, u.relayFees, next, p.dailyVolumeOut, volumeVariation(p)))
+              Some(p.remoteNodeId -> FeeChangeDecision(FeeDecrease, u.relayFees, next, p.dailyVolumeOut, volumeVariation(p, lastTwoBucketsRatio)))
             } else {
               None
             }
@@ -494,8 +494,8 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
             }
             if (updateMatchesRecord && withinEvaluationWindow && notUpdatedRecently && shouldRevert) {
               val decision = record.direction match {
-                case PeerScorer.FeeIncrease => FeeChangeDecision(FeeDecrease, u.relayFees, u.relayFees.copy(feeProportionalMillionths = u.relayFees.feeProportionalMillionths - 500), p.dailyVolumeOut, volumeVariation(p))
-                case PeerScorer.FeeDecrease => FeeChangeDecision(FeeIncrease, u.relayFees, u.relayFees.copy(feeProportionalMillionths = u.relayFees.feeProportionalMillionths + 500), p.dailyVolumeOut, volumeVariation(p))
+                case PeerScorer.FeeIncrease => FeeChangeDecision(FeeDecrease, u.relayFees, u.relayFees.copy(feeProportionalMillionths = u.relayFees.feeProportionalMillionths - 500), p.dailyVolumeOut, volumeVariation(p, lastTwoBucketsRatio))
+                case PeerScorer.FeeDecrease => FeeChangeDecision(FeeIncrease, u.relayFees, u.relayFees.copy(feeProportionalMillionths = u.relayFees.feeProportionalMillionths + 500), p.dailyVolumeOut, volumeVariation(p, lastTwoBucketsRatio))
               }
               Some(p.remoteNodeId -> decision)
             } else {
@@ -519,6 +519,10 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
    * If that doesn't work, we will close these channels with [[closeIdleChannelsIfNeeded]].
    */
   private def decreaseIdleChannelsRelayFeesIfNeeded(peers: Seq[PeerInfo], history: DecisionHistory): DecisionHistory = {
+    // We configure *daily* absolute and proportional payment volume targets. We look at events from the current period
+    // and the previous period, so we need to get the right ratio to convert those daily amounts.
+    val now = TimestampMilli.now()
+    val lastTwoBucketsRatio = 1.0 + Bucket.consumed(now)
     val feeDecreases = peers
       // We're only interested in channels for which liquidity is idle.
       // We ignore peers for which more than 80% of the funds are on their side: they have a higher incentive than us to
@@ -532,7 +536,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
         p.latestUpdate_opt match {
           case Some(u) =>
             val next = u.relayFees.copy(feeProportionalMillionths = (u.feeProportionalMillionths - 500).max(config.relayFees.minRelayFees.feeProportionalMillionths))
-            Some(p.remoteNodeId -> FeeChangeDecision(FeeDecrease, u.relayFees, next, p.dailyVolumeOut, volumeVariation = 0))
+            Some(p.remoteNodeId -> FeeChangeDecision(FeeDecrease, u.relayFees, next, p.dailyVolumeOut, volumeVariation = volumeVariation(p, lastTwoBucketsRatio)))
           case None => None
         }
       }.toMap
