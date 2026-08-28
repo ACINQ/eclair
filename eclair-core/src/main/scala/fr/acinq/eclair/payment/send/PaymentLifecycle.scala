@@ -420,11 +420,20 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             case _: Upstream.Local => 0.msat // no local fees when we are the origin of the payment
             case u: Upstream.Hot.Channel => u.amountIn - paymentSent.amountWithFees
             case _: Upstream.Hot.Trampoline =>
-              // in case of a relayed payment, we need to take into account the fee of the first channels
-              paymentSent.parts.collect {
-                // NB: the route attribute will always be defined here
-                case p@PaymentPart(_, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
-              }.sum
+              // In case of a relayed payment, we need to take into account the fee of the first channels, unless we
+              // explicitly chose to relay without collecting that fee.
+              val includeLocalChannelCost = request match {
+                case request: SendPaymentToNode => request.routeParams.includeLocalChannelCost
+                case _: SendPaymentToRoute => true
+              }
+              if (includeLocalChannelCost) {
+                paymentSent.parts.collect {
+                  // NB: the route attribute will always be defined here
+                  case p@PaymentPart(_, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
+                }.sum
+              } else {
+                0 msat
+              }
           }
           paymentSent.feesPaid + localFees
         case Left(paymentFailed) =>

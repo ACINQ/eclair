@@ -145,6 +145,7 @@ object Relayer extends Logging {
   case class RelayParams(publicChannelFees: RelayFees,
                          privateChannelFees: RelayFees,
                          minTrampolineFees: RelayFees,
+                         minLocalTrampolineFees: RelayFees,
                          resetExistingChannels: Boolean,
                          enforcementDelay: FiniteDuration,
                          asyncPaymentsParams: AsyncPaymentsParams,
