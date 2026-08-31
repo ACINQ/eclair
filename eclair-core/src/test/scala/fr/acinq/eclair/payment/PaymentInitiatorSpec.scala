@@ -74,7 +74,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
-    TrampolinePaymentPrototype -> Optional,
+    Features.TrampolinePayment -> Optional,
   )
 
   case class FakePaymentFactory(payFsm: TestProbe, trampolinePayFsm: TestProbe, multiPartPayFsm: TestProbe) extends PaymentInitiator.MultiPartPaymentFactory {
