@@ -792,7 +792,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // We first check if the outgoing node is our peer and supports wake-up notifications.
     val peerFeaturesRequest = register.expectMessageType[Register.ForwardNodeId[Peer.GetPeerInfo]]
     assert(peerFeaturesRequest.nodeId == outgoingNodeId)
-    peerFeaturesRequest.message.replyTo.foreach(_ ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.DISCONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty))
+    peerFeaturesRequest.message.replyTo.foreach(_ ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.DISCONNECTED, Some(nodeParams.features.initFeatures()), None, None, Set.empty))
 
     // The remote node is a wallet node: we wake them up before relaying the payment.
     val wakeUp = peerReadyManager.expectMessageType[PeerReadyManager.Register]
@@ -800,7 +800,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     wakeUp.replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
     val peerInfo = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     assert(peerInfo.remoteNodeId == outgoingNodeId)
-    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty)
+    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, None, Set.empty)
     cleanUpWakeUpActors(peerReadyManager, switchboard)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
@@ -840,13 +840,13 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // We first check if the outgoing node is our peer and supports wake-up notifications.
     val peerFeaturesRequest = register.expectMessageType[Register.ForwardNodeId[Peer.GetPeerInfo]]
     assert(peerFeaturesRequest.nodeId == outgoingNodeId)
-    peerFeaturesRequest.message.replyTo.foreach(_ ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.DISCONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty))
+    peerFeaturesRequest.message.replyTo.foreach(_ ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.DISCONNECTED, Some(nodeParams.features.initFeatures()), None, None, Set.empty))
 
     // The remote node is a wallet node: we wake them up before relaying the payment.
     peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
     val peerInfo = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     assert(peerInfo.remoteNodeId == outgoingNodeId)
-    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty)
+    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, None, Set.empty)
     cleanUpWakeUpActors(peerReadyManager, switchboard)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
@@ -1039,7 +1039,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
     val wakeUp = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     assert(wakeUp.remoteNodeId == outgoingNodeId)
-    wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty)
+    wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, None, Set.empty)
     cleanUpWakeUpActors(peerReadyManager, switchboard)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
@@ -1102,7 +1102,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // The remote node is a wallet node: we wake them up before relaying the payment.
     peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 1)
     val peerInfo = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty)
+    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, None, Set.empty)
     cleanUpWakeUpActors(peerReadyManager, switchboard)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
@@ -1141,7 +1141,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // The remote node is a wallet node: we wake them up before relaying the payment.
     peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
     val peerInfo = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty)
+    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, None, Set.empty)
     cleanUpWakeUpActors(peerReadyManager, switchboard)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
