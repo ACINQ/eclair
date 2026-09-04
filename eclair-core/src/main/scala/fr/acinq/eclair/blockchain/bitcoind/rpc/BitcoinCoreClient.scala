@@ -465,12 +465,25 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
 
   //------------------------- SIGNING  -------------------------//
 
+  /**
+   * Bitcoin Core must not modify the transaction that we asked it to update or sign: the unsigned transaction of a PSBT
+   * is immutable (see BIP174), only the per-input and per-output metadata may be filled in.
+   *
+   * We must check this before signing, because we only validate the inputs and outputs that belong to our wallet: if
+   * bitcoin core replaced one of the other outputs (for example the destination of an on-chain payment), we would sign
+   * that modified transaction with SIGHASH_ALL without noticing.
+   */
+  private def checkUnsignedTx(expected: Psbt, actual: Psbt): Unit = {
+    require(actual.global.tx.txid == expected.global.tx.txid, s"bitcoin core modified our unsigned transaction (expected=${expected.global.tx.txid} actual=${actual.global.tx.txid}): bitcoin core may be malicious")
+  }
+
   def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
     onChainKeyManager_opt match {
       case Some(keyManager) =>
         for {
           updated <- utxoUpdatePsbt(psbt)
           filled <- processPsbt(updated, sign = false) // just fill input and output HD paths
+          _ = checkUnsignedTx(psbt, filled.psbt)
           signed <- keyManager.sign(filled.psbt, ourInputs, ourOutputs) match {
             case Success(signedPsbt) => Future.successful(ProcessPsbtResponse(signedPsbt, signedPsbt.extract().isRight))
             case Failure(error) => Future.failed(error)
@@ -480,6 +493,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         for {
           updated <- utxoUpdatePsbt(psbt)
           signed <- processPsbt(updated, sign = true)
+          _ = checkUnsignedTx(psbt, signed.psbt)
         } yield signed
     }
   }
@@ -665,6 +679,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
       fundedTx <- fundTransaction(tx, feeratePerKw, replaceable = true)
       lockedOutputs = fundedTx.tx.txIn.map(_.outPoint)
       theirOutputPos = fundedTx.tx.txOut.indexOf(theirOutput)
+      _ = require(theirOutputPos >= 0, s"bitcoin core didn't fund the transaction we requested (output sending $amount to $pubkeyScript is missing): bitcoin core may be malicious")
       signedPsbt <- unlockIfFails(lockedOutputs)(signPsbt(new Psbt(fundedTx.tx), fundedTx.tx.txIn.indices, fundedTx.tx.txOut.indices.filterNot(_ == theirOutputPos)))
       _ = require(signedPsbt.finalTx_opt.isRight, s"transaction was not fully signed (${signedPsbt.finalTx_opt.left.toOption.get}): bitcoin core may be malicious")
       signedTx = signedPsbt.finalTx_opt.toOption.get
