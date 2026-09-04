@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, ChannelTlv, Error, LiquidityAds, OpenDualFundedChannel}
-import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes64}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes64}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -231,6 +231,18 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     alice ! accept.copy(toSelfDelay = delayTooHigh)
     val error = alice2bob.expectMsgType[Error]
     assert(error == Error(accept.temporaryChannelId, ToSelfDelayTooHigh(accept.temporaryChannelId, delayTooHigh, Alice.nodeParams.channelConf.maxToLocalDelay).getMessage))
+    listener.expectMsgType[ChannelAborted]
+    awaitCond(alice.stateName == CLOSED)
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
+  }
+
+  test("recv AcceptDualFundedChannel (to_self_delay too low)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
+    val delayTooLow = CltvExpiryDelta(0)
+    alice ! accept.copy(toSelfDelay = delayTooLow)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error == Error(accept.temporaryChannelId, ToSelfDelayTooLow(accept.temporaryChannelId, delayTooLow, Channel.MIN_TO_SELF_DELAY).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]

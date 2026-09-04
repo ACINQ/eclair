@@ -208,6 +208,17 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     awaitCond(bob.stateName == CLOSED)
   }
 
+  test("recv OpenChannel (to_self_delay too low)") { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    val delayTooLow = CltvExpiryDelta(0)
+    bob ! open.copy(toSelfDelay = delayTooLow)
+    val error = bob2alice.expectMsgType[Error]
+    assert(error == Error(open.temporaryChannelId, ToSelfDelayTooLow(open.temporaryChannelId, delayTooLow, Channel.MIN_TO_SELF_DELAY).getMessage))
+    listener.expectMsgType[ChannelAborted]
+    awaitCond(bob.stateName == CLOSED)
+  }
+
   test("recv OpenChannel (reserve too high)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]

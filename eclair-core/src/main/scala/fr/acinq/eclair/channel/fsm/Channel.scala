@@ -168,6 +168,12 @@ object Channel {
   // A dust limit of 354 sat ensures all segwit outputs will relay with default relay policies.
   val MIN_DUST_LIMIT: Satoshi = 354 sat
 
+  // A zero to_self_delay would remove the delay that our peer relies on to punish us if we publish a revoked
+  // commitment. It would also make our main output and our HTLC outputs unspendable when using taproot channels: the
+  // delayed script leaf ends with OP_CHECKSEQUENCEVERIFY, which doesn't remove its operand from the stack, so a zero
+  // delay makes the script terminate with a false stack item.
+  val MIN_TO_SELF_DELAY: CltvExpiryDelta = CltvExpiryDelta(1)
+
   // we won't exchange more than this many signatures when negotiating the closing fee
   val MAX_NEGOTIATION_ITERATIONS = 20
 

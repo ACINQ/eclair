@@ -114,6 +114,7 @@ object Helpers {
 
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
     if (open.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
+    if (open.toSelfDelay < Channel.MIN_TO_SELF_DELAY) return Left(ToSelfDelayTooLow(open.temporaryChannelId, open.toSelfDelay, Channel.MIN_TO_SELF_DELAY))
 
     if (open.dustLimitSatoshis > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, nodeParams.channelConf.maxRemoteDustLimit))
 
@@ -183,6 +184,7 @@ object Helpers {
 
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
     if (open.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
+    if (open.toSelfDelay < Channel.MIN_TO_SELF_DELAY) return Left(ToSelfDelayTooLow(open.temporaryChannelId, open.toSelfDelay, Channel.MIN_TO_SELF_DELAY))
 
     if (open.dustLimit < Channel.MIN_DUST_LIMIT) return Left(DustLimitTooSmall(open.temporaryChannelId, open.dustLimit, Channel.MIN_DUST_LIMIT))
     if (open.dustLimit > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimit, nodeParams.channelConf.maxRemoteDustLimit))
@@ -235,6 +237,7 @@ object Helpers {
     // if minimum_depth is unreasonably large:
     // MAY reject the channel.
     if (accept.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
+    if (accept.toSelfDelay < Channel.MIN_TO_SELF_DELAY) return Left(ToSelfDelayTooLow(accept.temporaryChannelId, accept.toSelfDelay, Channel.MIN_TO_SELF_DELAY))
 
     // if channel_reserve_satoshis is less than dust_limit_satoshis within the open_channel message:
     //  MUST reject the channel.
@@ -283,6 +286,7 @@ object Helpers {
     // if minimum_depth is unreasonably large:
     // MAY reject the channel.
     if (accept.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
+    if (accept.toSelfDelay < Channel.MIN_TO_SELF_DELAY) return Left(ToSelfDelayTooLow(accept.temporaryChannelId, accept.toSelfDelay, Channel.MIN_TO_SELF_DELAY))
 
     for {
       script_opt <- extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt)
