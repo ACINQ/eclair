@@ -22,14 +22,15 @@ import fr.acinq.eclair.api.Service
 
 import scala.concurrent.duration.DurationInt
 
-trait EclairDirectives extends Directives with TimeoutDirective with ErrorDirective with AuthDirective with DefaultHeaders with ExtraDirectives {
+trait EclairDirectives extends Directives with TimeoutDirective with ErrorDirective with OriginDirective with AuthDirective with DefaultHeaders with ExtraDirectives {
   this: Service =>
 
   /**
-   * Prepares inner routes to be exposed as public API with default headers, basic authentication and error handling.
+   * Prepares inner routes to be exposed as public API with default headers, origin check, basic authentication and
+   * error handling.
    * Must be applied *after* aggregating all the inner routes.
    */
-  def securedHandler: Directive0 = toStrictEntity(5 seconds) & eclairHeaders & handled & authenticated
+  def securedHandler: Directive0 = toStrictEntity(5 seconds) & eclairHeaders & handled & originChecked & authenticated
 
   /**
    * Provides a Timeout to the inner route either from request param or the default.
