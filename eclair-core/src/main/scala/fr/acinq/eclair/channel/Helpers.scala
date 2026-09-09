@@ -674,11 +674,11 @@ object Helpers {
     def isClosingTypeAlreadyKnown(closing: DATA_CLOSING): Option[ClosingType] = {
       closing match {
         case _ if closing.localCommitPublished.exists(_.isConfirmed) =>
-          Some(LocalClose(closing.commitments.latest.localCommit, closing.localCommitPublished.get))
+          Some(LocalClose(closing.commitmentFor(closing.localCommitPublished.get.commitTx.txid).localCommit, closing.localCommitPublished.get))
         case _ if closing.remoteCommitPublished.exists(_.isConfirmed) =>
-          Some(CurrentRemoteClose(closing.commitments.latest.remoteCommit, closing.remoteCommitPublished.get))
+          Some(CurrentRemoteClose(closing.commitmentFor(closing.remoteCommitPublished.get.commitTx.txid).remoteCommit, closing.remoteCommitPublished.get))
         case _ if closing.nextRemoteCommitPublished.exists(_.isConfirmed) =>
-          Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get, closing.nextRemoteCommitPublished.get))
+          Some(NextRemoteClose(closing.commitmentFor(closing.nextRemoteCommitPublished.get.commitTx.txid).nextRemoteCommit_opt.get, closing.nextRemoteCommitPublished.get))
         case _ if closing.futureRemoteCommitPublished.exists(_.isConfirmed) =>
           Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
         case _ if closing.revokedCommitPublished.exists(_.isConfirmed) =>
@@ -700,11 +700,11 @@ object Helpers {
         val closingTx = closing.mutualClosePublished.find(_.tx.txid == additionalConfirmedTx_opt.get.txid).get
         Some(MutualClose(closingTx))
       case closing: DATA_CLOSING if closing.localCommitPublished.exists(_.isDone) =>
-        Some(LocalClose(closing.commitments.latest.localCommit, closing.localCommitPublished.get))
+        Some(LocalClose(closing.commitmentFor(closing.localCommitPublished.get.commitTx.txid).localCommit, closing.localCommitPublished.get))
       case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(_.isDone) =>
-        Some(CurrentRemoteClose(closing.commitments.latest.remoteCommit, closing.remoteCommitPublished.get))
+        Some(CurrentRemoteClose(closing.commitmentFor(closing.remoteCommitPublished.get.commitTx.txid).remoteCommit, closing.remoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(_.isDone) =>
-        Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get, closing.nextRemoteCommitPublished.get))
+        Some(NextRemoteClose(closing.commitmentFor(closing.nextRemoteCommitPublished.get.commitTx.txid).nextRemoteCommit_opt.get, closing.nextRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(_.isDone) =>
         Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(_.isDone) =>

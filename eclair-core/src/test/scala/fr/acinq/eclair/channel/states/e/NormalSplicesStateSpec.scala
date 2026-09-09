@@ -3864,6 +3864,69 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(bob.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == fundingTx2.txid)
   }
 
+  test("force-close with unsigned splice (tx_signatures not received)") { f =>
+    import f._
+
+    val htlcs = setupHtlcs(f)
+    val fundingInput = bob.commitments.latest.fundingInput
+    val fundingTxIndex = bob.commitments.latest.fundingTxIndex
+
+    // Alice splices in: Bob doesn't contribute any input, so he must send his tx_signatures first.
+    val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    val bobSigs = bob2alice.expectMsgType[TxSignatures] // Alice doesn't receive Bob's tx_signatures
+    bob2blockchain.expectWatchFundingConfirmed(bobSigs.txId)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    val spliceCommitment = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
+    assert(spliceCommitment.fundingTxIndex == fundingTxIndex + 1)
+    assert(spliceCommitment.fundingTxId == bobSigs.txId)
+    assert(spliceCommitment.localFundingStatus.signedTx_opt.isEmpty)
+
+    // Bob cannot publish the splice transaction, so he must force-close using the previous commitment.
+    bob ! CMD_FORCECLOSE(ActorRef.noSender)
+    bob2alice.expectMsgType[Error]
+    val commitTx1 = bob2blockchain.expectFinalTxPublished("commit-tx").tx
+    assert(commitTx1.txIn.map(_.outPoint) == Seq(fundingInput))
+    bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    bob2blockchain.expectFinalTxPublished("local-main-delayed")
+    val bobHtlcTimeout1 = htlcs.bobToAlice.map(_ => bob2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx].sign())
+    bobHtlcTimeout1.foreach(htlcTx => Transaction.correctlySpends(htlcTx, Seq(commitTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    bob2blockchain.expectWatchTxConfirmed(commitTx1.txid)
+    val lcp1 = bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    assert(lcp1.commitTx.txid == commitTx1.txid)
+    bob2blockchain.expectWatchOutputsSpent(lcp1.localOutput_opt.toSeq ++ lcp1.anchorOutput_opt.toSeq ++ lcp1.htlcOutputs.toSeq)
+    // The unsigned splice commitment is kept, in case Alice publishes the splice transaction.
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.fundingTxId == spliceCommitment.fundingTxId)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitments.active.map(_.fundingTxIndex) == Seq(fundingTxIndex + 1, fundingTxIndex))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitmentFor(commitTx1.txid).fundingTxIndex == fundingTxIndex)
+
+    // Alice receives Bob's tx_signatures and publishes the splice transaction, which confirms.
+    bob2alice.forward(alice, bobSigs)
+    alice2bob.expectMsgType[TxSignatures]
+    sender.expectMsgType[RES_SPLICE]
+    val spliceTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
+    assert(spliceTx.txid == spliceCommitment.fundingTxId)
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, spliceTx)
+    bob2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == spliceTx.txid)
+    bob2blockchain.expectMsg(UnwatchFundingSpent(fundingInput.txid, fundingInput.index.toInt))
+    // Bob's previous commit tx has been double-spent by the splice transaction: he force-closes using the splice commitment.
+    val commitTx2 = bob2blockchain.expectFinalTxPublished("commit-tx").tx
+    Transaction.correctlySpends(commitTx2, Seq(spliceTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    bob2blockchain.expectFinalTxPublished("local-main-delayed")
+    val bobHtlcTimeout2 = htlcs.bobToAlice.map(_ => bob2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx].sign())
+    bobHtlcTimeout2.foreach(htlcTx => Transaction.correctlySpends(htlcTx, Seq(commitTx2), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    bob2blockchain.expectWatchTxConfirmed(commitTx2.txid)
+    val lcp2 = bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    assert(lcp2.commitTx.txid == commitTx2.txid)
+    bob2blockchain.expectWatchOutputsSpent(lcp2.localOutput_opt.toSeq ++ lcp2.anchorOutput_opt.toSeq ++ lcp2.htlcOutputs.toSeq)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.fundingTxId == spliceTx.txid)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitmentFor(commitTx2.txid).fundingTxId == spliceTx.txid)
+  }
+
   test("force-close with multiple splices (previous active remote)", Tag(ChannelStateTestsTags.OptionSimpleTaproot), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
