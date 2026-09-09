@@ -730,14 +730,29 @@ object Helpers {
         }
       }
 
-      def firstClosingFee(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: ClosingFeerates)(implicit log: LoggingAdapter): ClosingFees = {
-        // this is just to estimate the weight, it depends on size of the pubkey scripts
+      /** This is just an estimate of the closing tx weight, which depends on the size of the pubkey scripts. */
+      private def estimateClosingTxWeight(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector): Int = {
         val dummyClosingTx = ClosingTx.createUnsignedTx(commitment.commitInput(channelKeys), localScriptPubkey, remoteScriptPubkey, commitment.localChannelParams.paysClosingFees, 0 sat, 0 sat, commitment.localCommit.spec)
         val dummyPubkey = commitment.remoteFundingPubKey
         val dummySig = IndividualSignature(Transactions.PlaceHolderSig)
-        val closingWeight = dummyClosingTx.aggregateSigs(dummyPubkey, dummyPubkey, dummySig, dummySig).weight()
+        dummyClosingTx.aggregateSigs(dummyPubkey, dummyPubkey, dummySig, dummySig).weight()
+      }
+
+      def firstClosingFee(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: ClosingFeerates)(implicit log: LoggingAdapter): ClosingFees = {
+        val closingWeight = estimateClosingTxWeight(channelKeys, commitment, localScriptPubkey, remoteScriptPubkey)
         log.info(s"using feerates=$feerates for initial closing tx")
         feerates.computeFees(closingWeight)
+      }
+
+      /**
+       * When we pay the closing fees, our peer may propose a fee outside of our fee range: for compatibility with older
+       * implementations, we try to converge towards their fee instead of failing the channel. But we must never accept
+       * a fee that exceeds what our maximum closing feerate allows, otherwise a malicious peer could make us sign a
+       * closing transaction that burns our whole channel balance to miners.
+       */
+      def maxClosingFee(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, onChainFeeConf: OnChainFeeConf): Satoshi = {
+        val closingWeight = estimateClosingTxWeight(channelKeys, commitment, localScriptPubkey, remoteScriptPubkey)
+        Transactions.weight2fee(onChainFeeConf.maxClosingFeerate, closingWeight)
       }
 
       def firstClosingFee(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf)(implicit log: LoggingAdapter): ClosingFees = {

@@ -1885,13 +1885,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       MutualClose.checkClosingSignature(channelKeys, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, remoteClosingFee, remoteSig) match {
         case Right((signedClosingTx, closingSignedRemoteFees)) =>
           val lastLocalClosingSigned_opt = d.closingTxProposed.last.lastOption
+          val maxClosingFee = MutualClose.maxClosingFee(channelKeys, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf)
           if (lastLocalClosingSigned_opt.exists(_.localClosingSigned.feeSatoshis == remoteClosingFee)) {
             // they accepted the last fee we sent them, so we close without sending a closing_signed
             handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTx_opt = Some(signedClosingTx))))
-          } else if (d.closingTxProposed.flatten.size >= MAX_NEGOTIATION_ITERATIONS) {
-            // there were too many iterations, we stop negotiating and accept their fee
-            log.warning("could not agree on closing fees after {} iterations, accepting their closing fees ({})", MAX_NEGOTIATION_ITERATIONS, remoteClosingFee)
-            handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTx_opt = Some(signedClosingTx)))) sending closingSignedRemoteFees
           } else if (lastLocalClosingSigned_opt.flatMap(_.localClosingSigned.feeRange_opt).exists(r => r.min <= remoteClosingFee && remoteClosingFee <= r.max)) {
             // they chose a fee inside our proposed fee range, so we close and send a closing_signed for that fee
             val localFeeRange = lastLocalClosingSigned_opt.flatMap(_.localClosingSigned.feeRange_opt).get
@@ -1899,6 +1896,16 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTx_opt = Some(signedClosingTx)))) sending closingSignedRemoteFees
           } else if (d.commitments.latest.localCommit.spec.toLocal == 0.msat) {
             // we have nothing at stake so there is no need to negotiate, we accept their fee right away
+            handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTx_opt = Some(signedClosingTx)))) sending closingSignedRemoteFees
+          } else if (d.commitments.localChannelParams.paysClosingFees && remoteClosingFee > maxClosingFee) {
+            // We're paying the closing fees and they're proposing a fee outside of our fee range that exceeds our maximum
+            // closing feerate: we refuse to sign it, otherwise a malicious peer could burn our channel balance to miners.
+            // If they never propose an acceptable fee, we can always force-close instead.
+            log.warning("their closing fee is above our maximum closing fee: {} > {}", remoteClosingFee, maxClosingFee)
+            stay() sending Warning(d.channelId, s"closing fee must not exceed $maxClosingFee")
+          } else if (d.closingTxProposed.flatten.size >= MAX_NEGOTIATION_ITERATIONS) {
+            // there were too many iterations, we stop negotiating and accept their fee
+            log.warning("could not agree on closing fees after {} iterations, accepting their closing fees ({})", MAX_NEGOTIATION_ITERATIONS, remoteClosingFee)
             handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTx_opt = Some(signedClosingTx)))) sending closingSignedRemoteFees
           } else {
             c.feeRange_opt match {
