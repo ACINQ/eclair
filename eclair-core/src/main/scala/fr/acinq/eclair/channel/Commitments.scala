@@ -589,7 +589,9 @@ case class Commitment(fundingTxIndex: Long,
 
   def canSendFee(targetFeerate: FeeratePerKw, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
     // let's compute the current commitment *as seen by them* with this change taken into account
-    val reduced = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
+    // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
+    val remoteCommit1 = nextRemoteCommit_opt.getOrElse(remoteCommit)
+    val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     // we look from remote's point of view, so if local is initiator remote doesn't pay the fees
     val fees = commitTxTotalCost(remoteCommitParams.dustLimit, reduced, commitmentFormat)
