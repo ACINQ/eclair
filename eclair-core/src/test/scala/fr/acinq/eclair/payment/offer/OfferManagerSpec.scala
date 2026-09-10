@@ -333,6 +333,41 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     assert(incomingPayment.invoice.nodeId == nodeParams.nodeId)
     assert(incomingPayment.invoice.paymentHash == invoice.paymentHash)
     assert(maxRecipientPathFees >= paymentPayload.amount - amountReceived)
-    assert(maxRecipientPathFees == nodeFee(1000 msat, 200, amount))
+    assert(maxRecipientPathFees == nodeFee(1000 msat, 200, amount) + 1000.msat)
+  }
+
+  test("pay offer with hidden fees (multi-part)") { f =>
+    import f._
+
+    val handler = TestProbe[HandlerCommand]()
+    val amount = 10_000_000 msat
+    val offer = Offer(Some(amount), Some("offer"), nodeParams.nodeId, Features.empty, nodeParams.chainHash)
+    offerManager ! RegisterOffer(offer, Some(nodeParams.privateKey), None, handler.ref)
+    // Request invoice.
+    val payerKey = randomKey()
+    requestInvoice(payerKey, offer, nodeParams.privateKey, amount, offerManager, postman.ref)
+    val invoice = receiveInvoice(f, amount, payerKey, nodeParams.nodeId, handler, hops = List(ChannelHop.dummy(nodeParams.nodeId, 1000 msat, 200, CltvExpiryDelta(144))), hideFees = true)
+    // The payer splits the payment in four parts: the fees we hide are paid on each part.
+    val partAmount = 2_500_000 msat
+    val blindedPath = invoice.blindedPaths.head.route
+    val encryptedDataTlvs = decryptBlindedPayload(nodeParams.privateKey, blindedPath.firstPathKey, blindedPath.encryptedPayloads)
+    val paymentTlvs = TlvStream[OnionPaymentPayloadTlv](
+      OnionPaymentPayloadTlv.AmountToForward(partAmount),
+      OnionPaymentPayloadTlv.TotalAmount(amount),
+      OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(nodeParams.currentBlockHeight) + invoice.blindedPaths.head.paymentInfo.cltvExpiryDelta),
+    )
+    val paymentPayload = PaymentOnion.FinalPayload.Blinded(paymentTlvs, encryptedDataTlvs)
+    val amountReceived = amountAfterFee(1000 msat, 200, partAmount)
+    offerManager ! ReceivePayment(paymentHandler.ref, invoice.paymentHash, paymentPayload, amountReceived)
+
+    val handlePayment = handler.expectMessageType[HandlePayment]
+    assert(handlePayment.offer == offer)
+    handlePayment.replyTo ! PaymentActor.AcceptPayment()
+    val ProcessPayment(incomingPayment, maxRecipientPathFees) = paymentHandler.expectMessageType[ProcessPayment]
+    assert(incomingPayment.invoice.paymentHash == invoice.paymentHash)
+    // The bound covers the fees actually paid for this part, but not the fees of the whole payment.
+    assert(maxRecipientPathFees >= paymentPayload.amount - amountReceived)
+    assert(maxRecipientPathFees == nodeFee(1000 msat, 200, partAmount) + 1000.msat)
+    assert(maxRecipientPathFees < nodeFee(1000 msat, 200, amount))
   }
 }
