@@ -39,7 +39,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.reputation.ReputationRecorder.GetConfidence
-import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, Route, RouteParams}
+import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, Route}
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
@@ -138,19 +138,6 @@ object NodeRelay {
     } else {
       None
     }
-  }
-
-  /** Compute route params that honor our fee and cltv requirements. */
-  private def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
-    val routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
-    routeParams.copy(
-      boundaries = routeParams.boundaries.copy(
-        maxFeeProportional = 0, // we disable percent-based max fee calculation, we're only interested in collecting our node fee
-        maxFeeFlat = amountIn - amountOut,
-        maxCltv = expiryIn - expiryOut
-      ),
-      includeLocalChannelCost = true
-    )
   }
 
   /** If we fail to relay a payment, we may want to attempt on-the-fly funding if it makes sense. */
@@ -357,7 +344,23 @@ class NodeRelay private(nodeParams: NodeParams,
       accountable0
     }
     val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, recipient.nodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, accountable)
-    val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, amountOut, expiryOut)
+    val defaultRouteParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
+    val routeParams = defaultRouteParams.copy(
+      boundaries = defaultRouteParams.boundaries.copy(
+        maxFeeProportional = 0, // we disable percent-based max fee calculation, we're only interested in collecting our node fee
+        maxFeeFlat = if (recipient.extraEdges.isEmpty) {
+          // The payment doesn't contain any routing hint, so we'll enforce our local channel fees.
+          upstream.amountIn - amountOut
+        } else {
+          // We allow dipping into our local channel fees to ensure that payments can be relayed. We will earn less
+          // than expected, but it's a better UX for users and allows other LSPs to earn a fee when their users receive
+          // payments (by setting a somewhat large fee in the routing hint or the blinded path).
+          (upstream.amountIn - amountOut - nodeFee(nodeParams.relayParams.minLocalTrampolineFees, amountOut)).max(0 msat)
+        },
+        maxCltv = upstream.expiryIn - expiryOut
+      ),
+      includeLocalChannelCost = recipient.extraEdges.isEmpty
+    )
     // If the next node is using trampoline, we assume that they support MPP.
     val useMultiPart = recipient.features.hasFeature(Features.BasicMultiPartPayment) || packetOut_opt.nonEmpty
     val payFsmAdapters = {
