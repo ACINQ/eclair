@@ -47,7 +47,7 @@ import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.DurationInt
 import scala.reflect.ClassTag
 
@@ -2535,6 +2535,24 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       assert(failureA.asInstanceOf[InvalidCommitmentSignature].fundingTxId == failureB.asInstanceOf[InvalidCommitmentSignature].fundingTxId)
       assert(failureA.asInstanceOf[InvalidCommitmentSignature].unsignedCommitTx.txid != failureB.asInstanceOf[InvalidCommitmentSignature].unsignedCommitTx.txid)
     }
+  }
+
+  test("bitcoind pays excessive mining fees") {
+    val probe = TestProbe()
+    // A malicious bitcoind selects inputs worth much more than what the transaction needs and doesn't add a change
+    // output: the difference would be paid to miners.
+    val wallet = new SingleKeyOnChainWallet() {
+      override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, changePosition: Option[Int], externalInputsWeight: Map[OutPoint, Long], minInputConfirmations_opt: Option[Int], feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+        super.fundTransaction(tx, feeRate, replaceable, changePosition, externalInputsWeight, minInputConfirmations_opt, feeBudget_opt)(ec).map(funded => {
+          val excessiveFee = funded.fee + funded.tx.txOut.last.amount
+          funded.copy(tx = funded.tx.copy(txOut = funded.tx.txOut.dropRight(1)), fee = excessiveFee, changePosition = None)
+        })(ec)
+      }
+    }
+    val params = createFixtureParams(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 75_000 sat, 0 sat, FeeratePerKw(5000 sat), 500 sat, 0)
+    val alice = params.spawnTxBuilderAlice(wallet)
+    alice ! Start(probe.ref)
+    assert(probe.expectMsgType[LocalFailure].cause == ChannelFundingError(params.channelId))
   }
 
   test("invalid funding contributions") {

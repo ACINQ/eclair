@@ -207,7 +207,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainAddressCache {
     } yield MakeFundingTxResponse(signedTx, 0, fundedTx.fee)
   }
 
-  override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
+  override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = publishTransaction(tx).map(_ => true)
 
   override def getTransaction(txId: TxId)(implicit ec: ExecutionContext): Future[Transaction] = synchronized {
     inputs.find(_.txid == txId) match {
