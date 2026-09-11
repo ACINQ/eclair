@@ -8,7 +8,19 @@
 
 ### Configuration changes
 
-<insert changes>
+#### Add `max-funding-feerate` configuration parameter
+
+The feerate used for funding and splice transactions comes from our fee estimator. We added a new configuration value
+to `eclair.conf` to cap that feerate, so that inaccurate fee estimates cannot make you pay arbitrarily high mining fees
+on every channel open or splice, similarly to what `max-closing-feerate` does for closing transactions:
+
+```conf
+// Maximum feerate that will be used for funding and splice transactions, in satoshis per byte.
+eclair.on-chain-fees.max-funding-feerate = 50
+```
+
+If your channel opens and splices don't confirm because the mempool is more congested than that, you can RBF them
+with the `rbfopen` and `rbfsplice` API commands, or increase this value and restart your node.
 
 ### API changes
 

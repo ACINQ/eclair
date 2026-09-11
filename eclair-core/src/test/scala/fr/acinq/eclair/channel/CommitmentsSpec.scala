@@ -42,6 +42,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   private val feeConfNoMismatch = OnChainFeeConf(
     feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
     maxClosingFeerate = FeeratePerKw(10_000 sat),
+    maxFundingFeerate = FeeratePerKw(100_000 sat),
     safeUtxosThreshold = 0,
     spendAnchorWithoutHtlcs = true,
     anchorWithoutHtlcsMaxFee = 10_000.sat,
