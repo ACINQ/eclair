@@ -95,6 +95,22 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     case _ => AddressType.P2wpkh
   }
 
+  /**
+   * Our wallet only uses BIP84 and BIP86 paths of the form purpose'/coin_type'/account'/{0,1}/index, which are the
+   * paths tracked by the descriptors we import in Bitcoin Core. Bitcoin Core knows our account xpubs, so a malicious
+   * node could otherwise provide a derivation path for which we can derive keys but that our watch-only wallet doesn't
+   * track (e.g. a deeper branch): we would be unable to find the funds sent to those keys.
+   */
+  private def isOurKeyPath(keyPath: KeyPath, addressType: AddressType): Boolean = keyPath.path match {
+    case Seq(purpose, coinType, account, change, index) =>
+      val expectedRoot = addressType match {
+        case AddressType.P2wpkh => KeyPath(rootPathBIP84).path
+        case AddressType.P2tr => KeyPath(rootPathBIP86).path
+      }
+      Seq(purpose, coinType) == expectedRoot && account >= hardened(0) && (change == 0L || change == 1L) && index < hardened(0)
+    case _ => false
+  }
+
   override def masterPubKey(account: Long, addressType: AddressType): String = addressType match {
     case AddressType.P2tr =>
       val prefix = chainHash match {
@@ -118,6 +134,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
 
   override def derivePublicKey(keyPath: KeyPath): (Crypto.PublicKey, String) = {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+    require(isOurKeyPath(keyPath, addressType(keyPath)), s"derivation path $keyPath is not part of our wallet: bitcoin core may be malicious")
     val pub = DeterministicWallet.derivePrivateKey(master, keyPath).publicKey
     val address = addressType(keyPath) match {
       case AddressType.P2tr => fr.acinq.bitcoin.Bitcoin.computeBIP86Address(pub, chainHash)
@@ -204,6 +221,9 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
 
     // We first check segwit v0.
     output.getDerivationPaths.asScala.headOption match {
+      case Some((_, keypath)) if !isOurKeyPath(keypath.keyPath, AddressType.P2wpkh) =>
+        logger.warn(s"derivation path ${keypath.keyPath} is not part of our wallet: bitcoin core may be malicious")
+        false
       case Some((pub, keypath)) =>
         val expectedKey = derivePublicKey(keypath.keyPath)._1
         if (pub != KotlinUtils.scala2kmp(expectedKey)) {
@@ -218,6 +238,9 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
       case None =>
         // Otherwise, this may be a taproot input.
         output.getTaprootDerivationPaths.asScala.headOption match {
+          case Some((_, keypath)) if !isOurKeyPath(keypath.keyPath, AddressType.P2tr) =>
+            logger.warn(s"derivation path ${keypath.keyPath} is not part of our wallet: bitcoin core may be malicious")
+            false
           case Some((pub, keypath)) =>
             val expectedKey = derivePublicKey(keypath.keyPath)._1
             if (pub != output.getTaprootInternalKey) {
@@ -268,6 +291,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     // Check that we're signing a p2wpkh input and that the keypath is provided and correct.
     require(input.getDerivationPaths.size() == 1, "bip32 derivation path is missing: bitcoin core may be malicious")
     val (pub, keypath) = input.getDerivationPaths.asScala.toSeq.head
+    require(isOurKeyPath(keypath.keyPath, AddressType.P2wpkh), s"derivation path ${keypath.keyPath} is not part of our wallet: bitcoin core may be malicious")
     val priv = master.priv.derivePrivateKey(keypath.keyPath).getPrivateKey
     require(priv.publicKey() == pub, s"derived public key doesn't match (expected=$pub actual=${priv.publicKey()}): bitcoin core may be malicious")
     val expectedScript = ByteVector(Script.write(Script.pay2wpkh(pub)))
@@ -305,6 +329,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     // Check that we're signing a p2tr input and that the keypath is provided and correct.
     require(input.getTaprootDerivationPaths.size() == 1, "bip32 derivation path is missing: bitcoin core may be malicious")
     val (pub, keypath) = input.getTaprootDerivationPaths.asScala.toSeq.head
+    require(isOurKeyPath(keypath.keyPath, AddressType.P2tr), s"derivation path ${keypath.keyPath} is not part of our wallet: bitcoin core may be malicious")
     val priv = master.priv.derivePrivateKey(keypath.keyPath).getPrivateKey
     require(priv.publicKey().xOnly() == pub, s"derived public key doesn't match (expected=$pub actual=${priv.publicKey().xOnly()}): bitcoin core may be malicious")
     val expectedScript = Script.write(Script.pay2tr(pub, KeyPathTweak))

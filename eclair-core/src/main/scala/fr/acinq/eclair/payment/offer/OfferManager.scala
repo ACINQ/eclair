@@ -34,7 +34,7 @@ import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv, Offer}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams, TimestampMilli, TimestampSecond, nodeFee, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, TimestampSecond, nodeFee, randomBytes32}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
@@ -124,14 +124,14 @@ object OfferManager {
             case _ => context.log.debug("offer {} is not registered or invoice request is invalid", messagePayload.invoiceRequest.offer.offerId)
           }
           Behaviors.same
-        case ReceivePayment(replyTo, paymentHash, payload, amountReceived) =>
+        case ReceivePayment(replyTo, paymentHash, payload, _) =>
           MinimalInvoiceData.decode(payload.pathId) match {
             case Some(signed) =>
               registeredOffers.get(signed.offerId) match {
                 case Some(RegisteredOffer(offer, _, _, handler)) =>
                   MinimalInvoiceData.verify(nodeParams.nodeId, signed) match {
                     case Some(metadata) if Crypto.sha256(metadata.preimage) == paymentHash =>
-                      val child = context.spawnAnonymous(PaymentActor(nodeParams, replyTo, offer, metadata, amountReceived, paymentTimeout))
+                      val child = context.spawnAnonymous(PaymentActor(nodeParams, replyTo, offer, metadata, payload.amount, paymentTimeout))
                       handler ! HandlePayment(child, offer, metadata)
                     case Some(_) => replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(s"preimage does not match payment hash for offer ${signed.offerId.toHex}")
                     case None => replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(s"invalid signature for metadata for offer ${signed.offerId.toHex}")
@@ -272,11 +272,15 @@ object OfferManager {
      */
     case class RejectPayment(reason: String) extends Command
 
+    /**
+     * @param partAmount amount of this payment part as set by the payer in the onion: when we hide blinded path fees,
+     *                   the HTLC amount we receive is smaller than that by the fees paid along the path.
+     */
     def apply(nodeParams: NodeParams,
               replyTo: ActorRef[MultiPartHandler.GetIncomingPaymentActor.Command],
               offer: Offer,
               metadata: MinimalInvoiceData,
-              amount: MilliSatoshi,
+              partAmount: MilliSatoshi,
               timeout: FiniteDuration): Behavior[Command] = {
       Behaviors.setup { context =>
         context.scheduleOnce(timeout, context.self, RejectPayment("plugin timeout"))
@@ -284,8 +288,18 @@ object OfferManager {
           case AcceptPayment(additionalTlvs, customTlvs) =>
             val minimalInvoice = MinimalBolt12Invoice(offer, nodeParams.chainHash, metadata.amount, metadata.quantity, Crypto.sha256(metadata.preimage), metadata.payerKey, metadata.createdAt, additionalTlvs, customTlvs)
             val incomingPayment = IncomingBlindedPayment(minimalInvoice, metadata.preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
-            // We may be deducing some of the blinded path fees from the received amount.
-            val maxRecipientPathFees = nodeFee(metadata.recipientPathFees, Seq(amount, metadata.amount).max)
+            // We may be deducing some of the blinded path fees from the received amount. Those fees are paid on each
+            // payment part, so the bound must be computed on this part's amount, not on the whole invoice amount:
+            // otherwise the payer could split the payment to underpay us by the proportional fee on every part.
+            // When hiding fees, we add a small tolerance because LDK doesn't use the BOLT 4 formula when computing
+            // amt_to_forward inside a blinded path (it rounds the forwarded amount down instead of up, keeping up to
+            // 1 msat more per hop) and rounds down the fee it pays as a sender: parts relayed through LDK nodes can
+            // thus be short by a few msat compared to what the aggregated fees predict. This can be removed once LDK
+            // follows the spec formula.
+            val maxRecipientPathFees = metadata.recipientPathFees match {
+              case RelayFees(feeBase, feeProportionalMillionths) if feeBase == 0.msat && feeProportionalMillionths == 0 => 0.msat
+              case recipientPathFees => nodeFee(recipientPathFees, partAmount) + 1000.msat
+            }
             replyTo ! MultiPartHandler.GetIncomingPaymentActor.ProcessPayment(incomingPayment, maxRecipientPathFees)
             Behaviors.stopped
           case RejectPayment(reason) =>

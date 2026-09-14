@@ -126,4 +126,17 @@ class PackageSpec extends AnyFunSuite {
     }
   }
 
+  test("node fees must not wrap") {
+    val amountToForward = 4_294_967_299L.msat
+    val proportionalFee = Int.MaxValue.toLong
+
+    // The exact fee fits in a Long, but the intermediate multiplication does not.
+    val expectedFee = 9_223_372_039_002L.msat
+    assert(nodeFee(0.msat, proportionalFee, amountToForward) == expectedFee)
+
+    // A wrapped negative fee lets an incoming HTLC of 1 msat pay for a larger outgoing HTLC.
+    val attackerPaidFee = 1.msat - amountToForward
+    assert(expectedFee > attackerPaidFee)
+  }
+
 }

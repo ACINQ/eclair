@@ -10,6 +10,7 @@ import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, Parti
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.channel.fsm.Channel.ChannelConf
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.PartiallySignedSharedTransaction
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.crypto.{NonceGenerator, ShaChain}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
@@ -588,7 +589,9 @@ case class Commitment(fundingTxIndex: Long,
 
   def canSendFee(targetFeerate: FeeratePerKw, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
     // let's compute the current commitment *as seen by them* with this change taken into account
-    val reduced = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
+    // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
+    val remoteCommit1 = nextRemoteCommit_opt.getOrElse(remoteCommit)
+    val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     // we look from remote's point of view, so if local is initiator remote doesn't pay the fees
     val fees = commitTxTotalCost(remoteCommitParams.dustLimit, reduced, commitmentFormat)
@@ -885,6 +888,20 @@ case class Commitments(channelParams: ChannelParams,
     require(commitment.localCommit.index == localCommitIndex, s"cannot add commitment at localCommitIndex=${commitment.localCommit.index}, we're at localCommitIndex=$localCommitIndex")
     require(commitment.remoteCommit.index == remoteCommitIndex, s"cannot add commitment at remoteCommitIndex=${commitment.remoteCommit.index}, we're at remoteCommitIndex=$remoteCommitIndex")
     copy(active = commitment +: active)
+  }
+
+  /**
+   * When force-closing, we cannot use a commitment for which our peer hasn't sent their tx_signatures: we cannot
+   * publish the corresponding funding transaction, so its commit tx cannot confirm unless our peer publishes that
+   * funding transaction. We instead use the latest commitment whose funding tx we can publish (or that is already
+   * confirmed). Note that this doesn't change the [[latest]] commitment: if our peer later publishes their funding tx,
+   * we will need to force-close again using the corresponding commitment.
+   */
+  def latestPublishable: FullCommitment = {
+    active.find(c => c.localFundingStatus match {
+      case LocalFundingStatus.DualFundedUnconfirmedFundingTx(_: PartiallySignedSharedTransaction, _, _, _) => false
+      case _ => true
+    }).map(c => FullCommitment(channelParams, changes, c)).getOrElse(latest)
   }
 
   // @formatter:off

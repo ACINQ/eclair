@@ -228,7 +228,12 @@ trait ErrorHandlers extends CommonHandlers {
       stay()
     } else {
       val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
-      val commitment = d.commitments.latest
+      // If our peer hasn't sent their tx_signatures for our latest splice transaction(s), we cannot publish them and
+      // the corresponding commit txs cannot confirm: we force-close using the latest commitment that can confirm.
+      val commitment = d.commitments.latestPublishable
+      if (commitment.fundingTxIndex < d.commitments.latest.fundingTxIndex) {
+        log.warning("our peer hasn't sent their tx_signatures for fundingTxIndex={}, using fundingTxIndex={} instead", d.commitments.latest.fundingTxIndex, commitment.fundingTxIndex)
+      }
       log.error(s"force-closing with fundingIndex=${commitment.fundingTxIndex}")
       context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"force-closing channel ${d.channelId} with fundingIndex=${commitment.fundingTxIndex}"))
       val commitTx = commitment.fullySignedLocalCommitTx(channelKeys)

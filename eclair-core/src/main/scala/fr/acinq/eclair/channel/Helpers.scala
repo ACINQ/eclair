@@ -114,6 +114,7 @@ object Helpers {
 
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
     if (open.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
+    if (open.toSelfDelay < Channel.MIN_TO_SELF_DELAY) return Left(ToSelfDelayTooLow(open.temporaryChannelId, open.toSelfDelay, Channel.MIN_TO_SELF_DELAY))
 
     if (open.dustLimitSatoshis > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, nodeParams.channelConf.maxRemoteDustLimit))
 
@@ -183,6 +184,7 @@ object Helpers {
 
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
     if (open.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
+    if (open.toSelfDelay < Channel.MIN_TO_SELF_DELAY) return Left(ToSelfDelayTooLow(open.temporaryChannelId, open.toSelfDelay, Channel.MIN_TO_SELF_DELAY))
 
     if (open.dustLimit < Channel.MIN_DUST_LIMIT) return Left(DustLimitTooSmall(open.temporaryChannelId, open.dustLimit, Channel.MIN_DUST_LIMIT))
     if (open.dustLimit > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimit, nodeParams.channelConf.maxRemoteDustLimit))
@@ -235,6 +237,7 @@ object Helpers {
     // if minimum_depth is unreasonably large:
     // MAY reject the channel.
     if (accept.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
+    if (accept.toSelfDelay < Channel.MIN_TO_SELF_DELAY) return Left(ToSelfDelayTooLow(accept.temporaryChannelId, accept.toSelfDelay, Channel.MIN_TO_SELF_DELAY))
 
     // if channel_reserve_satoshis is less than dust_limit_satoshis within the open_channel message:
     //  MUST reject the channel.
@@ -283,6 +286,7 @@ object Helpers {
     // if minimum_depth is unreasonably large:
     // MAY reject the channel.
     if (accept.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
+    if (accept.toSelfDelay < Channel.MIN_TO_SELF_DELAY) return Left(ToSelfDelayTooLow(accept.temporaryChannelId, accept.toSelfDelay, Channel.MIN_TO_SELF_DELAY))
 
     for {
       script_opt <- extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt)
@@ -670,11 +674,11 @@ object Helpers {
     def isClosingTypeAlreadyKnown(closing: DATA_CLOSING): Option[ClosingType] = {
       closing match {
         case _ if closing.localCommitPublished.exists(_.isConfirmed) =>
-          Some(LocalClose(closing.commitments.latest.localCommit, closing.localCommitPublished.get))
+          Some(LocalClose(closing.commitmentFor(closing.localCommitPublished.get.commitTx.txid).localCommit, closing.localCommitPublished.get))
         case _ if closing.remoteCommitPublished.exists(_.isConfirmed) =>
-          Some(CurrentRemoteClose(closing.commitments.latest.remoteCommit, closing.remoteCommitPublished.get))
+          Some(CurrentRemoteClose(closing.commitmentFor(closing.remoteCommitPublished.get.commitTx.txid).remoteCommit, closing.remoteCommitPublished.get))
         case _ if closing.nextRemoteCommitPublished.exists(_.isConfirmed) =>
-          Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get, closing.nextRemoteCommitPublished.get))
+          Some(NextRemoteClose(closing.commitmentFor(closing.nextRemoteCommitPublished.get.commitTx.txid).nextRemoteCommit_opt.get, closing.nextRemoteCommitPublished.get))
         case _ if closing.futureRemoteCommitPublished.exists(_.isConfirmed) =>
           Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
         case _ if closing.revokedCommitPublished.exists(_.isConfirmed) =>
@@ -696,11 +700,11 @@ object Helpers {
         val closingTx = closing.mutualClosePublished.find(_.tx.txid == additionalConfirmedTx_opt.get.txid).get
         Some(MutualClose(closingTx))
       case closing: DATA_CLOSING if closing.localCommitPublished.exists(_.isDone) =>
-        Some(LocalClose(closing.commitments.latest.localCommit, closing.localCommitPublished.get))
+        Some(LocalClose(closing.commitmentFor(closing.localCommitPublished.get.commitTx.txid).localCommit, closing.localCommitPublished.get))
       case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(_.isDone) =>
-        Some(CurrentRemoteClose(closing.commitments.latest.remoteCommit, closing.remoteCommitPublished.get))
+        Some(CurrentRemoteClose(closing.commitmentFor(closing.remoteCommitPublished.get.commitTx.txid).remoteCommit, closing.remoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(_.isDone) =>
-        Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get, closing.nextRemoteCommitPublished.get))
+        Some(NextRemoteClose(closing.commitmentFor(closing.nextRemoteCommitPublished.get.commitTx.txid).nextRemoteCommit_opt.get, closing.nextRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(_.isDone) =>
         Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(_.isDone) =>
@@ -726,14 +730,29 @@ object Helpers {
         }
       }
 
-      def firstClosingFee(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: ClosingFeerates)(implicit log: LoggingAdapter): ClosingFees = {
-        // this is just to estimate the weight, it depends on size of the pubkey scripts
+      /** This is just an estimate of the closing tx weight, which depends on the size of the pubkey scripts. */
+      private def estimateClosingTxWeight(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector): Int = {
         val dummyClosingTx = ClosingTx.createUnsignedTx(commitment.commitInput(channelKeys), localScriptPubkey, remoteScriptPubkey, commitment.localChannelParams.paysClosingFees, 0 sat, 0 sat, commitment.localCommit.spec)
         val dummyPubkey = commitment.remoteFundingPubKey
         val dummySig = IndividualSignature(Transactions.PlaceHolderSig)
-        val closingWeight = dummyClosingTx.aggregateSigs(dummyPubkey, dummyPubkey, dummySig, dummySig).weight()
+        dummyClosingTx.aggregateSigs(dummyPubkey, dummyPubkey, dummySig, dummySig).weight()
+      }
+
+      def firstClosingFee(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: ClosingFeerates)(implicit log: LoggingAdapter): ClosingFees = {
+        val closingWeight = estimateClosingTxWeight(channelKeys, commitment, localScriptPubkey, remoteScriptPubkey)
         log.info(s"using feerates=$feerates for initial closing tx")
         feerates.computeFees(closingWeight)
+      }
+
+      /**
+       * When we pay the closing fees, our peer may propose a fee outside of our fee range: for compatibility with older
+       * implementations, we try to converge towards their fee instead of failing the channel. But we must never accept
+       * a fee that exceeds what our maximum closing feerate allows, otherwise a malicious peer could make us sign a
+       * closing transaction that burns our whole channel balance to miners.
+       */
+      def maxClosingFee(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, onChainFeeConf: OnChainFeeConf): Satoshi = {
+        val closingWeight = estimateClosingTxWeight(channelKeys, commitment, localScriptPubkey, remoteScriptPubkey)
+        Transactions.weight2fee(onChainFeeConf.maxClosingFeerate, closingWeight)
       }
 
       def firstClosingFee(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf)(implicit log: LoggingAdapter): ClosingFees = {
