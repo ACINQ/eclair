@@ -23,6 +23,7 @@
         <include>LICENSE*</include>
       </includes>
       <fileMode>0644</fileMode>
+      <lineEnding>unix</lineEnding>
     </fileSet>
     <fileSet>  <!-- Include the launcher scripts -->
       <directory>${project.basedir}/src/main/resources</directory>
