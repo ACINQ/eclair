@@ -11,6 +11,7 @@
       <useProjectArtifact>true</useProjectArtifact> <!-- include eclair-core -->
       <unpack>false</unpack>
       <scope>runtime</scope>
+      <fileMode>0644</fileMode>
     </dependencySet>
   </dependencySets>
   <fileSets> <!-- Include docs, readme and license -->
@@ -20,6 +21,7 @@
         <include>docs/**</include>
         <include>README.md</include>
         <include>LICENSE*</include>
+        <fileMode>0644</fileMode>
       </includes>
     </fileSet>
     <fileSet>  <!-- Include the launcher scripts -->
