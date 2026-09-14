@@ -167,6 +167,7 @@ object TestConstants {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
         maxClosingFeerate = FeeratePerKw(15_000 sat),
+        maxFundingFeerate = FeeratePerKw(250_000 sat),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         anchorWithoutHtlcsMaxFee = 100_000.sat,
@@ -176,15 +177,10 @@ object TestConstants {
         perNodeFeerateTolerance = Map.empty
       ),
       relayParams = RelayParams(
-        publicChannelFees = RelayFees(
-          feeBase = 546000 msat,
-          feeProportionalMillionths = 10),
-        privateChannelFees = RelayFees(
-          feeBase = 547000 msat,
-          feeProportionalMillionths = 20),
-        minTrampolineFees = RelayFees(
-          feeBase = 548000 msat,
-          feeProportionalMillionths = 30),
+        publicChannelFees = RelayFees(feeBase = 546000 msat, feeProportionalMillionths = 10),
+        privateChannelFees = RelayFees(feeBase = 547000 msat, feeProportionalMillionths = 20),
+        minTrampolineFees = RelayFees(feeBase = 548000 msat, feeProportionalMillionths = 30),
+        minLocalTrampolineFees = RelayFees(feeBase = 546000 msat, feeProportionalMillionths = 10),
         resetExistingChannels = true,
         enforcementDelay = 10 minutes,
         asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
@@ -397,6 +393,7 @@ object TestConstants {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
         maxClosingFeerate = FeeratePerKw(15_000 sat),
+        maxFundingFeerate = FeeratePerKw(250_000 sat),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         anchorWithoutHtlcsMaxFee = 100_000.sat,
@@ -406,15 +403,10 @@ object TestConstants {
         perNodeFeerateTolerance = Map.empty
       ),
       relayParams = RelayParams(
-        publicChannelFees = RelayFees(
-          feeBase = 546000 msat,
-          feeProportionalMillionths = 10),
-        privateChannelFees = RelayFees(
-          feeBase = 547000 msat,
-          feeProportionalMillionths = 20),
-        minTrampolineFees = RelayFees(
-          feeBase = 548000 msat,
-          feeProportionalMillionths = 30),
+        publicChannelFees = RelayFees(feeBase = 546000 msat, feeProportionalMillionths = 10),
+        privateChannelFees = RelayFees(feeBase = 547000 msat, feeProportionalMillionths = 20),
+        minTrampolineFees = RelayFees(feeBase = 548000 msat, feeProportionalMillionths = 30),
+        minLocalTrampolineFees = RelayFees(feeBase = 546000 msat, feeProportionalMillionths = 10),
         resetExistingChannels = true,
         enforcementDelay = 10 minutes,
         asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),

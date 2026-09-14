@@ -194,6 +194,18 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
+  test("recv AcceptChannel (to_self_delay too low)") { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    val delayTooLow = CltvExpiryDelta(0)
+    alice ! accept.copy(toSelfDelay = delayTooLow)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error == Error(accept.temporaryChannelId, ToSelfDelayTooLow(accept.temporaryChannelId, delayTooLow, Channel.MIN_TO_SELF_DELAY).getMessage))
+    listener.expectMsgType[ChannelAborted]
+    awaitCond(alice.stateName == CLOSED)
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
+  }
+
   test("recv AcceptChannel (reserve too high)") { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]

@@ -225,7 +225,9 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val remoteCommit = RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, d.remoteFirstPerCommitmentPoint)
           val localSigOfRemoteTx = d.commitmentFormat match {
             case _: SimpleTaprootChannelCommitmentFormat =>
-              val localNonce = NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, 0)
+              // We must use a fresh nonce here: our verification nonce is reserved for signing our own commitment,
+              // and signing two different transactions with the same nonce would leak our funding key.
+              val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, d.remoteFundingPubKey, fundingTx.txid)
               remoteNextCommitNonces.get(NonceGenerator.dummyFundingTxId) match {
                 case Some(remoteNonce) =>
                   remoteCommitTx.partialSign(fundingKey, d.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
@@ -303,7 +305,9 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               val channelId = toLongId(fundingTxId, fundingTxOutputIndex)
               val localSigOfRemoteTx = d.commitmentFormat match {
                 case _: SimpleTaprootChannelCommitmentFormat =>
-                  val localNonce = NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, 0)
+                  // We must use a fresh nonce here: our verification nonce is reserved for signing our own commitment,
+                  // and signing two different transactions with the same nonce would leak our funding key.
+                  val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, d.remoteFundingPubKey, fundingTxId)
                   remoteNextCommitNonces.get(NonceGenerator.dummyFundingTxId) match {
                     case Some(remoteNonce) =>
                       remoteCommitTx.partialSign(fundingKey, d.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {

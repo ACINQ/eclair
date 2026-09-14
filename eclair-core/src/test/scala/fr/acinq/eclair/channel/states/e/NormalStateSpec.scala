@@ -2265,6 +2265,25 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(initialState == bob.stateData)
   }
 
+  test("recv CMD_UPDATE_FEE (sender can't afford it with pending signed htlc)") { f =>
+    import f._
+    val sender = TestProbe()
+    // Alice sends an htlc and signs it, but Bob hasn't revoked his previous commitment yet.
+    addHtlc(100_000_000 msat, alice, bob, alice2bob, bob2alice)
+    alice ! CMD_SIGN()
+    alice2bob.expectMsgType[CommitSig] // not forwarded to Bob yet
+    assert(alice.commitments.latest.nextRemoteCommit_opt.nonEmpty)
+    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    // This feerate is just above the threshold once the pending htlc is taken into account:
+    // (800000 (alice balance) - 100000 (htlc) - 20000 (reserve) - 660 (anchors)) / 1296 (commit tx weight with 1 htlc) = 524182
+    // It would be affordable without that htlc: we must not send it, otherwise Bob would reject it and force-close.
+    val c = CMD_UPDATE_FEE(FeeratePerKw(524183 sat), replyTo_opt = Some(sender.ref))
+    alice ! c
+    sender.expectMsg(RES_FAILURE(c, CannotAffordFees(channelId(alice), missing = 1 sat, reserve = 20000 sat, fees = 680001 sat)))
+    alice2bob.expectNoMessage(100 millis)
+    assert(alice.stateData == initialState)
+  }
+
   test("recv UpdateFee") { f =>
     import f._
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]

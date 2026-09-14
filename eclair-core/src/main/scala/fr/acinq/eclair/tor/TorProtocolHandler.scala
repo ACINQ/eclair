@@ -73,7 +73,7 @@ class TorProtocolHandler(authentication: Authentication,
    * password authentication on a local control port, and require safecookie otherwise, which authenticates the server.
    */
   private def checkControlAddress(remoteAddress: InetSocketAddress): Unit = {
-    val isLocal = Option(remoteAddress.getAddress).exists(_.isLoopbackAddress)
+    val isLocal = Option(remoteAddress.getAddress).exists(a => a.isLoopbackAddress|| a.isSiteLocalAddress || a.isLinkLocalAddress)
     authentication match {
       case _: Password if !isLocal => throw TorException(s"cannot use password authentication with a remote control port ($remoteAddress): use safecookie instead")
       case _ if !isLocal => log.warning("tor control port {} is not local: our onion private key will be sent in cleartext over the network", remoteAddress)

@@ -730,6 +730,22 @@ final case class DATA_CLOSING(commitments: Commitments,
                               remoteFuturePerCommitmentPoint_opt: Option[PublicKey] = None) extends ChannelDataWithCommitments {
   val spendingTxs: List[Transaction] = mutualClosePublished.map(_.tx) ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
   require(spendingTxs.nonEmpty, "there must be at least one tx published in this state")
+
+  /**
+   * The commitment matching a commit tx that was published (by us or by our peer). This may not be the latest
+   * commitment: our peer may publish an older commitment, and we may not be able to publish our latest commitment
+   * ourselves (see [[Commitments.latestPublishable]]). Transactions spending that commit tx must be created with the
+   * matching commitment, since they use keys and signatures that are specific to it.
+   *
+   * Note that we only know the txid of the current commit txs: revoked or future commit txs cannot be matched and we
+   * fall back to the latest commitment.
+   */
+  def commitmentFor(commitTxId: TxId): FullCommitment = {
+    commitments.all
+      .find(c => c.localCommit.txId == commitTxId || c.remoteCommit.txId == commitTxId || c.nextRemoteCommit_opt.exists(_.txId == commitTxId))
+      .map(c => FullCommitment(commitments.channelParams, commitments.changes, c))
+      .getOrElse(commitments.latest)
+  }
 }
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends ChannelDataWithCommitments
@@ -787,40 +803,44 @@ object DATA_CLOSED {
     closingAmount = closingTx.toLocalOutput_opt.map(_.amount).getOrElse(0 sat)
   )
 
-  def apply(d: DATA_CLOSING, closingType: Helpers.Closing.ClosingType): DATA_CLOSED = DATA_CLOSED(
-    channelId = d.channelId,
-    remoteNodeId = d.remoteNodeId,
-    fundingTxId = d.commitments.latest.fundingTxId,
-    fundingOutputIndex = d.commitments.latest.fundingInput.index,
-    fundingTxIndex = d.commitments.latest.fundingTxIndex,
-    fundingKeyPath = d.commitments.channelParams.localParams.fundingKeyPath.toString(),
-    channelFeatures = d.commitments.channelParams.channelFeatures.toString,
-    isChannelOpener = d.commitments.latest.channelParams.localParams.isChannelOpener,
-    commitmentFormat = d.commitments.latest.commitmentFormat.toString,
-    announced = d.commitments.latest.channelParams.announceChannel,
-    capacity = d.commitments.latest.capacity,
-    closingTxId = closingType.closingTxId,
-    closingType = closingType.toString,
-    closingScript = d.finalScriptPubKey,
-    localBalance = closingType match {
-      case _: Closing.CurrentRemoteClose => d.commitments.latest.remoteCommit.spec.toRemote
-      case _: Closing.NextRemoteClose => d.commitments.latest.nextRemoteCommit_opt.getOrElse(d.commitments.latest.remoteCommit).spec.toRemote
-      case _ => d.commitments.latest.localCommit.spec.toLocal
-    },
-    remoteBalance = closingType match {
-      case _: Closing.CurrentRemoteClose => d.commitments.latest.remoteCommit.spec.toLocal
-      case _: Closing.NextRemoteClose => d.commitments.latest.nextRemoteCommit_opt.getOrElse(d.commitments.latest.remoteCommit).spec.toLocal
-      case _ => d.commitments.latest.localCommit.spec.toRemote
-    },
-    closingAmount = closingType match {
-      case Closing.MutualClose(closingTx) => closingTx.toLocalOutput_opt.map(_.amount).getOrElse(0 sat)
-      case Closing.LocalClose(_, localCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, localCommitPublished)
-      case Closing.CurrentRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, remoteCommitPublished)
-      case Closing.NextRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, remoteCommitPublished)
-      case Closing.RecoveryClose(remoteCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, remoteCommitPublished)
-      case Closing.RevokedClose(revokedCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, revokedCommitPublished)
-    }
-  )
+  def apply(d: DATA_CLOSING, closingType: Helpers.Closing.ClosingType): DATA_CLOSED = {
+    // The commit tx that closed the channel may not be for the latest commitment (see DATA_CLOSING.commitmentFor).
+    val commitment = d.commitmentFor(closingType.closingTxId)
+    DATA_CLOSED(
+      channelId = d.channelId,
+      remoteNodeId = d.remoteNodeId,
+      fundingTxId = commitment.fundingTxId,
+      fundingOutputIndex = commitment.fundingInput.index,
+      fundingTxIndex = commitment.fundingTxIndex,
+      fundingKeyPath = d.commitments.channelParams.localParams.fundingKeyPath.toString(),
+      channelFeatures = d.commitments.channelParams.channelFeatures.toString,
+      isChannelOpener = commitment.channelParams.localParams.isChannelOpener,
+      commitmentFormat = commitment.commitmentFormat.toString,
+      announced = commitment.channelParams.announceChannel,
+      capacity = commitment.capacity,
+      closingTxId = closingType.closingTxId,
+      closingType = closingType.toString,
+      closingScript = d.finalScriptPubKey,
+      localBalance = closingType match {
+        case _: Closing.CurrentRemoteClose => commitment.remoteCommit.spec.toRemote
+        case _: Closing.NextRemoteClose => commitment.nextRemoteCommit_opt.getOrElse(commitment.remoteCommit).spec.toRemote
+        case _ => commitment.localCommit.spec.toLocal
+      },
+      remoteBalance = closingType match {
+        case _: Closing.CurrentRemoteClose => commitment.remoteCommit.spec.toLocal
+        case _: Closing.NextRemoteClose => commitment.nextRemoteCommit_opt.getOrElse(commitment.remoteCommit).spec.toLocal
+        case _ => commitment.localCommit.spec.toRemote
+      },
+      closingAmount = closingType match {
+        case Closing.MutualClose(closingTx) => closingTx.toLocalOutput_opt.map(_.amount).getOrElse(0 sat)
+        case Closing.LocalClose(_, localCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, localCommitPublished)
+        case Closing.CurrentRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, remoteCommitPublished)
+        case Closing.NextRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, remoteCommitPublished)
+        case Closing.RecoveryClose(remoteCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, remoteCommitPublished)
+        case Closing.RevokedClose(revokedCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, revokedCommitPublished)
+      }
+    )
+  }
 }
 
 /** Local params that apply for the channel's lifetime. */

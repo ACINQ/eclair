@@ -465,6 +465,9 @@ class ChannelRelay private(nodeParams: NodeParams,
     val prevUpdate_opt = if (allowPreviousUpdate) outgoingChannel.prevChannelUpdate else None
     val htlcMinimumOk = update.htlcMinimumMsat <= r.amountToForward || prevUpdate_opt.exists(_.htlcMinimumMsat <= r.amountToForward)
     val expiryDeltaOk = update.cltvExpiryDelta <= r.expiryDelta || prevUpdate_opt.exists(_.cltvExpiryDelta <= r.expiryDelta)
+    // We must never forward more than what we received, whatever our relay fees are. This invariant doesn't depend on
+    // the fee computation, which protects us if that computation is ever incorrect.
+    val amountOk = r.amountToForward <= r.add.amountMsat
     // The fee is sufficient if it covers any accepted combination of outbound relay fees (current or, within the
     // enforcement delay, previous outgoing channel_update) and inbound fees (see acceptableInboundFees).
     val feesOk = acceptableInboundFees.exists { inbound =>
@@ -475,7 +478,7 @@ class ChannelRelay private(nodeParams: NodeParams,
       Some(makeCmdFailHtlc(r.add.id, AmountBelowMinimum(r.amountToForward, Some(update))))
     } else if (!expiryDeltaOk) {
       Some(makeCmdFailHtlc(r.add.id, IncorrectCltvExpiry(r.outgoingCltv, Some(update))))
-    } else if (!feesOk) {
+    } else if (!amountOk || !feesOk) {
       Some(makeCmdFailHtlc(r.add.id, FeeInsufficient(r.add.amountMsat, Some(update))))
     } else {
       None
@@ -492,8 +495,27 @@ class ChannelRelay private(nodeParams: NodeParams,
     }
     // If we have a channel with the next peer, but we skipped it because the sender is using invalid relay parameters,
     // we don't want to perform on-the-fly funding: the sender should send a valid payment first.
-    val relayParamsOk = channels.values.forall(c => validateRelayParams(c).isEmpty)
+    // If we don't have a channel yet, we validate against the parameters we will use for the channel we create.
+    val relayParamsOk = if (channels.nonEmpty) {
+      channels.values.forall(c => validateRelayParams(c).isEmpty)
+    } else {
+      validateDefaultRelayParams()
+    }
     featureOk && liquidityIssue && relayParamsOk
+  }
+
+  /**
+   * When we don't have a channel with the next node yet, we cannot validate relay parameters against a channel_update.
+   * We validate them against the parameters that the channel we'd create would use instead.
+   */
+  private def validateDefaultRelayParams(): Boolean = {
+    val relayFees = nodeParams.relayParams.defaultFees(announceChannel = false)
+    val htlcMinimumOk = nodeParams.channelConf.htlcMinimum <= r.amountToForward
+    val expiryDeltaOk = nodeParams.channelConf.expiryDelta <= r.expiryDelta
+    // The inbound fees advertised for the incoming channel apply here as well: the sender took them into account when
+    // computing the fee they paid for our hop (see acceptableInboundFees).
+    val feesOk = acceptableInboundFees.exists(inbound => totalFee(r.amountToForward, relayFees, inbound) <= r.relayFeeMsat)
+    htlcMinimumOk && expiryDeltaOk && feesOk
   }
 
   private def makeCmdFailHtlc(originHtlcId: Long, failure: FailureMessage, delay_opt: Option[FiniteDuration] = None): CMD_FAIL_HTLC = {

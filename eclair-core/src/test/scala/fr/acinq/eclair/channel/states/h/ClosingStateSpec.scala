@@ -515,6 +515,35 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     extractPreimageFromHtlcSuccess(f)
   }
 
+  test("recv WatchOutputSpentTriggered (extract preimage from HTLC-success tx with annex, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+
+    // Alice sends an htlc to Bob.
+    val (preimage, htlc) = addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    // Bob has the preimage, but he force-closes before Alice receives it.
+    bob ! CMD_FULFILL_HTLC(htlc.id, preimage, None, None)
+    bob2alice.expectMsgType[UpdateFulfillHtlc] // ignored
+    val (rcp, closingTxs) = localClose(bob, bob2blockchain, htlcSuccessCount = 1)
+    val htlcSuccessTx = closingTxs.htlcSuccessTxs.head
+    // Bob includes an annex in its witness (the signature will be incorrect but we don't check it here).
+    val annexWitness = htlcSuccessTx.txIn.head.witness.copy(stack = htlcSuccessTx.txIn.head.witness.stack :+ ByteVector.fromValidHex("50deadbeef"))
+    val htlcSuccessTxWithAnnex = htlcSuccessTx.updateWitness(0, annexWitness)
+
+    // Alice extracts the preimage and forwards it upstream.
+    alice ! WatchFundingSpentTriggered(rcp.commitTx)
+    alice ! WatchOutputSpentTriggered(htlc.amountMsat.truncateToSatoshi, htlcSuccessTxWithAnnex)
+    inside(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFulfill]]) { fulfill =>
+      assert(fulfill.htlc == htlc)
+      assert(fulfill.result.paymentPreimage == preimage)
+      assert(fulfill.origin == alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id))
+    }
+
+    // The HTLC-success transaction confirms: nothing to do, preimage has already been relayed.
+    alice ! WatchTxConfirmedTriggered(alice.nodeParams.currentBlockHeight, 6, htlcSuccessTxWithAnnex)
+    alice2relayer.expectNoMessage(100 millis)
+  }
+
   private def extractPreimageFromRemovedHtlc(f: FixtureParam): Unit = {
     import f._
 

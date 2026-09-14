@@ -266,12 +266,25 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
     Behaviors.receiveMessagePartial {
       case inputDetails: InputDetails if inputDetails.unusableInputs.isEmpty =>
         // This funding iteration did not add any unusable inputs, so we can directly return the results.
+        // bitcoind chose the wallet inputs and the change output: we verify that the resulting mining fee matches the
+        // target feerate, otherwise a malicious bitcoind could make us burn our wallet funds to miners. At this point
+        // the transaction only contains our inputs and outputs (and the shared input), so its fee is what we pay.
+        val amountIn = inputDetails.usableInputs.map(_.txOut.amount).sum
+        val amountOut = fundedTx.txOut.map(_.amount).sum
+        val maxWeight = fundedTx.weight() + inputDetails.usableInputs.map {
+          case _: Input.Shared => fundingParams.sharedInput_opt.map(_.weight).getOrElse(0)
+          case _ => Transactions.maxWalletInputWeight
+        }.sum
+        val maxFee = Transactions.weight2fee(fundingParams.targetFeerate * 1.5, maxWeight)
         // The transaction should still contain the funding output.
         if (fundedTx.txOut.count(_.publicKeyScript == fundingPubkeyScript) != 1) {
           log.error("funded transaction is missing the funding output: {}", fundedTx)
           sendResultAndStop(FundingFailed, fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
         } else if (fundingParams.localOutputs.exists(o => !fundedTx.txOut.contains(o))) {
           log.error("funded transaction is missing one of our local outputs: {}", fundedTx)
+          sendResultAndStop(FundingFailed, fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
+        } else if (amountIn - amountOut > maxFee) {
+          log.error("funded transaction pays excessive mining fees (fee={} max={} targetFeerate={}): bitcoin core may be malicious", amountIn - amountOut, maxFee, fundingParams.targetFeerate)
           sendResultAndStop(FundingFailed, fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
         } else {
           val nonChangeOutputs = fundingParams.localOutputs.map(o => Output.Local.NonChange(UInt64(0), o.amount, o.publicKeyScript))

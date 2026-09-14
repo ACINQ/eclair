@@ -74,6 +74,7 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
 
 case class OnChainFeeConf(feeTargets: FeeTargets,
                           maxClosingFeerate: FeeratePerKw,
+                          maxFundingFeerate: FeeratePerKw,
                           safeUtxosThreshold: Int,
                           spendAnchorWithoutHtlcs: Boolean,
                           anchorWithoutHtlcsMaxFee: Satoshi,
@@ -99,7 +100,12 @@ case class OnChainFeeConf(feeTargets: FeeTargets,
     }
   }
 
-  def getFundingFeerate(feerates: FeeratesPerKw): FeeratePerKw = feeTargets.funding.getFeerate(feerates)
+  /**
+   * Get the feerate that should apply to funding and splice transactions. We cap it with a value configured by the node
+   * operator: our fee estimator relies on external data (bitcoind or a third-party API) that could be inaccurate or
+   * malicious, and would otherwise make us pay arbitrarily high mining fees.
+   */
+  def getFundingFeerate(feerates: FeeratesPerKw): FeeratePerKw = feeTargets.funding.getFeerate(feerates).min(maxFundingFeerate)
 
   /**
    * Get the feerate that should apply to a channel commitment transaction:

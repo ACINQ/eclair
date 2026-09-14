@@ -424,7 +424,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("recv ClosingSigned (other side ignores our fee range, max iterations reached)") { f =>
     import f._
-    alice.setBitcoinCoreFeerate(FeeratePerKw(1000 sat))
+    alice.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(1000 sat)))
     aliceClose(f)
     for (_ <- 1 to Channel.MAX_NEGOTIATION_ITERATIONS) {
       val aliceClosing = alice2bob.expectMsgType[ClosingSigned]
@@ -436,6 +436,31 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.length == 1)
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx == alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.head.tx)
+  }
+
+  test("recv ClosingSigned (fee too high, funder)") { f =>
+    import f._
+    alice.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(1000 sat)))
+    aliceClose(f)
+    val aliceClosing1 = alice2bob.expectMsgType[ClosingSigned]
+    assert(aliceClosing1.feeSatoshis == 770.sat)
+    val aliceBalance = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.latest.localCommit.spec.toLocal.truncateToSatoshi
+    // Bob ignores our fee range and proposes a fee that would burn Alice's whole balance to miners: Alice refuses to sign.
+    val (_, bobClosing1) = makeLegacyClosingSigned(f, aliceBalance + aliceBalance)
+    bob2alice.send(alice, bobClosing1)
+    alice2bob.expectMsgType[Warning]
+    alice2bob.expectNoMessage(100 millis)
+    assert(alice.stateName == NEGOTIATING)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.length == 1)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.isEmpty)
+    // Bob proposes a fee that is above our fee range, but below our maximum closing feerate: Alice keeps negotiating.
+    val (_, bobClosing2) = makeLegacyClosingSigned(f, 2500 sat)
+    bob2alice.send(alice, bobClosing2)
+    val aliceClosing2 = alice2bob.expectMsgType[ClosingSigned]
+    assert(aliceClosing1.feeSatoshis < aliceClosing2.feeSatoshis)
+    assert(aliceClosing2.feeSatoshis < 2500.sat)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.length == 2)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.nonEmpty)
   }
 
   test("recv ClosingSigned (fee too low, fundee)") { f =>

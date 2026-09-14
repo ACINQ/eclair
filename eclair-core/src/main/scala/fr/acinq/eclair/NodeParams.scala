@@ -470,11 +470,14 @@ object NodeParams extends Logging {
     )
 
     def getRelayFees(relayFeesConfig: Config): RelayFees = {
-      val feeBase = MilliSatoshi(relayFeesConfig.getInt("fee-base-msat"))
-      // fee base is in msat but is encoded on 32 bits and not 64 in the BOLTs, which is why it has
-      // to be below 0x100000000 msat which is about 42 mbtc
-      require(feeBase <= MilliSatoshi(0xFFFFFFFFL), "fee-base-msat must be below 42 mbtc")
-      RelayFees(feeBase, relayFeesConfig.getInt("fee-proportional-millionths"))
+      // relay fees are encoded on 32 bits and not 64 in the BOLTs, which is why they must fit in a uint32: the base fee
+      // must thus be below 0x100000000 msat, which is about 42 mbtc. Note that we read them as longs, otherwise values
+      // between 2^31 and 2^32 couldn't be expressed at all and the checks below couldn't be reached.
+      val feeBase = MilliSatoshi(relayFeesConfig.getLong("fee-base-msat"))
+      require(MilliSatoshi(0) <= feeBase && feeBase <= MilliSatoshi(0xFFFFFFFFL), "fee-base-msat must be between 0 and 42 mbtc")
+      val feeProportionalMillionths = relayFeesConfig.getLong("fee-proportional-millionths")
+      require(0 <= feeProportionalMillionths && feeProportionalMillionths <= 0xFFFFFFFFL, "fee-proportional-millionths must be between 0 and 0xffffffff")
+      RelayFees(feeBase, feeProportionalMillionths)
     }
 
     def getPathFindingConf(config: Config, name: String): PathFindingConf = PathFindingConf(
@@ -633,6 +636,7 @@ object NodeParams extends Logging {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
         maxClosingFeerate = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.max-closing-feerate"))).perKw,
+        maxFundingFeerate = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.max-funding-feerate"))).perKw,
         safeUtxosThreshold = config.getInt("on-chain-fees.safe-utxos-threshold"),
         spendAnchorWithoutHtlcs = config.getBoolean("on-chain-fees.spend-anchor-without-htlcs"),
         anchorWithoutHtlcsMaxFee = Satoshi(config.getLong("on-chain-fees.anchor-without-htlcs-max-fee-satoshis")),
@@ -665,6 +669,7 @@ object NodeParams extends Logging {
         publicChannelFees = getRelayFees(config.getConfig("relay.fees.public-channels")),
         privateChannelFees = getRelayFees(config.getConfig("relay.fees.private-channels")),
         minTrampolineFees = getRelayFees(config.getConfig("relay.fees.min-trampoline")),
+        minLocalTrampolineFees = getRelayFees(config.getConfig("relay.fees.min-local-trampoline")),
         resetExistingChannels = config.getBoolean("relay.fees.reset-existing-channels"),
         enforcementDelay = FiniteDuration(config.getDuration("relay.fees.enforcement-delay").getSeconds, TimeUnit.SECONDS),
         asyncPaymentsParams = AsyncPaymentsParams(asyncPaymentHoldTimeoutBlocks, asyncPaymentCancelSafetyBeforeTimeoutBlocks),

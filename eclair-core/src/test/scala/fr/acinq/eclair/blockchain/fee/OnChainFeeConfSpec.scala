@@ -25,10 +25,11 @@ class OnChainFeeConfSpec extends AnyFunSuite {
 
   private val defaultFeeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium)
   private val defaultMaxClosingFeerate = FeeratePerKw(10_000 sat)
+  private val defaultMaxFundingFeerate = FeeratePerKw(100_000 sat)
   private val defaultFeerateTolerance = FeerateTolerance(0.5, 2.0, FeeratePerKw(2500 sat), DustTolerance(15000 sat, closeOnUpdateFeeOverflow = false))
 
   test("should update fee when diff ratio exceeded") {
-    val feeConf = OnChainFeeConf(defaultFeeTargets, defaultMaxClosingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
+    val feeConf = OnChainFeeConf(defaultFeeTargets, defaultMaxClosingFeerate, defaultMaxFundingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(1000 sat), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat))
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(900 sat), ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat))
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(1100 sat), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat))
@@ -37,7 +38,7 @@ class OnChainFeeConfSpec extends AnyFunSuite {
   }
 
   test("should update fee to set to 1 sat/byte") {
-    val feeConf = OnChainFeeConf(defaultFeeTargets, defaultMaxClosingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
+    val feeConf = OnChainFeeConf(defaultFeeTargets, defaultMaxClosingFeerate, defaultMaxFundingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
     // We always use 1 sat/byte for mobile wallet commitment formats, regardless of the current feerate.
     val feerates = FeeratesPerKw.single(FeeratePerKw(FeeratePerByte(20 sat)))
     assert(feeConf.getCommitmentFeerate(feerates, randomKey().publicKey, UnsafeLegacyAnchorOutputsCommitmentFormat) == FeeratePerKw(FeeratePerByte(1 sat)))
@@ -52,7 +53,7 @@ class OnChainFeeConfSpec extends AnyFunSuite {
     val defaultMaxCommitFeerate = defaultFeerateTolerance.anchorOutputMaxCommitFeerate
     val overrideNodeId = randomKey().publicKey
     val overrideMaxCommitFeerate = defaultMaxCommitFeerate * 2
-    val feeConf = OnChainFeeConf(defaultFeeTargets, defaultMaxClosingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map(overrideNodeId -> defaultFeerateTolerance.copy(anchorOutputMaxCommitFeerate = overrideMaxCommitFeerate)))
+    val feeConf = OnChainFeeConf(defaultFeeTargets, defaultMaxClosingFeerate, defaultMaxFundingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map(overrideNodeId -> defaultFeerateTolerance.copy(anchorOutputMaxCommitFeerate = overrideMaxCommitFeerate)))
 
     val feerates1 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = defaultMaxCommitFeerate / 2, minimum = FeeratePerKw(250 sat))
     assert(feeConf.getCommitmentFeerate(feerates1, defaultNodeId, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat) == defaultMaxCommitFeerate / 2)
@@ -88,7 +89,7 @@ class OnChainFeeConfSpec extends AnyFunSuite {
   test("get closing feerate") {
     val maxClosingFeerate = FeeratePerKw(2500 sat)
     val feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Fast)
-    val feeConf = OnChainFeeConf(feeTargets, maxClosingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
+    val feeConf = OnChainFeeConf(feeTargets, maxClosingFeerate, defaultMaxFundingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
     val feerates1 = FeeratesPerKw.single(FeeratePerKw(1000 sat)).copy(fast = FeeratePerKw(1500 sat))
     assert(feeConf.getClosingFeerate(feerates1, None) == FeeratePerKw(1500 sat))
     val feerates2 = FeeratesPerKw.single(FeeratePerKw(1000 sat)).copy(fast = FeeratePerKw(500 sat))
@@ -97,6 +98,17 @@ class OnChainFeeConfSpec extends AnyFunSuite {
     assert(feeConf.getClosingFeerate(feerates3, None) == maxClosingFeerate)
     assert(feeConf.getClosingFeerate(feerates3, maxClosingFeerateOverride_opt = Some(FeeratePerKw(2600 sat))) == FeeratePerKw(2600 sat))
     assert(feeConf.getClosingFeerate(feerates3, maxClosingFeerateOverride_opt = Some(FeeratePerKw(2400 sat))) == FeeratePerKw(2400 sat))
+  }
+
+  test("get funding feerate") {
+    val maxFundingFeerate = FeeratePerKw(5000 sat)
+    val feeTargets = FeeTargets(funding = ConfirmationPriority.Fast, closing = ConfirmationPriority.Medium)
+    val feeConf = OnChainFeeConf(feeTargets, defaultMaxClosingFeerate, maxFundingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
+    val feerates1 = FeeratesPerKw.single(FeeratePerKw(1000 sat)).copy(fast = FeeratePerKw(2500 sat))
+    assert(feeConf.getFundingFeerate(feerates1) == FeeratePerKw(2500 sat))
+    // Our fee estimator returns an absurdly high feerate: we cap it with the configured maximum.
+    val feerates2 = FeeratesPerKw.single(FeeratePerKw(1000 sat)).copy(fast = FeeratePerKw(500_000 sat))
+    assert(feeConf.getFundingFeerate(feerates2) == maxFundingFeerate)
   }
 
   test("fee difference too high") {

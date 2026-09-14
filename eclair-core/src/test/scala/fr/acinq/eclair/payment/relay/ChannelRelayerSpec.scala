@@ -263,9 +263,12 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val (peerReadyManager, switchboard) = createWakeUpActors()
 
-    val u = createLocalUpdate(channelId1, feeBaseMsat = 5000 msat, feeProportionalMillionths = 0)
-    val payload = createBlindedPayload(Left(outgoingNodeId), u.channelUpdate, isIntroduction = false)
-    val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
+    // We don't have a channel with the next node: the blinded path must use our node's default relay parameters.
+    val defaultFees = nodeParams.relayParams.privateChannelFees
+    val u = createLocalUpdate(channelId1, feeBaseMsat = defaultFees.feeBase, feeProportionalMillionths = defaultFees.feeProportionalMillionths)
+    val update = u.channelUpdate.copy(cltvExpiryDelta = nodeParams.channelConf.expiryDelta)
+    val payload = createBlindedPayload(Left(outgoingNodeId), update, isIntroduction = false)
+    val r = createValidIncomingPacket(payload, outgoingAmount + nodeFee(defaultFees, outgoingAmount), outgoingExpiry + update.cltvExpiryDelta)
 
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
 
@@ -279,8 +282,65 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     // We don't have any channel, so we attempt on-the-fly funding, but the peer is not available.
     val fwdNodeId = register.expectMessageType[ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
     assert(fwdNodeId.nodeId == outgoingNodeId)
+    assert(fwdNodeId.message.expiry == outgoingExpiry)
     fwdNodeId.replyTo ! Register.ForwardNodeIdFailure(fwdNodeId)
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), None, commit = true))
+  }
+
+  test("fail to relay blinded payment (on-the-fly funding with expiry delta too small)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
+    import f._
+
+    val (peerReadyManager, switchboard) = createWakeUpActors()
+
+    // We don't have a channel with the next node, and the blinded path uses an expiry delta that is smaller than what
+    // our node requires: if we relayed that HTLC, the downstream HTLC would expire at the same time as the upstream HTLC.
+    val defaultFees = nodeParams.relayParams.privateChannelFees
+    val u = createLocalUpdate(channelId1, feeBaseMsat = defaultFees.feeBase, feeProportionalMillionths = defaultFees.feeProportionalMillionths)
+    val update = u.channelUpdate.copy(cltvExpiryDelta = CltvExpiryDelta(0))
+    val payload = createBlindedPayload(Left(outgoingNodeId), update, isIntroduction = false)
+    val r = createValidIncomingPacket(payload, outgoingAmount + nodeFee(defaultFees, outgoingAmount), outgoingExpiry)
+    assert(r.outgoingCltv == r.add.cltvExpiry)
+
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
+
+    // We try to wake-up the next node.
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 1)
+    val peerInfo = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+    assert(peerInfo.remoteNodeId == outgoingNodeId)
+    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty)
+    cleanUpWakeUpActors(peerReadyManager, switchboard)
+
+    // We must not attempt on-the-fly funding: we fail the payment without funding a channel.
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), None, commit = true))
+    register.expectNoMessage(100 millis)
+  }
+
+  test("fail to relay blinded payment (on-the-fly funding with fee too low)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
+    import f._
+
+    val (peerReadyManager, switchboard) = createWakeUpActors()
+
+    // We don't have a channel with the next node, and the blinded path uses a fee that is lower than our node's default
+    // relay fees, which is what the channel we would create would use.
+    val defaultFees = nodeParams.relayParams.privateChannelFees
+    val u = createLocalUpdate(channelId1, feeBaseMsat = 5000 msat, feeProportionalMillionths = 0)
+    val update = u.channelUpdate.copy(cltvExpiryDelta = nodeParams.channelConf.expiryDelta)
+    val payload = createBlindedPayload(Left(outgoingNodeId), update, isIntroduction = false)
+    val r = createValidIncomingPacket(payload, outgoingAmount + update.feeBaseMsat, outgoingExpiry + update.cltvExpiryDelta)
+    assert(r.relayFeeMsat < nodeFee(defaultFees, outgoingAmount))
+
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
+
+    // We try to wake-up the next node.
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 1)
+    val peerInfo = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+    assert(peerInfo.remoteNodeId == outgoingNodeId)
+    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty)
+    cleanUpWakeUpActors(peerReadyManager, switchboard)
+
+    // We must not attempt on-the-fly funding: we fail the payment without funding a channel.
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), None, commit = true))
+    register.expectNoMessage(100 millis)
   }
 
   test("relay blinded payment (on-the-fly funding not attempted)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>

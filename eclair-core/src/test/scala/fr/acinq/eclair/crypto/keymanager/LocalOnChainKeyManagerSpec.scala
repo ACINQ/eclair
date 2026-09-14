@@ -120,6 +120,43 @@ class LocalOnChainKeyManagerSpec extends AnyFunSuite {
     }
   }
 
+  test("reject derivation paths that are not part of our wallet") {
+    val seed = randomBytes32()
+    val onChainKeyManager = new LocalOnChainKeyManager("eclair", seed, TimestampSecond.now(), Block.Testnet3GenesisBlock.hash)
+    val (_, accountPub) = DeterministicWallet.ExtendedPublicKey.decode(onChainKeyManager.masterPubKey(0, AddressType.P2wpkh))
+    val mainPub = DeterministicWallet.derivePublicKey(accountPub, 0)
+    val mainKey = DeterministicWallet.derivePublicKey(mainPub, 0).publicKey
+    // Bitcoin Core knows our account xpub: it can derive keys in branches that our watch-only wallet doesn't track.
+    val deeperKey = DeterministicWallet.derivePublicKey(DeterministicWallet.derivePublicKey(mainPub, 0), 0).publicKey
+    val otherBranchKey = DeterministicWallet.derivePublicKey(DeterministicWallet.derivePublicKey(accountPub, 2), 0).publicKey
+    val invalidPaths = Seq(
+      (deeperKey, "m/84'/1'/0'/0/0/0"),
+      (otherBranchKey, "m/84'/1'/0'/2/0"),
+      (mainKey, "m/84'/1'/0'/0"),
+    )
+
+    // We must not trust addresses using those paths.
+    onChainKeyManager.derivePublicKey(DeterministicWallet.KeyPath("m/84'/1'/0'/0/0"))
+    invalidPaths.foreach { case (_, path) =>
+      val error = intercept[IllegalArgumentException](onChainKeyManager.derivePublicKey(DeterministicWallet.KeyPath(path)))
+      assert(error.getMessage.contains("not part of our wallet"))
+    }
+
+    // We must not accept change outputs using those paths when signing.
+    val utxo = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1_000_000), Script.pay2wpkh(mainKey)) :: Nil, lockTime = 0)
+    val mainPath = new KeyPathWithMaster(0, new fr.acinq.bitcoin.KeyPath("m/84'/1'/0'/0/0"))
+    invalidPaths.foreach { case (changeKey, changePath) =>
+      val tx = Transaction(version = 2, txIn = TxIn(OutPoint(utxo, 0), Nil, fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL) :: Nil, txOut = TxOut(Satoshi(900_000), Script.pay2wpkh(changeKey)) :: Nil, lockTime = 0)
+      val Right(psbt) = for {
+        p0 <- new Psbt(tx).updateWitnessInput(OutPoint(utxo, 0), utxo.txOut(0), null, Script.pay2pkh(mainKey), null, java.util.Map.of(mainKey, mainPath), null, null, java.util.Map.of())
+        p1 <- p0.updateNonWitnessInput(utxo, 0, null, null, java.util.Map.of())
+        p2 <- p1.updateWitnessOutput(0, null, null, java.util.Map.of(changeKey, new KeyPathWithMaster(0, new fr.acinq.bitcoin.KeyPath(changePath))), null, java.util.Map.of())
+      } yield p2
+      val Failure(error) = onChainKeyManager.sign(psbt, Seq(0), Seq(0))
+      assert(error.getMessage.contains("could not verify output 0"))
+    }
+  }
+
   test("sign psbt (BIP86)") {
     val seed = randomBytes32()
     val onChainKeyManager = new LocalOnChainKeyManager("eclair", seed, TimestampSecond.now(), Block.Testnet3GenesisBlock.hash)

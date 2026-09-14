@@ -112,7 +112,16 @@ package object eclair {
    * @param paymentAmount   payment amount in millisatoshi
    * @return the fee that a node should be paid to forward an HTLC of 'paymentAmount' millisatoshis
    */
-  def nodeFee(baseFee: MilliSatoshi, proportionalFee: Long, paymentAmount: MilliSatoshi): MilliSatoshi = baseFee + (paymentAmount * proportionalFee) / 1000000
+  def nodeFee(baseFee: MilliSatoshi, proportionalFee: Long, paymentAmount: MilliSatoshi): MilliSatoshi = {
+    // Our peers choose the proportional fee they advertise in their channel_update, where it is encoded on 32 bits.
+    // A large value combined with a large payment amount overflows a signed 64-bit multiplication, which would return
+    // a *negative* fee: that would make the corresponding hop look free during path-finding, and would let a peer
+    // relay an HTLC for more than what it paid us. We saturate instead: a fee that we cannot represent must never look
+    // cheap.
+    val fee = BigInt(baseFee.toLong) + BigInt(paymentAmount.toLong) * proportionalFee / 1000000
+    val boundedFee = fee.max(BigInt(Long.MinValue)).min(BigInt(Long.MaxValue))
+    MilliSatoshi(boundedFee.toLong)
+  }
 
   def nodeFee(relayFees: RelayFees, paymentAmount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees.feeBase, relayFees.feeProportionalMillionths, paymentAmount)
 
