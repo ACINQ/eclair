@@ -1223,13 +1223,6 @@ object InteractiveTxSigningSession {
       localCommitIndex == commitments.localCommitIndex && remoteCommit.index == commitments.remoteCommitIndex
     }
 
-    // For the legacy splice protocol, we use the next_commitment_number to let our peer know whether they needed to
-    // retransmit commit_sig or not. We're now using an explicit bit instead, but need to maintain backwards-compatibility.
-    def nextLocalCommitmentNumber(useLegacySpliceProtocol: Boolean): Long = localCommit match {
-      case Left(unsignedCommit) if useLegacySpliceProtocol => unsignedCommit.index
-      case _ => localCommitIndex + 1
-    }
-
     def localFundingKey(channelKeys: ChannelKeys): PrivateKey = channelKeys.fundingKey(fundingTxIndex)
 
     def commitInput(fundingKey: PrivateKey): InputInfo = {
