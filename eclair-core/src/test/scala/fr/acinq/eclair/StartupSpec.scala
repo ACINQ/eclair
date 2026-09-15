@@ -71,6 +71,24 @@ class StartupSpec extends AnyFunSuite {
     assert(nodeParamsAttempt.isFailure && nodeParamsAttempt.failed.get.getMessage.contains("alias, too long"))
   }
 
+  test("NodeParams should fail if the alias contains control characters") {
+    val illegalAliases = Seq(
+      "alice" + 0x0000.toChar, // NULL (Cc)
+      "alice" + 0x0007.toChar, // BEL (Cc)
+      "alice" + 0x200b.toChar, // zero-width space (Cf)
+      s"${0xfeff.toChar}alice", // zero-width no-break space / BOM (Cf)
+    )
+    illegalAliases.foreach { alias =>
+      val conf = ConfigFactory.parseMap(Map("node-alias" -> alias).asJava).withFallback(defaultConf)
+      val nodeParamsAttempt = Try(makeNodeParamsWithDefaults(conf))
+      assert(nodeParamsAttempt.isFailure && nodeParamsAttempt.failed.get.getMessage.contains("control characters"))
+    }
+    // A valid alias with multi-byte UTF-8 characters (including a supplementary code point) is accepted.
+    val validAlias = "alice " + new String(Character.toChars(0x1f004)) // mahjong tile red dragon (So)
+    val validConf = ConfigFactory.parseMap(Map("node-alias" -> validAlias).asJava).withFallback(defaultConf)
+    assert(Try(makeNodeParamsWithDefaults(validConf)).isSuccess)
+  }
+
   test("NodeParams should fail with deprecated global-features, local-features or hex features") {
     for (deprecated <- Seq("global-features", "local-features")) {
       val illegalGlobalFeaturesConf = ConfigFactory.parseString(deprecated + " = \"0200\"")

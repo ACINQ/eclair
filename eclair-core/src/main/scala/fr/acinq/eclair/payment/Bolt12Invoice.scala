@@ -63,6 +63,8 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
       Left("Invoice expired")
     } else if (request.amount != amount) {
       Left("Incompatible amount")
+    } else if (!features.isMinimallyEncoded) {
+      Left("Non minimally-encoded features")
     } else if (!Features.areCompatible(request.features, features.bolt12Features())) {
       Left("Incompatible features")
     } else if (!checkSignature()) {
