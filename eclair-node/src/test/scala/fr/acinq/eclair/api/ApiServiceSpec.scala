@@ -169,6 +169,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         nodeId = aliceNodeId,
         state = Peer.CONNECTED,
         features = Some(Features(Features.ChannelRangeQueries -> FeatureSupport.Optional).initFeatures()),
+        fundingRates_opt = None,
         address = Some(NodeAddress.fromParts("127.0.0.1", 9731).get),
         channels = Set(ActorRef.noSender)),
       PeerInfo(
@@ -176,6 +177,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         nodeId = bobNodeId,
         state = Peer.DISCONNECTED,
         features = None,
+        fundingRates_opt = None,
         address = None,
         channels = Set(ActorRef.noSender))))
 
@@ -279,7 +281,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val fundingTxId = TxId.fromValidHex("a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 100 sat))
+    eclair.open(any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 100 sat))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100002").toEntity) ~>
@@ -290,7 +292,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e with fundingTxId=a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4 and fees=100 sat\"")
-        eclair.open(nodeId, 100002 sat, None, None, None, None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.open(nodeId, 100002 sat, None, None, None, None, None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -316,7 +318,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val fundingTxId = TxId.fromValidHex("a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 500 sat))
+    eclair.open(any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 500 sat))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "anchor_outputs_zero_fee_htlc_tx").toEntity) ~>
@@ -327,7 +329,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e with fundingTxId=a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4 and fees=500 sat\"")
-        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), None, None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), None, None, None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 

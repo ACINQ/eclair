@@ -58,8 +58,7 @@ object InitTlvCodecs {
   val initTlvCodec = tlvStream(discriminated[InitTlv].by(varint)
     .typecase(UInt64(1), networks)
     .typecase(UInt64(3), remoteAddress)
-    // We use a temporary TLV while the spec is being reviewed.
-    .typecase(UInt64(1339), willFund)
+    .typecase(UInt64(5), willFund)
   )
 
 }
