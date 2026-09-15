@@ -62,8 +62,6 @@
                             <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
                         </manifest>
                         <manifestEntries>
-                            <!-- we hide the git commit in the Specification-Version standard field-->
-                            <Specification-Version>${git.commit.id}</Specification-Version>
                             <Url>${project.parent.url}</Url>
                         </manifestEntries>
                     </archive>
