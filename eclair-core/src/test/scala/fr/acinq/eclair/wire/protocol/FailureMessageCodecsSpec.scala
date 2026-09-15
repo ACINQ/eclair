@@ -69,8 +69,9 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
       ExpiryTooFar() -> hex"0015",
       InvalidOnionPayload(UInt64(561), 1105) -> hex"4016 fd0231 0451",
       PaymentTimeout() -> hex"0017",
-      TrampolineFeeInsufficient() -> hex"2033",
-      TrampolineExpiryTooSoon() -> hex"2034",
+      TemporaryTrampolineFailure() -> hex"2019",
+      TrampolineFeeOrExpiryInsufficient(100 msat, 50, CltvExpiryDelta(36)) -> hex"201a 00000064 00000032 0024",
+      UnknownNextTrampoline() -> hex"401b",
     )
     testCases.foreach { case (msg, bin) =>
       val encoded = failureMessageCodec.encode(msg).require
