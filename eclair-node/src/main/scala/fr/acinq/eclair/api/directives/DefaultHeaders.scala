@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.api.directives
 
-import akka.http.scaladsl.model.HttpMethods.POST
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
 import akka.http.scaladsl.model.headers._
 import akka.http.scaladsl.server.Directive0
@@ -29,7 +28,7 @@ trait DefaultHeaders {
    */
   def eclairHeaders: Directive0 = respondWithDefaultHeaders(customHeaders)
 
-  private val customHeaders = `Access-Control-Allow-Headers`("Content-Type, Authorization") ::
-    `Access-Control-Allow-Methods`(POST) ::
-    `Cache-Control`(public, `no-store`, `max-age`(0)) :: Nil
+  // NB: we deliberately don't send any CORS header. This API cannot be used from a web browser (see `OriginDirective`),
+  // so there is no cross-origin access to grant: advertising `Access-Control-Allow-*` would only suggest otherwise.
+  private val customHeaders = `Cache-Control`(public, `no-store`, `max-age`(0)) :: Nil
 }

@@ -192,6 +192,52 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
+  test("API returns forbidden for requests made from a browser") {
+    Post("/plugin-test") ~>
+      addHeader("Origin", "http://evil.com") ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockApi().route) ~>
+      check {
+        assert(handled)
+        assert(status == Forbidden)
+      }
+  }
+
+  test("API returns forbidden for requests made from a browser, even without credentials") {
+    Post("/plugin-test") ~>
+      addHeader("Origin", "http://evil.com") ~>
+      Route.seal(mockApi().route) ~>
+      check {
+        assert(handled)
+        assert(status == Forbidden)
+      }
+  }
+
+  test("the websocket rejects requests made from a browser") {
+    val wsClient = WSProbe()
+    WS("/ws", wsClient.flow) ~>
+      addHeader("Origin", "http://evil.com") ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockApi().route) ~>
+      check {
+        assert(handled)
+        assert(status == Forbidden)
+      }
+  }
+
+  test("API returns forbidden for a sandboxed browser context (Origin: null)") {
+    // Sandboxed iframes and documents loaded from `data:` or `file:` URLs send the opaque origin `null`. That is still
+    // a browser request and must be rejected, so we check for the presence of the header rather than its value.
+    Post("/plugin-test") ~>
+      addHeader("Origin", "null") ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockApi().route) ~>
+      check {
+        assert(handled)
+        assert(status == Forbidden)
+      }
+  }
+
   test("plugin injects its own route") {
     Post("/plugin-test") ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
