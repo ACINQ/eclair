@@ -295,4 +295,13 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <profile>
+            <id>with-eclair-fuzz</id>
+            <modules>
+                <module>eclair-fuzz</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>
