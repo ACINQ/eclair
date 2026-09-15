@@ -511,7 +511,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           888       888 d88P     888 8888888 888    Y888      88888888 "Y88888P"   "Y88888P"  888
    */
 
-  when(NORMAL)(handleExceptions {
+  // NB: the NORMAL state handler is split into several partial functions: a single one would generate a
+  // method that is too large for the JVM (especially once instrumented for code coverage).
+  when(NORMAL)(handleExceptions(handleNormalCommands orElse handleNormalSplice orElse handleNormalDisconnect))
+
+  /** Handle HTLCs, commitments, shutdown and channel updates in the NORMAL state. */
+  private def handleNormalCommands: StateFunction = {
     case Event(c: ForbiddenCommandDuringQuiescenceNegotiation, d: DATA_NORMAL) if d.isNegotiatingQuiescence =>
       val error = ForbiddenDuringQuiescence(d.channelId, c.getClass.getSimpleName)
       c match {
@@ -1031,7 +1036,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           // we use goto() instead of stay() because we want to fire transitions
           goto(NORMAL) using d.copy(channelUpdate = channelUpdate1) storing()
       }
+  }
 
+  /** Handle quiescence and splices in the NORMAL state. */
+  private def handleNormalSplice: StateFunction = {
     case Event(cmd: CMD_SPLICE, d: DATA_NORMAL) =>
       if (!d.commitments.remoteChannelParams.initFeatures.hasFeature(Features.Splicing) && !d.commitments.remoteChannelParams.initFeatures.hasFeature(Features.SplicePrototype)) {
         log.warning("cannot initiate splice, peer doesn't support splicing")
@@ -1623,7 +1631,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           stay() using d.copy(commitments = commitments1) storing() sending spliceLocked_opt.toSeq ++ localAnnSigs_opt.toSeq
         case Left(_) => stay()
       }
+  }
 
+  /** Handle disconnections and remote errors in the NORMAL state. */
+  private def handleNormalDisconnect: StateFunction = {
     case Event(INPUT_DISCONNECTED, d: DATA_NORMAL) =>
       // we cancel the timer that would have made us send the enabled update after reconnection (flappy channel protection)
       cancelTimer(Reconnected.toString)
@@ -1649,7 +1660,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
 
-  })
+  }
 
   /*
            .d8888b.  888      .d88888b.   .d8888b. 8888888 888b    888  .d8888b.
