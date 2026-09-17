@@ -70,6 +70,7 @@ object ZmqWatcher {
   private case class AnalyzeBlockId(blockId: BlockId, remaining: Int) extends Command
   private case class AnalyzeBlock(block: Block, remaining: Int) extends Command
   private case class SetWatchHint(w: GenericWatch, hint: WatchHint) extends Command
+  private case class ClearWatchHint(w: GenericWatch) extends Command
 
   final case class ValidateRequest(replyTo: ActorRef[ValidateResult], ann: ChannelAnnouncement) extends Command
   final case class ValidateResult(c: ChannelAnnouncement, fundingTx: Either[Throwable, (Transaction, UtxoStatus)])
@@ -103,6 +104,8 @@ object ZmqWatcher {
     def txId: TxId
     /** Index of the outpoint to watch. */
     def outputIndex: Int
+    /** outpoint to watch */
+    def outPoint: OutPoint = OutPoint(txId, outputIndex)
     /**
      * TxIds of potential spending transactions; most of the time we know the txs, and it allows for optimizations.
      * This argument can safely be ignored by watcher implementations.
@@ -163,6 +166,11 @@ object ZmqWatcher {
    * reach a specific block height. This is for example the case for transactions with a CSV delay.
    */
   private case class CheckAfterBlock(blockHeight: BlockHeight) extends WatchHint
+  /**
+   * When checking whether a watched output was spent was inconclusive (e.g. we detected that it was spent, but
+   * couldn't find the spending transaction), we must check again at every new block until we reach a conclusion.
+   */
+  private case object RetryCheckSpent extends WatchHint
   // @formatter:on
 
   def apply(nodeParams: NodeParams, blockCount: AtomicLong, client: BitcoinCoreClient): Behavior[Command] =
@@ -335,6 +343,10 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
                 case Some(CheckAfterBlock(delayUntilBlock)) if currentHeight < delayUntilBlock => Future.successful(())
                 case _ => checkConfirmed(w, currentHeight)
               }
+            // We only re-check watches for which a previous check was inconclusive: spends are otherwise detected by
+            // watching the mempool and new blocks, which doesn't require any RPC call. Only watches on our own
+            // channels can be in that state, there are much fewer of them than watches on external channels.
+            case (w: WatchSpent[_], Some(RetryCheckSpent)) => checkSpent(w, retryPending = true)
           })
         }
         timers.startSingleTimer(AnalyzeLastBlock(nodeParams.channelConf.scanPreviousBlocksDepth), Random.nextLong(nodeParams.channelConf.maxBlockProcessingDelay.toMillis + 1).milliseconds)
@@ -343,6 +355,13 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
       case SetWatchHint(w, hint) =>
         val watches1 = watches.get(w) match {
           case Some(_) => watches + (w -> Some(hint))
+          case None => watches
+        }
+        watching(watches1, watchedUtxos, analyzedBlocks)
+
+      case ClearWatchHint(w) =>
+        val watches1 = watches.get(w) match {
+          case Some(_) => watches + (w -> None)
           case None => watches
         }
         watching(watches1, watchedUtxos, analyzedBlocks)
@@ -370,7 +389,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
           case _ if watches.contains(w) =>
             Ignore // we ignore duplicates
           case w: WatchSpent[_] =>
-            checkSpent(w)
+            checkSpent(w, retryPending = false)
             Keep
           case w: WatchConfirmed[_] =>
             checkConfirmed(w, BlockHeight(blockHeight.get()))
@@ -427,55 +446,79 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
     }
   }
 
-  private def checkSpent(w: WatchSpent[_ <: WatchSpentTriggered]): Future[Unit] = {
+  /**
+   * Check whether the output watched by `w` has been spent, and trigger the watch if it has.
+   *
+   * @param retryPending true if a previous check was inconclusive, in which case we must clear that state once we
+   *                     reach a conclusion.
+   */
+  private def checkSpent(w: WatchSpent[_ <: WatchSpentTriggered], retryPending: Boolean): Future[Unit] = w match {
+    case w: WatchExternalChannelSpent => checkExternalChannelSpent(w)
+    case _ => checkOurChannelSpent(w, retryPending)
+  }
+
+  /**
+   * Funds are not at risk for external channels, so we don't need to look for the spending transaction: it is costly
+   * and unnecessary. We simply check whether the output has already been spent by a confirmed transaction.
+   *
+   * We don't retry that check when it fails: we set one such watch for every public channel of the network, so
+   * retrying at every new block would create a herd effect on bitcoind whenever it becomes briefly unavailable. If we
+   * miss that spend, we will only keep a stale channel in our routing graph until we restart.
+   */
+  private def checkExternalChannelSpent(w: WatchExternalChannelSpent): Future[Unit] = {
+    client.isTransactionOutputSpent(w.outPoint).map {
+      // The output has been spent, so we trigger the watch without including the spending transaction.
+      case true => context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId, None))
+      case false => ()
+    }.recover {
+      case error => log.warn(s"could not check whether external channel ${w.shortChannelId} was spent", error)
+    }
+  }
+
+  /**
+   * Funds are at risk if one of our channel outputs has been spent, so we must find the spending transaction. When we
+   * cannot reach a conclusion, we keep checking at every new block: this is only called when the watch is set, so we
+   * would otherwise never detect that spend (spends that happen while we're watching are detected by watching the
+   * mempool and new blocks, which doesn't require any RPC call).
+   */
+  private def checkOurChannelSpent(w: WatchSpent[_ <: WatchSpentTriggered], retryPending: Boolean): Future[Unit] = {
+    // We reached a conclusion: there is no need to check again at every new block.
+    def conclusive(): Unit = if (retryPending) context.self ! ClearWatchHint(w)
+
+    // We couldn't tell whether the output was spent, or couldn't find the spending tx: we must check again at the
+    // next block, otherwise we would never detect that spend.
+    def inconclusive(): Unit = context.self ! SetWatchHint(w, RetryCheckSpent)
+
     // First let's see if the parent tx was published or not before checking whether it has been spent.
-    client.getTxConfirmations(w.txId).collect {
-      case Some(_) => w match {
-        case w: WatchExternalChannelSpent =>
-          // This is an external channels: funds are not at risk, so we don't need to scan the blockchain to find the
-          // spending transaction, it is costly and unnecessary. We simply check whether the output has already been
-          // spent by a confirmed transaction.
-          client.isTransactionOutputSpent(w.txId, w.outputIndex).collect {
-            case true =>
-              // The output has been spent, so we trigger the watch without including the spending transaction.
-              context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId, None))
-          }
-        case _ =>
-          // The parent tx was published, we need to make sure this particular output has not been spent.
-          client.isTransactionOutputSpendable(w.txId, w.outputIndex, includeMempool = true).collect {
-            case false =>
-              // The output has been spent, let's find the spending tx.
-              // If we know some potential spending txs, we try to fetch them directly.
-              Future.sequence(w.hints.map(txid => client.getTransaction(txid).map(Some(_)).recover { case _ => None }))
-                .map(_.flatten) // filter out errors and hint transactions that can't be found
-                .map(hintTxs => {
-                  hintTxs.find(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
-                    case Some(spendingTx) =>
-                      log.info("{}:{} has already been spent by a tx provided in hints: txid={}", w.txId, w.outputIndex, spendingTx.txid)
-                      context.self ! ProcessNewTransaction(spendingTx)
-                    case None =>
-                      // The hints didn't help us, let's search for the spending transaction in the mempool.
-                      log.info("{}:{} has already been spent, looking for the spending tx in the mempool", w.txId, w.outputIndex)
-                      client.lookForMempoolSpendingTx(w.txId, w.outputIndex).map(Some(_)).recover { case _ => None }.map {
-                        case Some(spendingTx) =>
-                          log.info("found tx spending {}:{} in the mempool: txid={}", w.txId, w.outputIndex, spendingTx.txid)
-                          context.self ! ProcessNewTransaction(spendingTx)
-                        case None =>
-                          // The spending transaction isn't in the mempool, so it must be a transaction that confirmed
-                          // before we set the watch. We have to scan the blockchain to find it, which is expensive
-                          // since bitcoind doesn't provide indexes for this scenario.
-                          log.warn("{}:{} has already been spent, spending tx not in the mempool, looking in the blockchain...", w.txId, w.outputIndex)
-                          client.lookForSpendingTx(None, w.txId, w.outputIndex, nodeParams.channelConf.maxChannelSpentRescanBlocks).map { spendingTx =>
-                            log.warn("found the spending tx of {}:{} in the blockchain: txid={}", w.txId, w.outputIndex, spendingTx.txid)
-                            context.self ! ProcessNewTransaction(spendingTx)
-                          }.recover {
-                            case _ => log.warn("could not find the spending tx of {}:{} in the blockchain, funds are at risk", w.txId, w.outputIndex)
-                          }
-                      }
-                  }
-                })
-          }
-      }
+    client.getTxConfirmations(w.txId).flatMap {
+      case None =>
+        // The parent tx hasn't been published, so this output cannot have been spent yet.
+        conclusive()
+        Future.successful(())
+      case Some(_) =>
+        // The parent tx was published, we need to make sure this particular output has not been spent.
+        client.isTransactionOutputSpendable(w.outPoint, includeMempool = true).flatMap {
+          case true =>
+            conclusive()
+            Future.successful(())
+          case false =>
+            // The output has been spent, let's find the spending tx in the txospenderindex.
+            log.info("{} has already been spent, looking for the spending tx", w.outPoint)
+            client.findSpendingTx(w.outPoint).map {
+              case Some((spendingTx, _)) =>
+                log.info("found tx spending {}: txid={}", w.outPoint, spendingTx.txid)
+                context.self ! ProcessNewTransaction(spendingTx)
+                conclusive()
+              case None =>
+                // This shouldn't happen when the txospenderindex is synced, but it may be lagging behind the tip.
+                log.warn("could not find the spending tx of {}, funds are at risk: retrying at the next block", w.outPoint)
+                inconclusive()
+            }
+        }
+    }.recover {
+      case error =>
+        log.warn(s"could not check whether ${w.outPoint} was spent, retrying at the next block", error)
+        inconclusive()
     }
   }
 
