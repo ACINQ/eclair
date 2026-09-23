@@ -404,6 +404,7 @@
 3147800c9ec71d6b52fa9b8d877f93b61f30b3b89e5965cf755776cd50b3c9b3  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-mingw/0.23.0/secp256k1-kmp-jni-jvm-mingw-0.23.0.jar
 317d515c5c69278a980c6219901d327efb4210ca44ae1f07c2a304d487ec7cae  org/apache/maven/maven-aether-provider/3.2.5/maven-aether-provider-3.2.5.pom
 31802b4c86422d91ac5337dad705113535ca986f7cd7bc239701b9f9df967ccf  net/openhft/root-parent-pom/1.2.12/root-parent-pom-1.2.12.pom
+31fbf6f06b2217fb51d5100cee51b22625cc81640da0679b47914e54c1e6377c  org/postgresql/postgresql/42.7.12/postgresql-42.7.12.jar
 321ddbb7ee6fe4f53dea6b4cd6db74154d6bfa42391c1f763b361b9f485acf05  org/ow2/ow2/1.5.1/ow2-1.5.1.pom
 322cdae62f26da75f53d1990bc370416b409a487779a3d0575b81960c78a1655  org/apache/maven/plugins/maven-jar-plugin/2.1/maven-jar-plugin-2.1.pom
 322d96e5277de60c00dd4833c19a6e8c6f148aa61bafc7debd3d962beb55d847  org/scalatest/scalatest-mustmatchers_2.13/3.2.16/scalatest-mustmatchers_2.13-3.2.16.pom
@@ -1422,6 +1423,7 @@ adfadb0dd7a794ae5d17b8753a726041a51e95be6da09f981c513d1c5f006dff  org/apache/mav
 ae47795e721803ec8ff1deed74be28a811a02713bd5a3ab0ac67c2b58cb635ab  commons-io/commons-io/2.21.0/commons-io-2.21.0.pom
 ae4caceb3840730c2537f9b7fb55a01baba580286b4122951488bcee558c2449  net/java/dev/jna/jna-platform/5.14.0/jna-platform-5.14.0.jar
 aeb3b70a24c103ed0c54541f35f5c511d27ce60cae376a596d7d653697f8cc95  com/squareup/okio/okio/3.6.0/okio-3.6.0.pom
+aebd76bb22099fb95a3ee8f11bf66733df7962ba7e9dbcbad3cfa076b5c90a94  org/postgresql/postgresql/42.7.12/postgresql-42.7.12.pom
 af026f28dc971aca307f6151113d2d1e41be316cdfc88e13bd89fd8d160ac43f  org/scala-sbt/io_2.13/1.10.5/io_2.13-1.10.5.pom
 af10c108da014f17cafac7b52b2b4b5a3a1c18265fa2af97a325d9143537b380  org/apache/apache/21/apache-21.pom
 af650fa4dd400bc5769320bcef08ed93813f349cabe8213d469acafbbd945d8a  com/fasterxml/oss-parent/41/oss-parent-41.pom
