@@ -99,10 +99,10 @@ trait BitcoindService extends Logging {
       val is = classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf")
       val conf = {
         val defaultConf = Source.fromInputStream(is).mkString
-          .replace("28333", bitcoindPort.toString)
-          .replace("28332", bitcoindRpcPort.toString)
-          .replace("28334", bitcoindZmqBlockPort.toString)
-          .replace("28335", bitcoindZmqTxPort.toString)
+          .replace("<port>", bitcoindPort.toString)
+          .replace("<rpcport>", bitcoindRpcPort.toString)
+          .replace("<zmqblockport>", bitcoindZmqBlockPort.toString)
+          .replace("<zmqtxport>", bitcoindZmqTxPort.toString)
           .appendedAll(defaultAddressType_opt.map(addressType => s"addresstype=$addressType\n").getOrElse(""))
           .appendedAll(changeAddressType_opt.map(addressType => s"changetype=$addressType\n").getOrElse(""))
           .appendedAll(mempoolSize_opt.map(mempoolSize => s"maxmempool=$mempoolSize\n").getOrElse(""))
