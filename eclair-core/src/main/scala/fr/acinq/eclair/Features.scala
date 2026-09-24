@@ -135,6 +135,9 @@ case class Features[T <: Feature](activated: Map[T, FeatureSupport], encoded_opt
 
   def isEmpty: Boolean = activated.isEmpty && encoded_opt.forall(_.isEmpty)
 
+  /** The `features` field of lightning messages must be minimally-encoded: it must not have a leading zero byte. */
+  def isMinimallyEncoded: Boolean = encoded_opt.forall(e => e.bin.isEmpty || e.bin(0) != 0)
+
   def hasFeature(feature: T, support: Option[FeatureSupport] = None): Boolean = support match {
     case Some(s) => activated.get(feature).contains(s) || encoded_opt.exists(_.hasFeature(feature, support))
     case None => activated.contains(feature) || encoded_opt.exists(_.hasFeature(feature))
