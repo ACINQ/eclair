@@ -1338,6 +1338,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 case Left(t) =>
                   log.warning("rejecting rbf request with invalid liquidity ads: {}", t.getMessage)
                   stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, t.getMessage)
+                case Right(None) if rbf.latestFundingTx.fundingParams.localContributes && msg.feerate > nodeParams.maxRemoteFundingFeerate(remoteNodeId) =>
+                  // We keep our previous contribution and pay the mining fees for it at the feerate chosen by our peer:
+                  // we must bound that feerate, otherwise they could make us burn our funds in mining fees.
+                  val maxFeerate = nodeParams.maxRemoteFundingFeerate(remoteNodeId)
+                  log.info("rejecting rbf request: the new feerate must be at most {} (proposed={})", maxFeerate, msg.feerate)
+                  stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidRbfFeerateTooHigh(d.channelId, msg.feerate, maxFeerate).getMessage)
                 case Right(willFund_opt) =>
                   // We contribute the amount of liquidity requested by our peer, if liquidity ads is active.
                   // Otherwise we keep the same contribution we made to the previous funding transaction.
