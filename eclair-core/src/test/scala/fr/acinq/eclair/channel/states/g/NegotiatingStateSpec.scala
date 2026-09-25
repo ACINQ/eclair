@@ -805,6 +805,50 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     alice2bob.expectNoMessage(100 millis)
   }
 
+  test("recv Shutdown with invalid script") { f =>
+    import f._
+    aliceClose(f)
+    alice2bob.expectMsgType[ClosingSigned]
+    val bobScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING].remoteShutdown.scriptPubKey
+    alice ! Shutdown(channelId(alice), ByteVector.fill(10_000)(0x51))
+    alice2bob.expectMsgType[Warning]
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].remoteShutdown.scriptPubKey == bobScript)
+  }
+
+  test("recv Shutdown with invalid script (option_simple_close)", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+    import f._
+    aliceClose(f)
+    alice2bob.expectMsgType[ClosingComplete]
+    bob2alice.expectMsgType[ClosingComplete]
+    val bobScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].remoteScriptPubKey
+    alice ! Shutdown(channelId(alice), ByteVector.fill(10_000)(0x51))
+    alice2bob.expectMsgType[Warning]
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].remoteScriptPubKey == bobScript)
+    // Alice's next closing transactions still use Bob's valid script.
+    val probe = TestProbe()
+    val feerate = alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].lastClosingFeerate * 1.25
+    alice ! CMD_CLOSE(probe.ref, None, Some(ClosingFeerates(feerate, feerate, feerate)))
+    probe.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    assert(alice2bob.expectMsgType[ClosingComplete].closeeScriptPubKey == bobScript)
+  }
+
+  test("recv ClosingComplete with invalid closer script", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+    import f._
+    aliceClose(f)
+    alice2bob.expectMsgType[ClosingComplete]
+    val bobClosingComplete = bob2alice.expectMsgType[ClosingComplete]
+    val bobScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].remoteScriptPubKey
+    bob2alice.forward(alice, bobClosingComplete.copy(closerScriptPubKey = ByteVector.fill(10_000)(0x51)))
+    alice2bob.expectMsgType[Warning]
+    alice2bob.expectNoMessage(100 millis)
+    alice2blockchain.expectNoMessage(100 millis)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].remoteScriptPubKey == bobScript)
+    // The same applies when the closee script doesn't match ours, which we would otherwise ignore after storing their script.
+    bob2alice.forward(alice, bobClosingComplete.copy(closerScriptPubKey = ByteVector.fill(10_000)(0x51), closeeScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey))))
+    alice2bob.expectMsgType[Warning]
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].remoteScriptPubKey == bobScript)
+  }
+
   test("recv ClosingComplete (rate-limited)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.DelayRbfAttempts)) { f =>
     import f._
 
