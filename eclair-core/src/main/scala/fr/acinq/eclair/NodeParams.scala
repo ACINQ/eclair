@@ -207,7 +207,11 @@ object NodeParams extends Logging {
 
   private def readSeedFromFile(seedPath: File): ByteVector = {
     logger.info(s"use seed file: ${seedPath.getCanonicalPath}")
-    ByteVector(Files.readAllBytes(seedPath.toPath))
+    val seed = ByteVector(Files.readAllBytes(seedPath.toPath))
+    // Legacy seed.dat files contain a serialized private key: 32 bytes followed by the 0x01 compression flag.
+    val isLegacySeed = seed.length == 33 && seed.last == 0x01
+    require(seed.length == 32 || isLegacySeed, s"invalid seed file: ${seedPath.getCanonicalPath} must contain exactly 32 bytes")
+    seed
   }
 
   private def writeSeedToFile(path: File, seed: ByteVector): Unit = {
