@@ -133,6 +133,16 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
 
+  /**
+   * Returns the maximum feerate we accept when our peer chooses the feerate at which we fund our contribution to a
+   * shared transaction (e.g. when they RBF a transaction we contributed to). This matches the upper bound of the
+   * funding feerate range we recommend to our peer.
+   */
+  def maxRemoteFundingFeerate(remoteNodeId: PublicKey): FeeratePerKw = {
+    val fundingFeerate = onChainFeeConf.getFundingFeerate(currentFeeratesForFundingClosing)
+    (fundingFeerate * onChainFeeConf.feerateToleranceFor(remoteNodeId).ratioHigh).max(currentBitcoinCoreFeerates.minimum)
+  }
+
   /** Returns the feerates we'd like our peer to use when funding channels. */
   def recommendedFeerates(remoteNodeId: PublicKey, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): RecommendedFeerates = {
     // Independently of target and tolerance ratios, our transactions must be publishable in our local mempool
@@ -141,7 +151,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
     val fundingFeerate = onChainFeeConf.getFundingFeerate(currentFeeratesForFundingClosing)
     val fundingRange = RecommendedFeeratesTlv.FundingFeerateRange(
       min = (fundingFeerate * feerateTolerance.ratioLow).max(minimumFeerate),
-      max = (fundingFeerate * feerateTolerance.ratioHigh).max(minimumFeerate),
+      max = maxRemoteFundingFeerate(remoteNodeId),
     )
     // We use the most likely commitment format, even though there is no guarantee that this is the one that will be used.
     val commitmentFormat = if (Features.canUseFeature(localFeatures, remoteFeatures, Features.SimpleTaprootChannelsPhoenix)) {

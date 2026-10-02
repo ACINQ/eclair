@@ -1089,6 +1089,30 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice2bob.expectMsgType[TxAbort].toAscii.contains("we're using zero-conf"))
   }
 
+  test("recv TxInitRbf (feerate too high)") { f =>
+    import f._
+
+    // Alice splices funds in: she would pay the mining fees for her inputs at Bob's feerate.
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    val maxFeerate = alice.underlyingActor.nodeParams.maxRemoteFundingFeerate(bob.underlyingActor.nodeParams.nodeId)
+    bob2alice.forward(alice, Stfu(alice.stateData.channelId, initiator = true))
+    alice2bob.expectMsgType[Stfu]
+    bob2alice.forward(alice, TxInitRbf(alice.stateData.channelId, 0, maxFeerate * 2, 0 sat, requireConfirmedInputs = false, None))
+    assert(alice2bob.expectMsgType[TxAbort].toAscii == InvalidRbfFeerateTooHigh(alice.stateData.channelId, maxFeerate * 2, maxFeerate).getMessage)
+  }
+
+  test("recv TxInitRbf (feerate too high, no local contribution)") { f =>
+    import f._
+
+    // Bob didn't contribute to the splice transaction: he doesn't pay any mining fees, whatever the feerate.
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    val maxFeerate = bob.underlyingActor.nodeParams.maxRemoteFundingFeerate(alice.underlyingActor.nodeParams.nodeId)
+    alice2bob.forward(bob, Stfu(bob.stateData.channelId, initiator = true))
+    bob2alice.expectMsgType[Stfu]
+    alice2bob.forward(bob, TxInitRbf(bob.stateData.channelId, 0, maxFeerate * 2, 500_000 sat, requireConfirmedInputs = false, None))
+    assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution == 0.sat)
+  }
+
   test("recv TxAbort (before TxComplete)") { f =>
     import f._
 

@@ -597,6 +597,27 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
 
+  test("recv TxInitRbf (feerate too high)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    // Bob contributed to the funding transaction: he would pay the mining fees for his inputs at Alice's feerate.
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.fundingParams.localContribution > 0.sat)
+    val maxFeerate = bob.underlyingActor.nodeParams.maxRemoteFundingFeerate(alice.underlyingActor.nodeParams.nodeId)
+    bob ! TxInitRbf(channelId(bob), 0, maxFeerate * 2, TestConstants.fundingSatoshis, requireConfirmedInputs = false, None)
+    assert(bob2alice.expectMsgType[TxAbort].toAscii == InvalidRbfFeerateTooHigh(channelId(bob), maxFeerate * 2, maxFeerate).getMessage)
+    assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+  }
+
+  test("recv TxInitRbf (feerate too high, no local contribution)", Tag(ChannelStateTestsTags.DualFunding), Tag(noFundingContribution)) { f =>
+    import f._
+
+    // Bob didn't contribute to the funding transaction: he doesn't pay any mining fees, whatever the feerate.
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.fundingParams.localContribution == 0.sat)
+    val maxFeerate = bob.underlyingActor.nodeParams.maxRemoteFundingFeerate(alice.underlyingActor.nodeParams.nodeId)
+    bob ! TxInitRbf(channelId(bob), 0, maxFeerate * 2, TestConstants.fundingSatoshis, requireConfirmedInputs = false, None)
+    assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution == 0.sat)
+  }
+
   test("recv TxAckRbf (invalid push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag(bothPushAmount)) { f =>
     import f._
 

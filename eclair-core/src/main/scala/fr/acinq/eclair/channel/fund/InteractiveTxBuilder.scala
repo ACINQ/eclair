@@ -163,6 +163,8 @@ object InteractiveTxBuilder {
     //    - 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     //    - 25 sat per kw greater than the `feerate` of the previously constructed transaction.
     val minNextFeerate: FeeratePerKw = Seq(targetFeerate * 25 / 24, targetFeerate + FeeratePerKw(25 sat)).max
+    /** True if we add inputs or outputs to the transaction, in which case we pay the mining fees for them. */
+    val localContributes: Boolean = localContribution != 0.sat || localOutputs.nonEmpty
     // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
     val serialIdParity: Int = if (isInitiator) 0 else 1
 

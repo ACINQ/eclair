@@ -586,6 +586,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                 case Left(t) =>
                   log.warning("rejecting rbf attempt: invalid liquidity ads request ({})", t.getMessage)
                   stay() using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, t.getMessage)
+                case Right(None) if d.latestFundingTx.fundingParams.localContributes && msg.feerate > nodeParams.maxRemoteFundingFeerate(remoteNodeId) =>
+                  // We keep our previous contribution and pay the mining fees for it at the feerate chosen by our peer:
+                  // we must bound that feerate, otherwise they could make us burn our funds in mining fees.
+                  val maxFeerate = nodeParams.maxRemoteFundingFeerate(remoteNodeId)
+                  log.info("rejecting rbf attempt: the new feerate must be at most {} (proposed={})", maxFeerate, msg.feerate)
+                  stay() using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, InvalidRbfFeerateTooHigh(d.channelId, msg.feerate, maxFeerate).getMessage)
                 case Right(willFund_opt) =>
                   log.info("our peer wants to raise the feerate of the funding transaction (previous={} target={})", d.latestFundingTx.fundingParams.targetFeerate, msg.feerate)
                   // We contribute the amount of liquidity requested by our peer, if liquidity ads is active.
