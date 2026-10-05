@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.states.g
 
 import akka.testkit.TestProbe
+import fr.acinq.bitcoin.scalacompat.Crypto.TaprootTweak.KeyPathTweak
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
@@ -31,7 +32,7 @@ import fr.acinq.eclair.testutils.PimpTestProbe._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.ClosingSignedTlv.FeeRange
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingComplete, ClosingCompleteTlv, ClosingSig, ClosingSigTlv, ClosingSigned, ClosingTlv, Error, Shutdown, TlvStream, Warning}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelUpdate, ClosingComplete, ClosingCompleteTlv, ClosingSig, ClosingSigTlv, ClosingSigned, ClosingTlv, Error, Init, Shutdown, TlvStream, Warning}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -847,6 +848,65 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     bob2alice.forward(alice, bobClosingComplete.copy(closerScriptPubKey = ByteVector.fill(10_000)(0x51), closeeScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey))))
     alice2bob.expectMsgType[Warning]
     assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].remoteScriptPubKey == bobScript)
+  }
+
+  test("recv Shutdown and ClosingComplete with unchanged scripts after reconnection without option_shutdown_anysegwit", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    // Bob closes to a segwit v1 script, which is allowed because option_shutdown_anysegwit is negotiated.
+    val bobScript = Script.write(Script.pay2tr(randomKey().xOnlyPublicKey(), KeyPathTweak))
+    bobClose(f, script_opt = Some(bobScript))
+    bob2alice.expectMsgType[ClosingComplete]
+    alice2bob.expectMsgType[ClosingComplete]
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].remoteScriptPubKey == bobScript)
+
+    // We reconnect without option_shutdown_anysegwit: Bob re-sends his unchanged script with a fresh closee nonce.
+    alice ! INPUT_DISCONNECTED
+    bob ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+    val aliceInit = Init(alice.nodeParams.initFeaturesFor(bob.nodeParams.nodeId).remove(Features.ShutdownAnySegwit))
+    val bobInit = Init(bob.nodeParams.initFeaturesFor(alice.nodeParams.nodeId).remove(Features.ShutdownAnySegwit))
+    alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
+    bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
+    alice2bob.expectMsgType[ChannelReestablish]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[Shutdown]
+    alice2bob.forward(bob)
+    val bobShutdown = bob2alice.expectMsgType[Shutdown]
+    assert(bobShutdown.scriptPubKey == bobScript)
+    assert(bobShutdown.closeeNonce_opt.nonEmpty)
+    bob2alice.forward(alice, bobShutdown)
+    alice2bob.expectNoMessage(100 millis)
+    awaitCond(alice.stateName == NEGOTIATING_SIMPLE)
+    awaitCond(bob.stateName == NEGOTIATING_SIMPLE)
+
+    // Alice uses Bob's fresh closee nonce in her next closing_complete, which Bob signs.
+    // Alice's unchanged script is also a segwit v1 script, which Bob accepts since he accepted it previously.
+    val aliceScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].localScriptPubKey
+    assert(!Closing.MutualClose.isValidFinalScriptPubkey(aliceScript, allowAnySegwit = false, allowOpReturn = false))
+    val probe = TestProbe()
+    val aliceFeerate = alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].lastClosingFeerate * 1.25
+    alice ! CMD_CLOSE(probe.ref, None, Some(ClosingFeerates(aliceFeerate, aliceFeerate, aliceFeerate)))
+    probe.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    inside(alice2bob.expectMsgType[ClosingComplete]) { msg =>
+      assert(msg.closerScriptPubKey == aliceScript)
+      assert(msg.closeeScriptPubKey == bobScript)
+    }
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ClosingSig]
+
+    // Bob sends a closing_complete with his unchanged script, which Alice signs.
+    val bobFeerate = bob.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].lastClosingFeerate * 1.25
+    bob ! CMD_CLOSE(probe.ref, None, Some(ClosingFeerates(bobFeerate, bobFeerate, bobFeerate)))
+    probe.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    inside(bob2alice.expectMsgType[ClosingComplete]) { msg =>
+      assert(msg.closerScriptPubKey == bobScript)
+      assert(msg.closeeScriptPubKey == aliceScript)
+    }
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[ClosingSig]
   }
 
   test("recv ClosingComplete (rate-limited)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.DelayRbfAttempts)) { f =>
