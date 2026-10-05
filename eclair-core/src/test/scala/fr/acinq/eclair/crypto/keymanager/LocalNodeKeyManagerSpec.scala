@@ -90,6 +90,32 @@ class LocalNodeKeyManagerSpec extends AnyFunSuite {
     }
   }
 
+  test("reject empty seed files") {
+    val datadir = new File(TestUtils.newIntegrationTmpDir(), "empty-seed")
+    datadir.mkdirs()
+    val nodeSeedFile = new File(datadir, "node_seed.dat")
+    val channelSeedFile = new File(datadir, "channel_seed.dat")
+    Files.write(nodeSeedFile.toPath, Array.empty[Byte])
+    Files.write(channelSeedFile.toPath, Array.fill[Byte](32)(1.toByte))
+
+    assertThrows[IllegalArgumentException](NodeParams.getSeeds(datadir))
+  }
+
+  test("accept legacy 33-byte seed files") {
+    val datadir = new File(TestUtils.newIntegrationTmpDir(), "legacy-seed")
+    datadir.mkdirs()
+    val nodeSeedFile = new File(datadir, "node_seed.dat")
+    val channelSeedFile = new File(datadir, "channel_seed.dat")
+    val legacySeed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
+    Files.write(nodeSeedFile.toPath, legacySeed.toArray)
+    Files.write(channelSeedFile.toPath, legacySeed.toArray)
+    assert(NodeParams.getSeeds(datadir) == Seeds(legacySeed, legacySeed))
+
+    // Only the legacy private key encoding is accepted.
+    Files.write(nodeSeedFile.toPath, legacySeed.dropRight(1).:+(0x02.toByte).toArray)
+    assertThrows[IllegalArgumentException](NodeParams.getSeeds(datadir))
+  }
+
   test("restrict permissions of migrated seed file") {
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
     val seedDatFile = TestUtils.createSeedFile("seed.dat", seed.toArray)
