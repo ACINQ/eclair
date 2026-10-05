@@ -34,7 +34,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.blockchain.{OnChainWallet, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
-import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
+import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxFunder, InteractiveTxSigningSession}
 import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.io.OpenChannelInterceptor.makeChannelParams
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo, PhoenixSimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat}
@@ -2553,6 +2553,55 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val alice = params.spawnTxBuilderAlice(wallet)
     alice ! Start(probe.ref)
     assert(probe.expectMsgType[LocalFailure].cause == ChannelFundingError(params.channelId))
+  }
+
+  test("bitcoind modifies the funding output amount") {
+    val probe = TestProbe()
+    // A malicious bitcoind moves funds from the change output to the funding output: the funded transaction pays the
+    // expected fee, but since we rebuild the funding output from the expected amount, the difference would be paid to
+    // miners.
+    val wallet = new SingleKeyOnChainWallet() {
+      override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, changePosition: Option[Int], externalInputsWeight: Map[OutPoint, Long], minInputConfirmations_opt: Option[Int], feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+        super.fundTransaction(tx, feeRate, replaceable, changePosition, externalInputsWeight, minInputConfirmations_opt, feeBudget_opt)(ec).map(funded => {
+          val fundingOutput = funded.tx.txOut.head
+          val changeOutput = funded.tx.txOut.last
+          val txOut = Seq(fundingOutput.copy(amount = fundingOutput.amount + 50_000.sat), changeOutput.copy(amount = changeOutput.amount - 50_000.sat))
+          funded.copy(tx = funded.tx.copy(txOut = txOut))
+        })(ec)
+      }
+    }
+    val params = createFixtureParams(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 75_000 sat, 0 sat, FeeratePerKw(5000 sat), 500 sat, 0)
+    val alice = params.spawnTxBuilderAlice(wallet)
+    alice ! Start(probe.ref)
+    assert(probe.expectMsgType[LocalFailure].cause == ChannelFundingError(params.channelId))
+  }
+
+  test("bitcoind returns an invalid change position") {
+    val params = createFixtureParams(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
+    val localOutput = TxOut(20_000 sat, Script.pay2wpkh(randomKey().publicKey))
+    val fundingParams = params.fundingParamsA.copy(localOutputs = List(localOutput))
+    // bitcoind adds the change output at the end of the transaction, after the funding output and our local output.
+    // Pointing to the funding output or to our local output would make us drop the real change output and pay it to
+    // miners, and an out-of-bounds position must not crash the funder.
+    Seq(0, 1, 3).foreach(invalidChangePosition => {
+      val wallet = new SingleKeyOnChainWallet() {
+        override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, changePosition: Option[Int], externalInputsWeight: Map[OutPoint, Long], minInputConfirmations_opt: Option[Int], feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+          super.fundTransaction(tx, feeRate, replaceable, changePosition, externalInputsWeight, minInputConfirmations_opt, feeBudget_opt)(ec).map(_.copy(changePosition = Some(invalidChangePosition)))(ec)
+        }
+      }
+      val probe = TestProbe()
+      val funder = system.spawnAnonymous(InteractiveTxFunder(randomKey().publicKey, fundingParams, params.fundingPubkeyScript, FundingTx(params.commitFeerate, randomKey().publicKey, feeBudget_opt = None), wallet))
+      funder ! InteractiveTxFunder.FundTransaction(probe.ref)
+      probe.expectMsg(InteractiveTxFunder.FundingFailed)
+    })
+    // With the change position returned by bitcoind, funding succeeds and our contributions pay the expected fee.
+    val wallet = new SingleKeyOnChainWallet()
+    val probe = TestProbe()
+    val funder = system.spawnAnonymous(InteractiveTxFunder(randomKey().publicKey, fundingParams, params.fundingPubkeyScript, FundingTx(params.commitFeerate, randomKey().publicKey, feeBudget_opt = None), wallet))
+    funder ! InteractiveTxFunder.FundTransaction(probe.ref)
+    val contributions = probe.expectMsgType[InteractiveTxFunder.FundingContributions]
+    assert(contributions.outputs.collect { case o: Output.Local.NonChange => TxOut(o.amount, o.pubkeyScript) } == Seq(localOutput))
+    assert(contributions.outputs.count(_.isInstanceOf[Output.Local.Change]) == 1)
   }
 
   test("invalid funding contributions") {

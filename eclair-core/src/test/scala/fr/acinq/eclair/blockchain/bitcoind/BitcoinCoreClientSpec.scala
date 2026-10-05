@@ -219,7 +219,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       // we check that bitcoin core is not malicious and trying to steal funds.
       val txNotFunded = Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
 
-      def makeEvilBitcoinClient(changePosMod: Int => Int, txMod: Transaction => Transaction): BitcoinCoreClient = {
+      def makeEvilBitcoinClient(changePosMod: Int => Int, txMod: Transaction => Transaction, feeMod: BigDecimal => BigDecimal = fee => fee): BitcoinCoreClient = {
         val badRpcClient = new BitcoinJsonRPCClient {
           override def chainHash: BlockHash = bitcoinClient.rpcClient.chainHash
 
@@ -229,6 +229,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
             case "fundrawtransaction" => bitcoinClient.rpcClient.invoke(method, params: _*)(ec).map(json => json.mapField {
               case ("changepos", JInt(pos)) => ("changepos", JInt(changePosMod(pos.toInt)))
               case ("hex", JString(hex)) => ("hex", JString(txMod(Transaction.read(hex)).toString()))
+              case ("fee", JDecimal(fee)) => ("fee", JDecimal(feeMod(fee)))
               case x => x
             })(ec)
             case _ => bitcoinClient.rpcClient.invoke(method, params: _*)(ec)
@@ -254,6 +255,24 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
         val evilBitcoinClient = makeEvilBitcoinClient(_ => 1, tx => tx.copy(txOut = tx.txOut.reverse))
         evilBitcoinClient.fundTransaction(txNotFunded, TestConstants.feeratePerKw, changePosition = Some(0)).pipeTo(sender.ref)
         sender.expectMsgType[Failure]
+      }
+      {
+        // bitcoin core drops the change output, which is paid to miners, but returns the fee we expect to stay within our budget.
+        val evilBitcoinClient = makeEvilBitcoinClient(_ => -1, tx => tx.copy(txOut = tx.txOut.filter(txOut => txNotFunded.txOut.contains(txOut))))
+        evilBitcoinClient.fundTransaction(txNotFunded, TestConstants.feeratePerKw, feeBudget_opt = Some(50_000.sat)).pipeTo(sender.ref)
+        sender.expectMsgType[Failure]
+      }
+      {
+        // bitcoin core returns a lower fee than what the funded transaction actually pays.
+        val evilBitcoinClient = makeEvilBitcoinClient(pos => pos, tx => tx, fee => fee / 2)
+        evilBitcoinClient.fundTransaction(txNotFunded, TestConstants.feeratePerKw, feeBudget_opt = Some(50_000.sat)).pipeTo(sender.ref)
+        sender.expectMsgType[Failure]
+        // bitcoin core doesn't lie about the fee: funding succeeds and returns the actual fee.
+        bitcoinClient.fundTransaction(txNotFunded, TestConstants.feeratePerKw, feeBudget_opt = Some(50_000.sat)).pipeTo(sender.ref)
+        val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
+        assert(fundTxResponse.fee > 0.sat)
+        bitcoinClient.rollback(fundTxResponse.tx).pipeTo(sender.ref)
+        sender.expectMsg(true)
       }
     }
   }
