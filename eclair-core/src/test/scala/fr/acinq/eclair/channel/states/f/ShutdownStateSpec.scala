@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelUpdate, ClosingComplete, ClosingSig, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, Shutdown, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateFulfillHtlcTlv}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelUpdate, ClosingComplete, ClosingSig, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, Shutdown, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateFulfillHtlcTlv, Warning}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -875,6 +875,25 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(alice2bob.expectMsgType[Shutdown].scriptPubKey == script)
     alice2bob.forward(bob)
     awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].remoteShutdown.scriptPubKey == script)
+  }
+
+  test("recv Shutdown with invalid script", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+    import f._
+    val bobScript = alice.stateData.asInstanceOf[DATA_SHUTDOWN].remoteShutdown.scriptPubKey
+    // Bob tries to replace his closing script with a very large non-standard script to inflate the fees paid by Alice.
+    val invalidScript = ByteVector.fill(10_000)(0x51)
+    alice ! Shutdown(channelId(alice), invalidScript)
+    alice2bob.expectMsgType[Warning]
+    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].remoteShutdown.scriptPubKey == bobScript)
+    // Once HTLCs are settled, Alice uses Bob's valid script in her closing transactions.
+    fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(1, r2, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    awaitCond(alice.stateName == NEGOTIATING_SIMPLE)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].remoteScriptPubKey == bobScript)
+    val closingComplete = alice2bob.expectMsgType[ClosingComplete]
+    assert(closingComplete.closeeScriptPubKey == bobScript)
+    assert(closingComplete.fees < 100_000.sat)
   }
 
   test("recv CMD_FORCECLOSE") { f =>
