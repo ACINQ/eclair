@@ -1834,7 +1834,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(shutdown: Shutdown, d: DATA_SHUTDOWN) =>
       // We only validate script updates: features may have changed since we accepted their current script.
-      val scriptValidation = if (shutdown.scriptPubKey == d.remoteShutdown.scriptPubKey) Right(shutdown.scriptPubKey) else d.commitments.channelParams.validateRemoteShutdownScript(shutdown.scriptPubKey)
+      val scriptValidation = if (shutdown.scriptPubKey == d.remoteShutdown.scriptPubKey) {
+        Right(shutdown.scriptPubKey)
+      } else {
+        d.commitments.channelParams.validateRemoteShutdownScript(shutdown.scriptPubKey)
+      }
       scriptValidation match {
         case Left(e) =>
           log.warning("they sent an invalid closing script, ignoring their shutdown: {}", e.getMessage)
