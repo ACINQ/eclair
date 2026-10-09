@@ -106,11 +106,12 @@ object Bolt12Invoice {
             features: Features[Bolt12Feature],
             paths: Seq[PaymentBlindedRoute],
             additionalTlvs: Set[InvoiceTlv] = Set.empty,
-            customTlvs: Set[GenericTlv] = Set.empty): Bolt12Invoice = {
+            customTlvs: Set[GenericTlv] = Set.empty,
+            accountable: Boolean = true): Bolt12Invoice = {
     val amount = request.amount
     val tlvs: Set[InvoiceTlv] = removeSignature(request.records).records ++ Set(
       Some(InvoicePaths(paths.map(_.route))),
-      Some(InvoiceAccountable()),
+      if (accountable) Some(InvoiceAccountable()) else None,
       Some(InvoiceBlindedPay(paths.map(_.paymentInfo))),
       Some(InvoiceCreatedAt(TimestampSecond.now())),
       Some(InvoiceRelativeExpiry(invoiceExpiry.toSeconds)),

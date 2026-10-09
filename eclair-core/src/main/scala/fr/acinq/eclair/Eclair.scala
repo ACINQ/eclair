@@ -144,6 +144,8 @@ trait Eclair {
 
   def sendBlocking(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[PaymentEvent]
 
+  def sendTrampoline(trampolineNodeId: PublicKey, amount: MilliSatoshi, invoice: Bolt11Invoice)(implicit timeout: Timeout): Future[PaymentEvent]
+
   def sendWithPreimage(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentPreimage: ByteVector32 = randomBytes32(), maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[UUID]
 
   def sentInfo(id: PaymentIdentifier)(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
@@ -542,6 +544,11 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
       case Left(ex) => Future.failed(ex)
       case Right(req) => (appKit.paymentInitiator ? req.copy(blockUntilComplete = true)).mapTo[PaymentEvent]
     }
+  }
+
+  override def sendTrampoline(trampolineNodeId: PublicKey, amount: MilliSatoshi, invoice: Bolt11Invoice)(implicit timeout: Timeout): Future[PaymentEvent] = {
+    val routeParams = appKit.nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
+    appKit.paymentInitiator.toTyped.ask[PaymentEvent](ref => SendTrampolinePayment(ref.toClassic, invoice, trampolineNodeId, routeParams, blockUntilComplete = true))
   }
 
   override def sendWithPreimage(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentPreimage: ByteVector32, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String])(implicit timeout: Timeout): Future[UUID] = {

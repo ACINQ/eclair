@@ -21,7 +21,7 @@ import fr.acinq.eclair.crypto.{Mac32, Sphinx}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.failureMessageCodec
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelFlagsCodec, channelUpdateCodec, messageFlagsCodec, meteredLightningMessageCodec}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi, MilliSatoshiLong, UInt64}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, UInt64}
 import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
@@ -38,7 +38,9 @@ object FailureReason {
   /** An encrypted failure coming from downstream which we should re-encrypt and forward upstream. */
   case class EncryptedDownstreamFailure(packet: ByteVector, attribution_opt: Option[ByteVector]) extends FailureReason
   /** A local failure that should be encrypted for the node that created the payment onion. */
-  case class LocalFailure(failure: FailureMessage) extends FailureReason 
+  case class LocalFailure(failure: FailureMessage) extends FailureReason
+  /** A local failure that should be encrypted for the node that created the trampoline onion. */
+  case class LocalTrampolineFailure(failure: FailureMessage) extends FailureReason
 }
 // @formatter:on
 
@@ -73,17 +75,19 @@ case class RequiredChannelFeatureMissing(tlvs: TlvStream[FailureMessageTlv] = Tl
 case class UnknownNextPeer(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Perm { def message = "processing node does not know the next peer in the route" }
 case class AmountBelowMinimum(amount: MilliSatoshi, update_opt: Option[ChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "payment amount was below the minimum required by the channel" }
 case class FeeInsufficient(amount: MilliSatoshi, update_opt: Option[ChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "payment fee was below the minimum required by the channel" }
-case class TrampolineFeeInsufficient(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Node { def message = "payment fee was below the minimum required by the trampoline node" }
 case class ChannelDisabled(messageFlags: ChannelUpdate.MessageFlags, channelFlags: ChannelUpdate.ChannelFlags, update_opt: Option[ChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "channel is currently disabled" }
 case class IncorrectCltvExpiry(expiry: CltvExpiry, update_opt: Option[ChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "payment expiry doesn't match the value in the onion" }
 case class IncorrectOrUnknownPaymentDetails(amount: MilliSatoshi, height: BlockHeight, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Perm { def message = "incorrect payment details or unknown payment hash" }
 case class ExpiryTooSoon(update_opt: Option[ChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "payment expiry is too close to the current block height for safe handling by the relaying node" }
-case class TrampolineExpiryTooSoon(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Node { def message = "payment expiry is too close to the current block height for safe handling by the relaying node" }
 case class FinalIncorrectCltvExpiry(expiry: CltvExpiry, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends FailureMessage { def message = "payment expiry doesn't match the value in the onion" }
 case class FinalIncorrectHtlcAmount(amount: MilliSatoshi, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends FailureMessage { def message = "payment amount is incorrect in the final htlc" }
 case class ExpiryTooFar(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends FailureMessage { def message = "payment expiry is too far in the future" }
 case class InvalidOnionPayload(tag: UInt64, offset: Int, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Perm { def message = s"onion per-hop payload is invalid (tag=$tag)" }
 case class PaymentTimeout(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends FailureMessage { def message = "the complete payment amount was not received within a reasonable time" }
+case class TemporaryTrampolineFailure(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Node { def message = "the trampoline node was unable to relay the payment because of downstream temporary failures" }
+case class LegacyTrampolineFeeInsufficient(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Node { def message = "payment fee was below the minimum required by the trampoline node" }
+case class TrampolineFeeOrExpiryInsufficient(feeBase: MilliSatoshi, feeProportionalMillionths: Long, expiryDelta: CltvExpiryDelta, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Node { def message = "trampoline fees or expiry are insufficient to relay the payment" }
+case class UnknownNextTrampoline(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Perm { def message = "the trampoline node was unable to find the next trampoline node" }
 
 /**
  * We allow remote nodes to send us unknown failure codes (e.g. deprecated failure codes).
@@ -161,10 +165,10 @@ object FailureMessageCodecs {
       .typecase(PERM | 22, (("tag" | varint) :: ("offset" | uint16) :: ("tlvs" | failureTlvsCodec)).as[InvalidOnionPayload])
       .typecase(23, failureTlvsCodec.as[PaymentTimeout])
       .typecase(BADONION | PERM | 24, (sha256 :: failureTlvsCodec).as[InvalidOnionBlinding])
-      // TODO: @t-bast: once fully spec-ed, these should probably include a NodeUpdate and use a different ID.
-      // We should update Phoenix and our nodes at the same time, or first update Phoenix to understand both new and old errors.
-      .typecase(NODE | 51, failureTlvsCodec.as[TrampolineFeeInsufficient])
-      .typecase(NODE | 52, failureTlvsCodec.as[TrampolineExpiryTooSoon]),
+      .typecase(NODE | 25, failureTlvsCodec.as[TemporaryTrampolineFailure])
+      .typecase(NODE | 26, (("feeBaseMsat" | millisatoshi32) :: ("feeProportionalMillionths" | uint32) :: ("cltvExpiryDelta" | cltvExpiryDelta) :: failureTlvsCodec).as[TrampolineFeeOrExpiryInsufficient])
+      .typecase(PERM | 27, failureTlvsCodec.as[UnknownNextTrampoline])
+      .typecase(NODE | 51, failureTlvsCodec.as[LegacyTrampolineFeeInsufficient]),
     fallback = unknownFailureMessageCodec.upcast[FailureMessage]
   )
 
@@ -174,10 +178,11 @@ object FailureMessageCodecs {
 
   val failureReasonCodec: Codec[FailureReason] = discriminated[FailureReason].by(uint8)
     // Order matters: latest codec comes first, then old codecs for backward compatibility
+    .typecase(3, variableSizeBytes(uint16, failureMessageCodec).as[FailureReason.LocalTrampolineFailure])
     .typecase(2, encryptedDownstreamFailure)
-    .typecase(0, (varsizebinarydata :: provide[Option[ByteVector]](None)).as[FailureReason.EncryptedDownstreamFailure])
     .typecase(1, variableSizeBytes(uint16, failureMessageCodec).as[FailureReason.LocalFailure])
-  
+    .typecase(0, (varsizebinarydata :: provide[Option[ByteVector]](None)).as[FailureReason.EncryptedDownstreamFailure])
+
   private def failureOnionPayload(payloadAndPadLength: Int): Codec[FailureMessage] = Codec(
     encoder = f => variableSizeBytes(uint16, failureMessageCodec).encode(f).flatMap(bits => {
       val payloadLength = bits.bytes.length - 2
