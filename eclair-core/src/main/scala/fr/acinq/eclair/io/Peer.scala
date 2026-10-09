@@ -517,6 +517,9 @@ class Peer(val nodeParams: NodeParams,
               case status: OnTheFlyFunding.Status.Funded =>
                 context.child(paymentHash.toHex) match {
                   case Some(_) => log.debug("already relaying payment_hash={}", paymentHash)
+                  // We must relay on the channel where liquidity was purchased: when the HTLC expires, we only inspect
+                  // that channel to decide whether it is safe to fail upstream (see ChannelCloserHtlcTimeout).
+                  case None if e.channelId != status.channelId => log.debug("not relaying payment_hash={} on channel_id={}: it was funded on channel_id={}", paymentHash, e.channelId, status.channelId)
                   case None if e.fundingTxIndex < status.fundingTxIndex => log.debug("too early to relay payment_hash={}, funding not locked ({} < {})", paymentHash, e.fundingTxIndex, status.fundingTxIndex)
                   case None =>
                     val relayer = context.spawn(Behaviors.supervise(OnTheFlyFunding.PaymentRelayer(nodeParams, remoteNodeId, e.channelId, paymentHash)).onFailure(typed.SupervisorStrategy.stop), paymentHash.toHex)
