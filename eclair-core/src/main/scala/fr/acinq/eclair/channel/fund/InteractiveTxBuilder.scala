@@ -1199,6 +1199,16 @@ object InteractiveTxSigningSession {
       log.info("invalid tx_signatures: txId mismatch (expected={}, got={})", txWithSigs.signedTx.txid, remoteSigs.txId)
       return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
     }
+    // Our peer could otherwise create a valid transaction that cannot be relayed, which would prevent us from publishing
+    // our commitment if it spends that transaction.
+    if (!Transactions.isWitnessStandard(txWithSigs.signedTx, partiallySignedTx.tx.inputDetails)) {
+      log.info("invalid tx_signatures: non-standard witness")
+      return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
+    }
+    if (txWithSigs.signedTx.weight() > Transactions.MAX_STANDARD_TX_WEIGHT) {
+      log.info("invalid tx_signatures: exceeds standard weight (weight={})", txWithSigs.signedTx.weight())
+      return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
+    }
     // We allow a 5% error margin since witness size prediction could be inaccurate.
     // If they didn't contribute to the transaction, they're not responsible, so we don't check the feerate.
     // If we didn't contribute to a dual-funded channel open, we don't care if they use a lower feerate than expected.
