@@ -2673,6 +2673,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       TxAddInput(params.channelId, UInt64(7), Some(previousTx), 1, 0) -> NonSegwitInput(params.channelId, UInt64(7), previousTx.txid, 1),
       TxAddInput(params.channelId, UInt64(9), Some(previousTx), 2, 0xfffffffeL) -> NonReplaceableInput(params.channelId, UInt64(9), previousTx.txid, 2, 0xfffffffeL),
       TxAddInput(params.channelId, UInt64(9), Some(previousTx), 2, 0xffffffffL) -> NonReplaceableInput(params.channelId, UInt64(9), previousTx.txid, 2, 0xffffffffL),
+      // Inputs must not use a relative lock time, which would let our peer delay the publication of the transaction.
+      TxAddInput(params.channelId, UInt64(11), Some(previousTx), 2, 0x0000ffffL) -> RelativeLockTimeInput(params.channelId, UInt64(11), 0x0000ffffL),
+      TxAddInput(params.channelId, UInt64(11), Some(previousTx), 2, 0x00400001L) -> RelativeLockTimeInput(params.channelId, UInt64(11), 0x00400001L),
       // Replacing the previousTx field with previousTxOut is only allowed for splices on taproot channels.
       TxAddInput(params.channelId, UInt64(5), None, 0, 0, TlvStream(TxAddInputTlv.PrevTxOut(previousTx.txid, previousOutputs(0).amount, previousOutputs(0).publicKeyScript))) -> PreviousTxMissing(params.channelId, UInt64(5))
     )
@@ -2936,6 +2939,21 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val invalidSharedInput = TxAddInput(params.channelId, UInt64(0), Some(fundingTx), 0, 0)
     bob ! ReceiveMessage(invalidSharedInput)
     assert(probe.expectMsgType[RemoteFailure].cause == InvalidSharedInput(params.channelId, UInt64(0)))
+  }
+
+  test("shared input with relative lock time") {
+    val probe = TestProbe()
+    val wallet = new SingleKeyOnChainWallet()
+    val params = createFixtureParams(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
+    val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).active.head
+    val fundingTx = Transaction(2, Nil, Seq(TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)), TxOut(20_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+    val sharedInput = SharedFundingInput(InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head), 0, randomKey().publicKey, previousCommitment.commitmentFormat)
+    val bob = params.spawnTxBuilderSpliceBob(params.fundingParamsB.copy(sharedInput_opt = Some(sharedInput)), previousCommitment, wallet)
+    bob ! Start(probe.ref)
+    // Alice --- tx_add_input --> Bob
+    // The initiator chooses the nSequence of the shared input: it must not use a relative lock time.
+    bob ! ReceiveMessage(TxAddInput(params.channelId, UInt64(0), sharedInput.info.outPoint, 0x0000ffffL))
+    assert(probe.expectMsgType[RemoteFailure].cause == RelativeLockTimeInput(params.channelId, UInt64(0), 0x0000ffffL))
   }
 
   test("total input amount too low") {

@@ -461,6 +461,11 @@ object InteractiveTxBuilder {
   // the transaction (and thus the commitments that spend it) for as long as they want.
   val MAX_LOCKTIME_AHEAD_BLOCKS = 6
 
+  /** A relative lock time on one of its inputs (see BIP 68) would let our peer delay the publication of the transaction. */
+  def hasRelativeLockTime(sequence: Long): Boolean = {
+    (sequence & fr.acinq.bitcoin.TxIn.SEQUENCE_LOCKTIME_DISABLE_FLAG) == 0 && (sequence & fr.acinq.bitcoin.TxIn.SEQUENCE_LOCKTIME_MASK) != 0
+  }
+
 }
 
 private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Response],
@@ -599,6 +604,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     if (session.remoteInputs.exists(_.serialId == addInput.serialId)) {
       return Left(DuplicateSerialId(fundingParams.channelId, addInput.serialId))
     }
+    // This applies to every input, including the shared input whose nSequence is chosen by the initiator.
+    if (hasRelativeLockTime(addInput.sequence)) {
+      return Left(RelativeLockTimeInput(fundingParams.channelId, addInput.serialId, addInput.sequence))
+    }
+
     // We check whether this is the shared input or a remote input, and validate input details if it is not the shared input.
     // The remote input details are usually provided by sending the entire previous transaction.
     // But when splicing a taproot channel, it is possible to only send the previous txOut (which saves bandwidth and
