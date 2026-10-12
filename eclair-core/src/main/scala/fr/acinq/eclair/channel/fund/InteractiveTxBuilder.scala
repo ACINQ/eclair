@@ -1201,10 +1201,13 @@ object InteractiveTxSigningSession {
     }
     // We allow a 5% error margin since witness size prediction could be inaccurate.
     // If they didn't contribute to the transaction, they're not responsible, so we don't check the feerate.
-    // If we didn't contribute to the transaction, we don't care if they use a lower feerate than expected.
+    // If we didn't contribute to a dual-funded channel open, we don't care if they use a lower feerate than expected.
+    // But a splice transaction funds our latest commitment, so it must be able to confirm even if we didn't contribute:
+    // otherwise our peer could use large witnesses to make the transaction impossible to relay.
     val localContributed = txWithSigs.tx.localInputs.nonEmpty || txWithSigs.tx.localOutputs.nonEmpty
     val remoteContributed = txWithSigs.tx.remoteInputs.nonEmpty || txWithSigs.tx.remoteOutputs.nonEmpty
-    if (localContributed && remoteContributed && txWithSigs.feerate < fundingParams.targetFeerate * 0.95) {
+    val isSplice = fundingParams.sharedInput_opt.nonEmpty
+    if ((localContributed || isSplice) && remoteContributed && txWithSigs.feerate < fundingParams.targetFeerate * 0.95) {
       return Left(InvalidFundingFeerate(fundingParams.channelId, fundingParams.targetFeerate, txWithSigs.feerate))
     }
     val previousOutputs = {
