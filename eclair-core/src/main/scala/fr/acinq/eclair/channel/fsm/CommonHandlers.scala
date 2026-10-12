@@ -106,9 +106,18 @@ trait CommonHandlers {
      * @param cmd fail/fulfill command that has been processed
      */
     def acking(channelId: ByteVector32, cmd: HtlcSettlementCommand): FSM.State[ChannelState, ChannelData] = {
-      log.debug("scheduling acknowledgement of cmd id={}", cmd.id)
-      context.system.scheduler.scheduleOnce(10 seconds)(PendingCommandsDb.ackSettlementCommand(nodeParams.db.pendingCommands, channelId, cmd))(context.system.dispatcher)
-      state
+      state.stateData match {
+        case d: ChannelDataWithCommitments if CommitmentChanges.alreadyProposed(d.commitments.changes.localChanges.proposed, cmd.id) =>
+          // This command was rejected because we've already proposed a settlement for that HTLC (e.g. a duplicate of the
+          // same command), which hasn't been signed yet: it will be discarded if we disconnect, so we must keep it in our
+          // DB to replay it on reconnection. It will be acknowledged once signed.
+          log.debug("not acknowledging cmd id={}: settlement is pending signature", cmd.id)
+          state
+        case _ =>
+          log.debug("scheduling acknowledgement of cmd id={}", cmd.id)
+          context.system.scheduler.scheduleOnce(10 seconds)(PendingCommandsDb.ackSettlementCommand(nodeParams.db.pendingCommands, channelId, cmd))(context.system.dispatcher)
+          state
+      }
     }
 
     def acking(updates: List[UpdateMessage]): FSM.State[ChannelState, ChannelData] = {

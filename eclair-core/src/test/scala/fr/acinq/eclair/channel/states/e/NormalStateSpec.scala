@@ -1798,6 +1798,32 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.underlyingActor.nodeParams.db.pendingCommands.listSettlementCommands(initialState.channelId).isEmpty)
   }
 
+  test("recv CMD_FULFILL_HTLC (don't acknowledge unsigned fulfill when rejecting another command)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // actual test begins
+    val c = CMD_FULFILL_HTLC(htlc.id, r, None, None, replyTo_opt = Some(sender.ref))
+    // this would be done automatically when the relayer calls safeSend
+    bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(channelId(bob), c)
+    sender.send(bob, c)
+    sender.expectMsgType[RES_SUCCESS[CMD_FULFILL_HTLC]]
+    bob2alice.expectMsgType[UpdateFulfillHtlc]
+    // We receive a duplicate of that command (e.g. replayed from the DB on reconnection), and a conflicting command.
+    sender.send(bob, c)
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), htlc.id)))
+    val fail = CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(TemporaryNodeFailure()), None, replyTo_opt = Some(sender.ref))
+    sender.send(bob, fail)
+    sender.expectMsg(RES_FAILURE(fail, UnknownHtlcId(channelId(bob), htlc.id)))
+    // Our fulfill hasn't been signed yet, so we must not remove it from the DB: it would be lost if we disconnected.
+    sender.expectNoMessage(11 seconds)
+    val pending = bob.underlyingActor.nodeParams.db.pendingCommands.listSettlementCommands(channelId(bob))
+    assert(pending.size == 1)
+    assert(pending.collect { case cmd: CMD_FULFILL_HTLC => (cmd.id, cmd.r) } == Seq((htlc.id, r)))
+  }
+
   private def testUpdateFulfillHtlc(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
     import f._
 
