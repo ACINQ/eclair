@@ -457,6 +457,10 @@ object InteractiveTxBuilder {
   // We restrict the number of inputs / outputs that our peer can send us to ensure the protocol eventually ends.
   val MAX_INPUTS_OUTPUTS_RECEIVED = 4096
 
+  // Our peer may have seen a few more blocks than us, but a later lock time would let them prevent us from publishing
+  // the transaction (and thus the commitments that spend it) for as long as they want.
+  val MAX_LOCKTIME_AHEAD_BLOCKS = 6
+
 }
 
 private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Response],
@@ -781,6 +785,10 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     if (session.localInputs.length + session.remoteInputs.length > 252 || session.localOutputs.length + session.remoteOutputs.length > 252) {
       log.warn("invalid interactive tx ({} local inputs, {} remote inputs, {} local outputs and {} remote outputs)", session.localInputs.length, session.remoteInputs.length, session.localOutputs.length, session.remoteOutputs.length)
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "too many inputs or outputs"))
+    }
+    if (fundingParams.lockTime > nodeParams.currentBlockHeight.toLong + MAX_LOCKTIME_AHEAD_BLOCKS) {
+      log.warn("invalid interactive tx: lock time is too far in the future (lockTime={}, currentBlockHeight={})", fundingParams.lockTime, nodeParams.currentBlockHeight)
+      return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "lock time too far in the future"))
     }
 
     val sharedInputs = session.localInputs.collect { case i: Input.Shared => i } ++ session.remoteInputs.collect { case i: Input.Shared => i }

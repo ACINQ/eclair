@@ -2986,6 +2986,44 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     assert(probe.expectMsgType[RemoteFailure].cause.isInstanceOf[InvalidSpliceFeerate])
   }
 
+  test("lock time too far in the future") {
+    val currentBlockHeight = TestConstants.Bob.nodeParams.currentBlockHeight.toLong
+    val testCases = Seq(
+      currentBlockHeight + InteractiveTxBuilder.MAX_LOCKTIME_AHEAD_BLOCKS -> true,
+      currentBlockHeight + InteractiveTxBuilder.MAX_LOCKTIME_AHEAD_BLOCKS + 1 -> false,
+      499_999_999L -> false,
+      // Timestamp-based lock times are never accepted.
+      1_800_000_000L -> false,
+    )
+    testCases.foreach { case (lockTime, isValid) =>
+      val probe = TestProbe()
+      val wallet = new SingleKeyOnChainWallet()
+      val params = createFixtureParams(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, lockTime)
+      val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey))
+      val bob = params.spawnTxBuilderBob(wallet)
+      bob ! Start(probe.ref)
+      // Alice --- tx_add_input --> Bob
+      bob ! ReceiveMessage(createInput(params.channelId, UInt64(0), 150_000 sat))
+      // Alice <-- tx_complete --- Bob
+      probe.expectMsgType[SendMessage]
+      // Alice --- tx_add_output --> Bob
+      bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(2), 100_000 sat, params.fundingPubkeyScript))
+      // Alice <-- tx_complete --- Bob
+      probe.expectMsgType[SendMessage]
+      // Alice --- tx_add_output --> Bob
+      bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(4), 45_000 sat, validScript))
+      // Alice <-- tx_complete --- Bob
+      probe.expectMsgType[SendMessage]
+      // Alice --- tx_complete --> Bob
+      bob ! ReceiveMessage(TxComplete(params.channelId))
+      if (isValid) {
+        probe.expectMsgType[Succeeded]
+      } else {
+        assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId, "lock time too far in the future"))
+      }
+    }
+  }
+
   test("previous attempts not double-spent") {
     val targetFeerate = FeeratePerKw(7500 sat)
     val fundingA = 85_000 sat
