@@ -301,10 +301,12 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     txPublisher ! TxRejected(attempt.id, cmd, ConflictingTxUnconfirmed)
     attempt.actor.expectMsg(FinalTxPublisher.Stop)
-
-    // We don't retry, even after a new block has been found:
-    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
     factory.expectNoMessage(100 millis)
+
+    // The conflicting transaction may be evicted from the mempool, so we retry when a new block is found:
+    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
+    val attempt2 = factory.expectMsgType[FinalTxPublisherSpawned]
+    assert(attempt2.actor.expectMsgType[FinalTxPublisher.Publish].cmd == cmd)
   }
 
   test("publishing attempt fails (unconfirmed conflicting replaceable transaction)") { f =>

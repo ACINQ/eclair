@@ -294,17 +294,13 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
               val retryNextBlock2 = if (retry) retryNextBlock ++ rejectedAttempts.map(_.cmd) else retryNextBlock
               run(pending2, retryNextBlock2, channelContext)
             case TxRejectedReason.ConflictingTxUnconfirmed =>
-              cmd match {
-                case _: PublishFinalTx =>
-                  // Our transaction is not replaceable, and the mempool contains a transaction that pays more fees, so
-                  // it doesn't make sense to retry, we will keep getting rejected.
-                  run(pending2, retryNextBlock, channelContext)
-                case _: PublishReplaceableTx =>
-                  // The mempool contains a transaction that pays more fees, but as we get closer to the confirmation
-                  // target, we will try to publish with higher fees, so if the conflicting transaction doesn't confirm,
-                  // we should be able to replace it before we reach the confirmation target.
-                  run(pending2, retryNextBlock ++ rejectedAttempts.map(_.cmd), channelContext)
-              }
+              // The mempool contains a transaction that pays more fees, but it may not confirm:
+              //  - for replaceable transactions, we will try to publish with higher fees as we get closer to the
+              //    confirmation target, so we should be able to replace it before we reach the confirmation target
+              //  - for final transactions, the conflicting transaction may be evicted from the mempool (e.g. if our
+              //    peer double-spends one of its other inputs), in which case our transaction becomes valid again
+              // We thus retry at every block until the conflicting transaction confirms.
+              run(pending2, retryNextBlock ++ rejectedAttempts.map(_.cmd), channelContext)
             case TxRejectedReason.ConflictingTxConfirmed =>
               // Our transaction was double-spent by a competing transaction that has been confirmed, so it doesn't make
               // sense to retry.
