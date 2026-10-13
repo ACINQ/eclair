@@ -172,13 +172,14 @@ object Sphinx extends Logging {
           val stream = generateStream(rho, 2 * packet.payload.length.toInt)
           val bin = (packet.payload ++ ByteVector.fill(packet.payload.length)(0)) xor stream
           Try(peekPayloadLength(bin)) match {
-            case Success(perHopPayloadLength) =>
+            // The per-hop payload (including its hmac) must fit in the packet, otherwise we may throw when extracting the hmac.
+            case Success(perHopPayloadLength) if perHopPayloadLength <= packet.payload.length =>
               val perHopPayload = bin.take(perHopPayloadLength - MacLength)
               val hmac = ByteVector32(bin.slice(perHopPayloadLength - MacLength, perHopPayloadLength))
               val nextOnionPayload = bin.drop(perHopPayloadLength).take(packet.payload.length)
               val nextPubKey = blind(packetEphKey, computeBlindingFactor(packetEphKey, sharedSecret))
               Right(DecryptedPacket(perHopPayload, OnionRoutingPacket(Version, nextPubKey.value, nextOnionPayload, hmac), sharedSecret))
-            case Failure(_) =>
+            case _ =>
               Left(InvalidOnionVersion(hash(packet)))
           }
         } else {
