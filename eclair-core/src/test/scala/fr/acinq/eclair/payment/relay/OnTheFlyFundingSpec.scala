@@ -1298,6 +1298,34 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     register.expectNoMessage(100 millis)
   }
 
+  test("only relay funded payment on the channel where liquidity was purchased") { f =>
+    import f._
+
+    connect(peer)
+
+    // Our peer purchases liquidity with a splice on one of their channels.
+    val upstream = upstreamChannel(50_000_000 msat, expiryIn, paymentHash)
+    proposeFunding(50_000_000 msat, expiryOut, paymentHash, upstream)
+    val fees = LiquidityAds.Fees(1000 sat, 1000 sat)
+    val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash :: Nil), fees = fees, fundingTxIndex = 1)
+
+    // Another channel with the same peer is ready for payments: we must not relay the payment there, otherwise we would
+    // only inspect the funded channel at expiry and may fail upstream while the HTLC can still be fulfilled downstream.
+    val fundedChannel = TestProbe()
+    val otherChannel = TestProbe()
+    peer ! ChannelReadyForPayments(fundedChannel.ref, remoteNodeId, purchase.channelId, randomTxId(), fundingTxIndex = 0)
+    peer ! ChannelReadyForPayments(otherChannel.ref, remoteNodeId, randomBytes32(), randomTxId(), fundingTxIndex = 1)
+    fundedChannel.expectNoMessage(100 millis)
+    otherChannel.expectNoMessage(100 millis)
+
+    // Once the funded channel is ready, we relay the payment on that channel.
+    peer ! ChannelReadyForPayments(fundedChannel.ref, remoteNodeId, purchase.channelId, purchase.txId, fundingTxIndex = 1)
+    fundedChannel.expectMsgType[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, purchase.channelId, fundedChannel.ref, NORMAL, makeChannelData())
+    val cmd = fundedChannel.expectMsgType[CMD_ADD_HTLC]
+    assert(cmd.fundingFee_opt.map(_.fundingTxId).contains(purchase.txId))
+    otherChannel.expectNoMessage(100 millis)
+  }
+
   test("stop when disconnecting without pending proposals") { f =>
     import f._
 
