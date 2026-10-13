@@ -1262,6 +1262,66 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
+  test("signed splice feerate too low when only remote contributes") {
+    val targetFeerate = FeeratePerKw(2500 sat)
+    withFixture(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100_000 sat, Seq(150_000 sat), 0 sat, Nil, targetFeerate, 330 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
+      import f._
+
+      val probe = TestProbe()
+      alice ! Start(alice2bob.ref)
+      bob ! Start(bob2alice.ref)
+      val (successA1, successB1) = runInteractiveTx(alice, bob, alice2bob, bob2alice)
+      val (txA1, commitmentA1, _, commitmentB1) = fixtureParams.exchangeSigsBobFirst(bobParams, successA1, successB1)
+      walletA.publishTransaction(txA1.signedTx).pipeTo(probe.ref)
+      probe.expectMsg(txA1.txId)
+
+      // Alice splices funds in, while Bob doesn't contribute. Bob expects a slightly higher feerate than what Alice
+      // actually pays for: the unsigned transaction satisfies Bob's target, but the signed transaction doesn't, because
+      // Alice's witnesses are larger than expected. A malicious peer could use this to make splice transactions that
+      // cannot be relayed, so Bob must reject it even though he doesn't contribute.
+      val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA1, commitmentB1)
+      val spliceFixtureParams = fixtureParams.createSpliceFixtureParams(fundingTxIndex = 1, fundingAmountA = 20_000 sat, fundingAmountB = 0 sat, targetFeerate, aliceParams.dustLimit, aliceParams.lockTime, sharedInputA = sharedInputA, sharedInputB = sharedInputB, requireConfirmedInputs = aliceParams.requireConfirmedInputs)
+      val fundingParamsB = spliceFixtureParams.fundingParamsB.copy(targetFeerate = targetFeerate * 1.1)
+      val aliceSplice = fixtureParams.spawnTxBuilderSpliceAlice(spliceFixtureParams.fundingParamsA, commitmentA1, walletA)
+      val bobSplice = fixtureParams.spawnTxBuilderSpliceBob(fundingParamsB, commitmentB1, walletB)
+      aliceSplice ! Start(alice2bob.ref)
+      bobSplice ! Start(bob2alice.ref)
+      val (successA2, successB2) = runInteractiveTx(aliceSplice, bobSplice, alice2bob, bob2alice)
+      assert(successB2.signingSession.fundingTx.tx.localInputs.isEmpty && successB2.signingSession.fundingTx.tx.localOutputs.isEmpty)
+      assert(successB2.signingSession.fundingTx.tx.remoteInputs.nonEmpty)
+
+      implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
+      // Alice <-- commit_sig --- Bob
+      val Right(signingSessionA: InteractiveTxSigningSession.WaitingForSigs) = successA2.signingSession.receiveCommitSig(fixtureParams.channelParamsA, fixtureParams.channelKeysA, successB2.commitSig, fixtureParams.nodeParamsA.currentBlockHeight)
+      // Alice --- commit_sig --> Bob
+      val Right(sigsB: InteractiveTxSigningSession.SendingSigs) = successB2.signingSession.receiveCommitSig(fixtureParams.channelParamsB, fixtureParams.channelKeysB, successA2.commitSig, fixtureParams.nodeParamsB.currentBlockHeight)
+      // Alice <-- tx_signatures --- Bob
+      val Right(sigsA) = signingSessionA.receiveTxSigs(fixtureParams.channelKeysA, sigsB.localSigs, fixtureParams.nodeParamsA.currentBlockHeight)
+      val spliceTxA = sigsA.fundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
+      assert(spliceTxA.feerate < fundingParamsB.targetFeerate * 0.95)
+      // Alice --- tx_signatures --> Bob
+      val Left(error) = InteractiveTxSigningSession.addRemoteSigs(fixtureParams.channelKeysB, fundingParamsB, sigsB.fundingTx.sharedTx.asInstanceOf[PartiallySignedSharedTransaction], sigsA.localSigs)
+      assert(error.isInstanceOf[InvalidFundingFeerate])
+    }
+  }
+
+  /** Forward interactive-tx messages between Alice and Bob until the protocol completes. */
+  private def runInteractiveTx(alice: ActorRef[InteractiveTxBuilder.Command], bob: ActorRef[InteractiveTxBuilder.Command], alice2bob: TestProbe, bob2alice: TestProbe): (Succeeded, Succeeded) = {
+    var successA_opt = Option.empty[Succeeded]
+    var successB_opt = Option.empty[Succeeded]
+    while (successA_opt.isEmpty || successB_opt.isEmpty) {
+      Seq((alice2bob, bob, (s: Succeeded) => successA_opt = Some(s), successA_opt.isEmpty), (bob2alice, alice, (s: Succeeded) => successB_opt = Some(s), successB_opt.isEmpty)).foreach {
+        case (probe, receiver, onSuccess, pending) if pending => probe.expectMsgType[Response] match {
+          case SendMessage(_, msg: InteractiveTxConstructionMessage) => receiver ! ReceiveMessage(msg)
+          case s: Succeeded => onSuccess(s)
+          case r => fail(s"unexpected response: $r")
+        }
+        case _ => ()
+      }
+    }
+    (successA_opt.get, successB_opt.get)
+  }
+
   test("not enough funds (unconfirmed utxos not allowed)") {
     withFixture(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100_000 sat, Seq(250_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true)) { f =>
       import f._
@@ -2673,6 +2733,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       TxAddInput(params.channelId, UInt64(7), Some(previousTx), 1, 0) -> NonSegwitInput(params.channelId, UInt64(7), previousTx.txid, 1),
       TxAddInput(params.channelId, UInt64(9), Some(previousTx), 2, 0xfffffffeL) -> NonReplaceableInput(params.channelId, UInt64(9), previousTx.txid, 2, 0xfffffffeL),
       TxAddInput(params.channelId, UInt64(9), Some(previousTx), 2, 0xffffffffL) -> NonReplaceableInput(params.channelId, UInt64(9), previousTx.txid, 2, 0xffffffffL),
+      // Inputs must not use a relative lock time, which would let our peer delay the publication of the transaction.
+      TxAddInput(params.channelId, UInt64(11), Some(previousTx), 2, 0x0000ffffL) -> RelativeLockTimeInput(params.channelId, UInt64(11), 0x0000ffffL),
+      TxAddInput(params.channelId, UInt64(11), Some(previousTx), 2, 0x00400001L) -> RelativeLockTimeInput(params.channelId, UInt64(11), 0x00400001L),
       // Replacing the previousTx field with previousTxOut is only allowed for splices on taproot channels.
       TxAddInput(params.channelId, UInt64(5), None, 0, 0, TlvStream(TxAddInputTlv.PrevTxOut(previousTx.txid, previousOutputs(0).amount, previousOutputs(0).publicKeyScript))) -> PreviousTxMissing(params.channelId, UInt64(5))
     )
@@ -2938,6 +3001,21 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     assert(probe.expectMsgType[RemoteFailure].cause == InvalidSharedInput(params.channelId, UInt64(0)))
   }
 
+  test("shared input with relative lock time") {
+    val probe = TestProbe()
+    val wallet = new SingleKeyOnChainWallet()
+    val params = createFixtureParams(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
+    val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).active.head
+    val fundingTx = Transaction(2, Nil, Seq(TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)), TxOut(20_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+    val sharedInput = SharedFundingInput(InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head), 0, randomKey().publicKey, previousCommitment.commitmentFormat)
+    val bob = params.spawnTxBuilderSpliceBob(params.fundingParamsB.copy(sharedInput_opt = Some(sharedInput)), previousCommitment, wallet)
+    bob ! Start(probe.ref)
+    // Alice --- tx_add_input --> Bob
+    // The initiator chooses the nSequence of the shared input: it must not use a relative lock time.
+    bob ! ReceiveMessage(TxAddInput(params.channelId, UInt64(0), sharedInput.info.outPoint, 0x0000ffffL))
+    assert(probe.expectMsgType[RemoteFailure].cause == RelativeLockTimeInput(params.channelId, UInt64(0), 0x0000ffffL))
+  }
+
   test("total input amount too low") {
     val probe = TestProbe()
     val wallet = new SingleKeyOnChainWallet()
@@ -2984,6 +3062,44 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     // Alice --- tx_complete --> Bob
     bob ! ReceiveMessage(TxComplete(params.channelId))
     assert(probe.expectMsgType[RemoteFailure].cause.isInstanceOf[InvalidSpliceFeerate])
+  }
+
+  test("lock time too far in the future") {
+    val currentBlockHeight = TestConstants.Bob.nodeParams.currentBlockHeight.toLong
+    val testCases = Seq(
+      currentBlockHeight + InteractiveTxBuilder.MAX_LOCKTIME_AHEAD_BLOCKS -> true,
+      currentBlockHeight + InteractiveTxBuilder.MAX_LOCKTIME_AHEAD_BLOCKS + 1 -> false,
+      499_999_999L -> false,
+      // Timestamp-based lock times are never accepted.
+      1_800_000_000L -> false,
+    )
+    testCases.foreach { case (lockTime, isValid) =>
+      val probe = TestProbe()
+      val wallet = new SingleKeyOnChainWallet()
+      val params = createFixtureParams(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, lockTime)
+      val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey))
+      val bob = params.spawnTxBuilderBob(wallet)
+      bob ! Start(probe.ref)
+      // Alice --- tx_add_input --> Bob
+      bob ! ReceiveMessage(createInput(params.channelId, UInt64(0), 150_000 sat))
+      // Alice <-- tx_complete --- Bob
+      probe.expectMsgType[SendMessage]
+      // Alice --- tx_add_output --> Bob
+      bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(2), 100_000 sat, params.fundingPubkeyScript))
+      // Alice <-- tx_complete --- Bob
+      probe.expectMsgType[SendMessage]
+      // Alice --- tx_add_output --> Bob
+      bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(4), 45_000 sat, validScript))
+      // Alice <-- tx_complete --- Bob
+      probe.expectMsgType[SendMessage]
+      // Alice --- tx_complete --> Bob
+      bob ! ReceiveMessage(TxComplete(params.channelId))
+      if (isValid) {
+        probe.expectMsgType[Succeeded]
+      } else {
+        assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId, "lock time too far in the future"))
+      }
+    }
   }
 
   test("previous attempts not double-spent") {
