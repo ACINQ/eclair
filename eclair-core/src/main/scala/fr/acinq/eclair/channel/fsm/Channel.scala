@@ -2198,12 +2198,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             )
             val d1 = d.copy(commitments = commitments2)
             spendLocalCurrent(d1, d.maxClosingFeerate_opt)
-          } else if (d.localCommitPublished.exists(lcp => d.commitments.resolveCommitment(lcp.commitTx).exists(_.fundingTxIndex < commitment.fundingTxIndex))) {
-            // We force-closed using a previous commitment, because our peer hadn't sent their tx_signatures for this
-            // splice transaction and we couldn't publish it. They have now published it and it confirmed, which
-            // double-spends the commit tx we published: we must force-close again using the commitment that spends
-            // this splice transaction.
-            log.warning("splice fundingTxIndex={} fundingTxId={} confirmed after we force-closed using a previous commitment", commitment.fundingTxIndex, commitment.fundingTxId)
+          } else if (d.localCommitPublished.exists(lcp => d.commitments.resolveCommitment(lcp.commitTx).exists(c => c.fundingTxId != commitment.fundingTxId && c.fundingTxIndex <= commitment.fundingTxIndex))) {
+            // We force-closed using a previous commitment or an RBF sibling of this splice transaction, because our
+            // peer hadn't sent their tx_signatures for it and we couldn't publish it. They have now published it and
+            // it confirmed, which double-spends the commit tx we published: we must force-close again using the
+            // commitment that spends this splice transaction.
+            log.warning("splice fundingTxIndex={} fundingTxId={} confirmed after we force-closed using a commitment that it double-spends", commitment.fundingTxIndex, commitment.fundingTxId)
             spendLocalCurrent(d.copy(commitments = commitments1), d.maxClosingFeerate_opt)
           } else {
             // We're still on the same splice history, nothing to do

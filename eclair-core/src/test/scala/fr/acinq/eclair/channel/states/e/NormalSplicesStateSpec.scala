@@ -32,7 +32,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession
-import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.crypto.keymanager.RemoteCommitmentKeys
@@ -3949,6 +3949,58 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectWatchOutputsSpent(lcp2.localOutput_opt.toSeq ++ lcp2.anchorOutput_opt.toSeq ++ lcp2.htlcOutputs.toSeq)
     assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.fundingTxId == spliceTx.txid)
     assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitmentFor(commitTx2.txid).fundingTxId == spliceTx.txid)
+  }
+
+  test("force-close with unsigned splice RBF attempt (tx_signatures not received)") { f =>
+    import f._
+
+    val htlcs = setupHtlcs(f)
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == spliceTx.txid)
+    bob2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    val spliceTxIndex = bob.commitments.latest.fundingTxIndex
+
+    // Alice RBFs the splice transaction: Bob doesn't contribute any input, so he must send his tx_signatures first.
+    val sender = initiateRbfWithoutSigs(f, FeeratePerKw(15_000 sat), sInputsCount = 2, sOutputsCount = 2)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    val bobSigs = bob2alice.expectMsgType[TxSignatures] // Alice doesn't receive Bob's tx_signatures
+    bob2blockchain.expectWatchFundingConfirmed(bobSigs.txId)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    val rbfCommitment = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
+    assert(rbfCommitment.fundingTxIndex == spliceTxIndex)
+    assert(rbfCommitment.fundingTxId == bobSigs.txId)
+    assert(rbfCommitment.localFundingStatus.signedTx_opt.isEmpty)
+
+    // Bob cannot publish the RBF transaction, so he force-closes using the commitment of the previous splice attempt.
+    bob ! CMD_FORCECLOSE(ActorRef.noSender)
+    bob2alice.expectMsgType[Error]
+    val commitTx1 = bob2blockchain.expectFinalTxPublished("commit-tx").tx
+    assert(commitTx1.txIn.map(_.outPoint.txid) == Seq(spliceTx.txid))
+    bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    bob2blockchain.expectFinalTxPublished("local-main-delayed")
+    htlcs.bobToAlice.foreach(_ => bob2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx])
+    bob2blockchain.expectWatchTxConfirmed(commitTx1.txid)
+    val lcp1 = bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    bob2blockchain.expectWatchOutputsSpent(lcp1.localOutput_opt.toSeq ++ lcp1.anchorOutput_opt.toSeq ++ lcp1.htlcOutputs.toSeq)
+
+    // Alice receives Bob's tx_signatures and publishes the RBF transaction, which confirms.
+    bob2alice.forward(alice, bobSigs)
+    alice2bob.expectMsgType[TxSignatures]
+    sender.expectMsgType[RES_SPLICE]
+    val rbfTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
+    assert(rbfTx.txid == rbfCommitment.fundingTxId)
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, rbfTx)
+    // Bob's previous commit tx has been double-spent by the RBF transaction: he force-closes using the RBF commitment.
+    val commitTx2 = bob2blockchain.fishForMessage() {
+      case p: PublishFinalTx => p.desc == "commit-tx"
+      case _ => false
+    }.asInstanceOf[PublishFinalTx].tx
+    Transaction.correctlySpends(commitTx2, Seq(rbfTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.map(_.commitTx.txid).contains(commitTx2.txid))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitmentFor(commitTx2.txid).fundingTxId == rbfTx.txid)
   }
 
   test("force-close with multiple splices (previous active remote)", Tag(ChannelStateTestsTags.OptionSimpleTaproot), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
