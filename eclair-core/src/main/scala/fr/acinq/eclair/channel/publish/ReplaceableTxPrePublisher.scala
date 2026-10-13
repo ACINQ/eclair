@@ -99,7 +99,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
   private def checkLocalCommitAnchorPreconditions(commitTx: Transaction, concurrentCommitTxs: Set[TxId]): Behavior[Command] = {
     val fundingOutpoint = commitTx.txIn.head.outPoint
     context.pipeToSelf(bitcoinClient.getTxConfirmations(fundingOutpoint.txid).flatMap {
-      case Some(_) =>
+      case Some(fundingTxConfirmations) =>
         // The funding transaction was found, let's see if we can still spend it.
         bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = true).flatMap {
           case true =>
@@ -119,6 +119,9 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
                 // their tx_signatures, and that they may double-spend later: we must keep trying to publish our commit tx.
                 checkConcurrentCommits(concurrentCommitTxs.toSeq).flatMap {
                   case Some(_) => Future.successful(ConcurrentCommitAvailable)
+                  // If the funding transaction is unconfirmed (e.g. when using 0-conf), its outputs can only be spent by
+                  // unconfirmed transactions (and they're not in the UTXO set, so we cannot use the check below).
+                  case None if fundingTxConfirmations == 0 => Future.successful(FundingOutputSpentByUnconfirmedTx)
                   case None => bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).map {
                     case true => FundingOutputSpentByUnconfirmedTx
                     case false => ConcurrentCommitAvailable
