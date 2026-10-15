@@ -19,7 +19,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.scalacompat.Crypto.TaprootTweak.KeyPathTweak
 import fr.acinq.bitcoin.scalacompat.Crypto._
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, Crypto, MilliBtc, MilliBtcDouble, Musig2, OP_2, OP_CHECKMULTISIG, OP_PUSHDATA, OP_RETURN, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, Crypto, MilliBtc, MilliBtcDouble, Musig2, OP_1, OP_2, OP_2DROP, OP_CHECKMULTISIG, OP_PUSHDATA, OP_RETURN, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
 import fr.acinq.bitcoin.{ScriptFlags, SigVersion}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
@@ -110,6 +110,50 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val (sequence, locktime) = encodeTxNumber(txnumber)
       val txnumber1 = decodeTxNumber(sequence, locktime)
       assert(txnumber == txnumber1)
+    }
+  }
+
+  test("check witness standardness") {
+    val p2wpkh = TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey))
+    val p2wsh = TxOut(50_000 sat, Script.pay2wsh(Seq(OP_2DROP, OP_1)))
+    val p2tr = TxOut(50_000 sat, Script.pay2tr(randomKey().xOnlyPublicKey(), KeyPathTweak))
+    val p2a = TxOut(240 sat, Script.pay2anchor)
+    val p2pkh = TxOut(50_000 sat, Script.pay2pkh(randomKey().publicKey))
+    val witnessScript = Script.write(Seq(OP_2DROP, OP_1))
+    val tapscriptControlBlock = ByteVector(0xc0) ++ randomBytes(32)
+    val testCases = Seq(
+      (p2wpkh, ScriptWitness.empty, true),
+      (p2wpkh, ScriptWitness(Seq(ByteVector.fill(72)(1), randomKey().publicKey.value)), true),
+      (p2wsh, ScriptWitness(Seq(ByteVector.fill(80)(1), ByteVector.fill(80)(1), witnessScript)), true),
+      // P2WSH stack items are limited to 80 bytes.
+      (p2wsh, ScriptWitness(Seq(ByteVector.fill(81)(1), ByteVector.fill(80)(1), witnessScript)), false),
+      // P2WSH stacks are limited to 100 items (excluding the witness script).
+      (p2wsh, ScriptWitness(Seq.fill(100)(ByteVector.fill(1)(1)) :+ witnessScript), true),
+      (p2wsh, ScriptWitness(Seq.fill(101)(ByteVector.fill(1)(1)) :+ witnessScript), false),
+      // P2WSH scripts are limited to 3600 bytes.
+      (p2wsh, ScriptWitness(Seq(ByteVector.fill(3600)(0x51))), true),
+      (p2wsh, ScriptWitness(Seq(ByteVector.fill(3601)(0x51))), false),
+      // Taproot key path spend.
+      (p2tr, ScriptWitness(Seq(randomBytes(64))), true),
+      // Taproot annexes are not standard.
+      (p2tr, ScriptWitness(Seq(randomBytes(64), ByteVector(0x50) ++ ByteVector.fill(500)(0))), false),
+      // Tapscript stack items are limited to 80 bytes.
+      (p2tr, ScriptWitness(Seq(ByteVector.fill(80)(1), witnessScript, tapscriptControlBlock)), true),
+      (p2tr, ScriptWitness(Seq(ByteVector.fill(81)(1), witnessScript, tapscriptControlBlock)), false),
+      // Unknown leaf versions are not restricted.
+      (p2tr, ScriptWitness(Seq(ByteVector.fill(81)(1), witnessScript, ByteVector(0xc2) ++ randomBytes(32))), true),
+      // An empty control block is invalid.
+      (p2tr, ScriptWitness(Seq(ByteVector.fill(32)(1), witnessScript, ByteVector.empty)), false),
+      // Pay-to-anchor outputs must be spent with an empty witness.
+      (p2a, ScriptWitness.empty, true),
+      (p2a, ScriptWitness(Seq(ByteVector.fill(1)(1))), false),
+      // Non-segwit inputs must not have a witness.
+      (p2pkh, ScriptWitness(Seq(ByteVector.fill(1)(1))), false),
+    )
+    testCases.foreach { case (previousOutput, witness, expected) =>
+      val outPoint = OutPoint(randomTxId(), 0)
+      val tx = Transaction(2, Seq(TxIn(outPoint, ByteVector.empty, 0xfffffffdL, witness)), Seq(TxOut(10_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+      assert(isWitnessStandard(tx, Map(outPoint -> previousOutput)) == expected, s"previousOutput=$previousOutput witness=$witness")
     }
   }
 

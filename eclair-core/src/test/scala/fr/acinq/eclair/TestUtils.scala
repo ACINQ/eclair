@@ -25,11 +25,12 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.protocol.LightningMessage
 import org.scalatest.concurrent.Eventually.eventually
 
-import java.io.File
+import java.io.{File, IOException}
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.util.UUID
 import scala.concurrent.duration.FiniteDuration
+import scala.util.Random
 
 object TestUtils {
 
@@ -41,11 +42,46 @@ object TestUtils {
     .get("buildDirectory") // this is defined if we run from maven
     .getOrElse(new File(sys.props("user.dir"), "eclair-core/target").getAbsolutePath) // otherwise we probably are in intellij, so we build it manually assuming that user.dir == path to the module
 
+  /**
+   * Ports that have already been handed out by [[availablePort]] in this JVM.
+   *
+   * Test suites run in parallel and usually don't bind their port right away: [[fr.acinq.eclair.blockchain.bitcoind.BitcoindService]]
+   * for example reserves its ports when the suite is instantiated, but only starts bitcoind in `beforeAll`. Keeping
+   * track of what we handed out is what guarantees that two suites can't be given the same port during that window.
+   */
+  private val allocatedPorts = collection.mutable.Set.empty[Int]
+
+  /**
+   * We allocate ports below the ephemeral port range (`net.ipv4.ip_local_port_range` starts at 32768 on most systems).
+   * Ports inside that range can be stolen by any of the outgoing connections that tests open (e.g. to bitcoind's RPC
+   * endpoint) between the moment we hand a port out and the moment it is actually bound.
+   */
+  private val PortRangeStart = 20000
+  private val PortRangeEnd = 28000
+
+  /**
+   * Reserve a port that no other test suite in this JVM will be given, and that nothing else is currently listening on.
+   *
+   * NB: we cannot keep the port bound until the caller needs it, so this is still best-effort with regards to other
+   * processes running on the same machine: we only guarantee that we never hand out the same port twice.
+   */
   def availablePort: Int = synchronized {
+    val port = Iterator.fill(1000)(PortRangeStart + Random.nextInt(PortRangeEnd - PortRangeStart))
+      .filterNot(allocatedPorts.contains)
+      .find(canBind)
+      .getOrElse(throw new RuntimeException(s"could not find an available port in [$PortRangeStart, $PortRangeEnd)"))
+    allocatedPorts += port
+    port
+  }
+
+  /** Check that nothing is currently listening on that port. */
+  private def canBind(port: Int): Boolean = {
     var serverSocket: ServerSocket = null
     try {
-      serverSocket = new ServerSocket(0)
-      serverSocket.getLocalPort
+      serverSocket = new ServerSocket(port)
+      true
+    } catch {
+      case _: IOException => false
     } finally {
       if (serverSocket != null) {
         serverSocket.close()

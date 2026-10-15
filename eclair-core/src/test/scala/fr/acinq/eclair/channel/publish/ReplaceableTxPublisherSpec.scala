@@ -21,8 +21,9 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter
 import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.scalacompat.{Block, BtcAmount, MilliBtcDouble, MnemonicCode, OutPoint, SatoshiLong, Script, ScriptElt, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{Block, BtcAmount, MilliBtcDouble, MnemonicCode, OutPoint, SatoshiLong, Script, ScriptElt, Transaction, TxId, TxIn, TxOut, computeP2WpkhAddress}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
+import fr.acinq.eclair.blockchain.WatcherSpec
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.MempoolTx
@@ -138,7 +139,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   // NB: we can't use ScalaTest's fixtures, they would see uninitialized bitcoind fields because they sandbox each test.
-  private def withFixture(utxos: Seq[BtcAmount], channelType: SupportedChannelType)(testFun: Fixture => Any): Unit = {
+  private def withFixture(utxos: Seq[BtcAmount], channelType: SupportedChannelType, zeroConf: Boolean = false)(testFun: Fixture => Any): Unit = {
     // Create a unique wallet for this test and ensure it has some btc.
     val testId = UUID.randomUUID()
     val (walletRpcClient, walletClient) = createTestWallet(s"lightning-$testId")
@@ -162,13 +163,13 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       case _: ChannelTypes.ZeroFeeCommitments => Set(ChannelStateTestsTags.ZeroFeeCommitments, ChannelStateTestsTags.NoMaxHtlcValueInFlight)
       case _ => Set.empty[String]
     }
-    reachNormal(setup, testTags)
+    reachNormal(setup, if (zeroConf) testTags + ChannelStateTestsTags.ZeroConf else testTags)
     import setup._
     awaitAssert(assert(alice.stateName == NORMAL))
     awaitAssert(assert(bob.stateName == NORMAL))
 
-    // Generate blocks to ensure the funding tx is confirmed.
-    generateBlocks(1)
+    // Generate blocks to ensure the funding tx is confirmed (unless we're testing zero-conf).
+    if (!zeroConf) generateBlocks(1)
 
     // Execute our test.
     val publisher = system.spawn(ReplaceableTxPublisher(aliceNodeParams, walletClient, TxPublishContext(testId, TestConstants.Bob.nodeParams.nodeId, None)), testId.toString)
@@ -423,6 +424,66 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(result.cmd == anchorTx)
       assert(result.reason == TxSkipped(retryNextBlock = false))
     }
+  }
+
+  private def testFundingOutputSpentByUnconfirmedTx(zeroConf: Boolean): Unit = {
+    // When using zero-conf, the change output of the funding transaction is unconfirmed: we need another utxo to fund our anchor transaction.
+    withFixture(Seq(500 millibtc, 200 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), zeroConf) { f =>
+      import f._
+
+      val commitment = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.commitment
+      val (aliceFundingKey, bobFundingKey) = (commitment.localFundingKey(alice.underlyingActor.channelKeys), commitment.localFundingKey(bob.underlyingActor.channelKeys))
+      val fundingInput = commitment.commitInput(aliceFundingKey)
+      val (localCommit, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 12)
+
+      // Our peer publishes a splice transaction that spends the funding output and one of their wallet inputs, without
+      // sending us their tx_signatures (which means we're force-closing with the previous commitment).
+      val attackerKey = randomKey()
+      val attackerTx = sendToAddress(computeP2WpkhAddress(attackerKey.publicKey, Block.RegtestGenesisBlock.hash), 100_000 sat, probe)
+      // When using zero-conf, the funding transaction must stay unconfirmed.
+      if (!zeroConf) generateBlocks(1)
+      val attackerInput = OutPoint(attackerTx, attackerTx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(attackerKey.publicKey))))
+      val unsignedSpliceTx = Transaction(2, Seq(TxIn(fundingInput.outPoint, Nil, 0xfffffffdL), TxIn(attackerInput, Nil, 0xfffffffdL)), Seq(TxOut(fundingInput.txOut.amount + 100_000.sat - 25_000.sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+      val extraUtxos = Map(attackerInput -> attackerTx.txOut(attackerInput.index.toInt))
+      val spliceTx = {
+        val tx = SpliceTx(fundingInput, unsignedSpliceTx)
+        val aliceSig = tx.sign(aliceFundingKey, bobFundingKey.publicKey, extraUtxos)
+        val bobSig = tx.sign(bobFundingKey, aliceFundingKey.publicKey, extraUtxos)
+        val signedFundingInput = tx.aggregateSigs(aliceFundingKey.publicKey, bobFundingKey.publicKey, aliceSig, bobSig)
+        val sig = Transaction.signInput(signedFundingInput, 1, Script.pay2pkh(attackerKey.publicKey), fr.acinq.bitcoin.SigHash.SIGHASH_ALL, 100_000 sat, fr.acinq.bitcoin.SigVersion.SIGVERSION_WITNESS_V0, attackerKey)
+        signedFundingInput.updateWitness(1, Script.witnessPay2wpkh(attackerKey.publicKey, sig))
+      }
+      wallet.publishTransaction(spliceTx).pipeTo(probe.ref)
+      probe.expectMsg(spliceTx.txid)
+      wallet.getTxConfirmations(fundingInput.outPoint.txid).pipeTo(probe.ref)
+      if (zeroConf) probe.expectMsg(Some(0)) else assert(probe.expectMsgType[Option[Int]].exists(_ > 0))
+
+      // Our commit tx cannot be published, but no remote commit is available: we must retry later.
+      setFeerate(FeeratePerKw(10_000 sat))
+      publisher ! Publish(probe.ref, anchorTx)
+      val result = probe.expectMsgType[TxRejected]
+      assert(result.cmd == anchorTx)
+      assert(result.reason == TxSkipped(retryNextBlock = true))
+
+      // Our peer double-spends their wallet input: the funding output is unspent again.
+      val doubleSpendTx = WatcherSpec.createSpendP2WPKH(attackerTx, attackerKey, randomKey().publicKey, 50_000 sat, 0xfffffffdL, 0)
+      wallet.publishTransaction(doubleSpendTx).pipeTo(probe.ref)
+      probe.expectMsg(doubleSpendTx.txid)
+      assert(!isInMempool(spliceTx.txid))
+
+      // When retrying, we publish our commit tx and our anchor.
+      val publisher2 = createPublisher()
+      publisher2 ! Publish(probe.ref, anchorTx)
+      awaitAssert(assert(isInMempool(localCommit.tx.txid)), interval = 200 millis)
+    }
+  }
+
+  test("funding output spent by an unconfirmed transaction, retrying local anchor output") {
+    testFundingOutputSpentByUnconfirmedTx(zeroConf = false)
+  }
+
+  test("funding output spent by an unconfirmed transaction, retrying local anchor output (zero-conf)") {
+    testFundingOutputSpentByUnconfirmedTx(zeroConf = true)
   }
 
   test("remote commit tx replaces local commit tx, not spending anchor output") {

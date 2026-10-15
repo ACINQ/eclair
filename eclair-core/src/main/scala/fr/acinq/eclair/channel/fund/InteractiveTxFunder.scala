@@ -166,6 +166,8 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
   }
 
   private val spliceInOnly = fundingParams.sharedInput_opt.nonEmpty && fundingParams.localContribution > 0.sat && fundingParams.localOutputs.isEmpty
+  // Amount of the shared output in the transaction we ask bitcoind to fund (see comments in start()).
+  private val walletFundingOutputAmount = if (!fundingParams.isInitiator && spliceInOnly) fundingParams.localContribution else purpose.previousFundingAmount + fundingParams.localContribution
 
   def start(): Behavior[Command] = {
     // We always double-spend all our previous inputs. It's technically overkill because we only really need to double
@@ -199,7 +201,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
       // We don't need to include the shared input, the other node will pay for its weight.
       // We create a dummy shared output with the amount we want to splice in, and bitcoind will make sure we match that
       // amount.
-      val sharedTxOut = TxOut(fundingParams.localContribution, fundingPubkeyScript)
+      val sharedTxOut = TxOut(walletFundingOutputAmount, fundingPubkeyScript)
       val previousWalletTxIn = previousWalletInputs.map(i => TxIn(i.outPoint, ByteVector.empty, i.sequence))
       val dummyTx = Transaction(2, previousWalletTxIn, Seq(sharedTxOut), fundingParams.lockTime)
       fund(dummyTx, previousWalletInputs, Set.empty)
@@ -210,7 +212,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
       // We will later subtract the fees for that input to ensure we don't overshoot the feerate: however, if bitcoind
       // doesn't add a change output, we won't be able to do so and will overpay miner fees.
       // Note that if the shared output amount is smaller than the dust limit, bitcoind will reject the funding attempt.
-      val sharedTxOut = TxOut(purpose.previousFundingAmount + fundingParams.localContribution, fundingPubkeyScript)
+      val sharedTxOut = TxOut(walletFundingOutputAmount, fundingPubkeyScript)
       val sharedTxIn = fundingParams.sharedInput_opt.toSeq.map(sharedInput => TxIn(sharedInput.info.outPoint, ByteVector.empty, 0xfffffffdL))
       val previousWalletTxIn = previousWalletInputs.map(i => TxIn(i.outPoint, ByteVector.empty, i.sequence))
       val dummyTx = Transaction(2, sharedTxIn ++ previousWalletTxIn, sharedTxOut +: fundingParams.localOutputs, fundingParams.lockTime)
@@ -275,7 +277,15 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
           case _: Input.Shared => fundingParams.sharedInput_opt.map(_.weight).getOrElse(0)
           case _ => Transactions.maxWalletInputWeight
         }.sum
+        val fee = amountIn - amountOut
         val maxFee = Transactions.weight2fee(fundingParams.targetFeerate * 1.5, maxWeight)
+        // We don't use the shared and non-change outputs returned by bitcoind: we rebuild them from the amounts we expect
+        // and only keep the change output that bitcoind designated. If bitcoind modified one of our outputs or lied about
+        // the change position, the difference would silently be paid to miners, so we verify that our rebuilt contribution
+        // pays exactly the fee we checked above.
+        val changeTxOut_opt = changePosition.flatMap(i => fundedTx.txOut.lift(i))
+        val isValidChangePosition = changePosition.isEmpty || changeTxOut_opt.exists(o => o.publicKeyScript != fundingPubkeyScript && !fundingParams.localOutputs.contains(o))
+        val rebuiltFee = amountIn - walletFundingOutputAmount - fundingParams.localOutputs.map(_.amount).sum - changeTxOut_opt.map(_.amount).getOrElse(0.sat)
         // The transaction should still contain the funding output.
         if (fundedTx.txOut.count(_.publicKeyScript == fundingPubkeyScript) != 1) {
           log.error("funded transaction is missing the funding output: {}", fundedTx)
@@ -283,8 +293,14 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
         } else if (fundingParams.localOutputs.exists(o => !fundedTx.txOut.contains(o))) {
           log.error("funded transaction is missing one of our local outputs: {}", fundedTx)
           sendResultAndStop(FundingFailed, fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
-        } else if (amountIn - amountOut > maxFee) {
-          log.error("funded transaction pays excessive mining fees (fee={} max={} targetFeerate={}): bitcoin core may be malicious", amountIn - amountOut, maxFee, fundingParams.targetFeerate)
+        } else if (fee > maxFee) {
+          log.error("funded transaction pays excessive mining fees (fee={} max={} targetFeerate={}): bitcoin core may be malicious", fee, maxFee, fundingParams.targetFeerate)
+          sendResultAndStop(FundingFailed, fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
+        } else if (!isValidChangePosition) {
+          log.error("funded transaction has an invalid change position (changePosition={}): bitcoin core may be malicious: {}", changePosition, fundedTx)
+          sendResultAndStop(FundingFailed, fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
+        } else if (rebuiltFee != fee) {
+          log.error("funded transaction doesn't match our expected outputs (fee={} rebuiltFee={}): bitcoin core may be malicious: {}", fee, rebuiltFee, fundedTx)
           sendResultAndStop(FundingFailed, fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
         } else {
           val nonChangeOutputs = fundingParams.localOutputs.map(o => Output.Local.NonChange(UInt64(0), o.amount, o.publicKeyScript))

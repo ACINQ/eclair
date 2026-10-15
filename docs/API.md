@@ -9,6 +9,10 @@ eclair.api.password=changeit
 
 :rotating_light: **Attention:** Eclair's API should NOT be accessible from the outside world (similarly to Bitcoin Core API).
 
+The API cannot be used from a web browser: requests that set the `Origin` header (which browsers always do) are
+rejected. This protects against cross-site request forgery, since browsers attach cached basic auth credentials to
+cross-site requests. Command-line tools and other back-ends never set that header and are unaffected.
+
 ## Payment notification
 
 Eclair accepts websocket connection on `ws://localhost:<port>/ws`, and emits a message containing the payment hash of a payment when receiving a payment.

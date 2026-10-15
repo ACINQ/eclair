@@ -21,7 +21,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.13</artifactId>
-        <version>0.14.3</version>
+        <version>0.14.4</version>
     </parent>
 
     <artifactId>eclair-node_2.13</artifactId>
@@ -50,7 +50,6 @@
             </plugin>
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.6.0</version>
                 <configuration>
                     <finalName>${project.name}-${project.version}-${git.commit.id.abbrev}</finalName>
                     <descriptors>

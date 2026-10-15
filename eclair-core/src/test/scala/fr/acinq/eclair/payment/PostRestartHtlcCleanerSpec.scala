@@ -18,10 +18,12 @@ package fr.acinq.eclair.payment
 
 import akka.Done
 import akka.actor.ActorRef
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxId, TxIn, TxOut}
+import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
@@ -35,7 +37,9 @@ import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
 import fr.acinq.eclair.router.Router.Route
-import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
+import fr.acinq.eclair.testutils.PimpTestProbe.convert
+import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorTx, HtlcTimeoutTx}
+import fr.acinq.eclair.transactions.{CommitmentOutput, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.{ChannelCodecs, ChannelCodecsSpec}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilli, TimestampMilliLong, randomBytes32, randomKey}
@@ -44,7 +48,7 @@ import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits.ByteVector
 
 import java.util.UUID
-import scala.concurrent.Promise
+import scala.concurrent.{ExecutionContext, Promise}
 import scala.concurrent.duration._
 
 /**
@@ -562,6 +566,123 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val brokenHtlcs = sender.expectMsgType[PostRestartHtlcCleaner.BrokenHtlcs]
     assert(brokenHtlcs.relayedOut.isEmpty)
     assert(brokenHtlcs.notRelayed == htlc_ab.map(htlc => PostRestartHtlcCleaner.IncomingHtlc(htlc.add, None)))
+  }
+
+  test("keep upstream htlc still claimable downstream after local close with unsigned splice") { f =>
+    import f._
+
+    // Mallory (the bob fixture, downstream) splices in and never sends tx_signatures, so Alice force-closes with the previous commitment.
+    // The decoy htlc times out on-chain and is failed upstream before the restart; the target htlc is still claimable by Mallory.
+    val (preimageTarget, preimageDecoy) = (randomBytes32(), randomBytes32())
+    val htlc_upstream_target = buildHtlcIn(1, channelId_ab_1, Crypto.sha256(preimageTarget))
+    val upstream_target = Upstream.Hot.Channel(htlc_upstream_target.add, TimestampMilli(1687345927000L), a, 0.1)
+    val upstream_decoy = Upstream.Hot.Channel(buildHtlc(0, channelId_ab_1, Crypto.sha256(preimageDecoy)), TimestampMilli(1687345902000L), a, 0.1)
+    val data_upstream = ChannelCodecsSpec.makeChannelDataNormal(Seq(htlc_upstream_target), Map.empty)
+
+    val (data_downstream, htlc_target, commitTx) = {
+      val malloryWallet = new SingleKeyOnChainWallet()
+      val setup = init(walletB_opt = Some(malloryWallet))
+      import setup._
+      val fundingTx = reachNormal(setup)
+      // The test wallet only funds a splice correctly if it knows the shared input.
+      malloryWallet.publishTransaction(fundingTx)(ExecutionContext.global)
+      alice2bob.ignoreMsg { case _: ChannelUpdate => true }
+      bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+      val currentBlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
+      val malloryNodeId = bob.underlyingActor.nodeParams.nodeId
+      // Mallory's balance (200 000 sat) sorts below both htlcs in the commit tx that Alice will publish.
+      val htlc_decoy = addHtlc(makeCmdAdd(210_000_000 msat, CltvExpiryDelta(144), malloryNodeId, preimageDecoy, currentBlockHeight, upstream_decoy)._2, alice, bob, alice2bob, bob2alice)
+      val htlc_target = addHtlc(makeCmdAdd(260_000_000 msat, CltvExpiryDelta(288), malloryNodeId, preimageTarget, currentBlockHeight, upstream_target)._2, alice, bob, alice2bob, bob2alice)
+      crossSign(alice, bob, alice2bob, bob2alice)
+      val fundingTxIndex = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fundingTxIndex
+
+      // Mallory splices in enough for that balance to sort above both htlcs in the splice commitment.
+      bob ! CMD_SPLICE(TestProbe().ref, Some(SpliceIn(500_000 sat)), None, None, None)
+      bob2alice.expectMsgType[Stfu]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[Stfu]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[SpliceInit]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[SpliceAck]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxAddInput]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[TxComplete]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxAddInput]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[TxComplete]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxAddOutput]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[TxComplete]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxAddOutput]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[TxComplete]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxComplete]
+      bob2alice.forward(alice)
+      bob2alice.expectMsgType[CommitSig]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      // Mallory contributes the shared input, so Alice signs first: Mallory never sends tx_signatures.
+      val aliceSigs = alice2bob.expectMsgType[TxSignatures]
+      alice2blockchain.expectWatchFundingConfirmed(aliceSigs.txId)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+      assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fundingTxIndex == fundingTxIndex + 1)
+      assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.isEmpty)
+
+      // Alice force-closes (e.g. because the decoy htlc times out) with the previous commitment.
+      alice ! CMD_FORCECLOSE(ActorRef.noSender)
+      alice2bob.expectMsgType[Error]
+      val commitTx = alice2blockchain.expectFinalTxPublished("commit-tx").tx
+      alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+      alice2blockchain.expectFinalTxPublished("local-main-delayed")
+      val htlcTimeoutTxs = Seq(alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx], alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx])
+      val htlcTimeoutDecoy = htlcTimeoutTxs.find(_.htlcId == htlc_decoy.id).get.sign()
+      val closing = alice.stateData.asInstanceOf[DATA_CLOSING]
+      assert(closing.commitments.latest.fundingTxIndex == fundingTxIndex + 1)
+      assert(closing.commitmentFor(commitTx.txid).fundingTxIndex == fundingTxIndex)
+      // The decoy's output index points to the target htlc in the latest commitment's output layout.
+      val outputIndexDecoy = htlcTimeoutDecoy.txIn.head.outPoint.index
+      assert(commitTx.txOut(outputIndexDecoy.toInt).amount == htlc_decoy.amountMsat.truncateToSatoshi)
+      assert(Closing.LocalClose.makeLocalCommitTxOutputs(alice.underlyingActor.channelKeys, closing.commitments.latest.localKeys(alice.underlyingActor.channelKeys), closing.commitments.latest)(outputIndexDecoy.toInt).isInstanceOf[CommitmentOutput.OutHtlc])
+
+      alice ! WatchTxConfirmedTriggered(BlockHeight(400_100), 0, commitTx)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(400_150), 0, htlcTimeoutDecoy)
+      // The live channel resolves the right commitment and only fails the decoy htlc upstream.
+      val settled = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult]]
+      assert(settled.htlc.id == htlc_decoy.id && settled.result.isInstanceOf[HtlcResult.OnChainFail])
+      alice2relayer.expectNoMessage(100 millis)
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.irrevocablySpent.contains(htlcTimeoutDecoy.txIn.head.outPoint))
+      (alice.stateData.asInstanceOf[DATA_CLOSING], htlc_target, commitTx)
+    }
+    // The target htlc's output is still unspent in the confirmed commit tx: Mallory can claim it with the preimage.
+    val htlcOutputTarget = data_downstream.localCommitPublished.get.outgoingHtlcs.collectFirst { case (outpoint, id) if id == htlc_target.id => outpoint }.get
+    assert(htlcOutputTarget.txid == commitTx.txid)
+    assert(!data_downstream.localCommitPublished.get.irrevocablySpent.contains(htlcOutputTarget))
+
+    // Alice restarts before the target htlc is resolved.
+    // The downstream channel is Alice's: we use Alice's channel keys so that its commit outputs are rebuilt exactly.
+    val Seq(stored_upstream, stored_downstream) = stored(data_upstream, data_downstream)
+    val (relayer, postRestart) = f.createRelayer(nodeParams)
+    relayer ! PostRestartHtlcCleaner.Init(Seq(stored_upstream.withChannelKeys(nodeParams), stored_downstream.withChannelKeys(TestConstants.Alice.nodeParams)))
+    sender.send(postRestart, PostRestartHtlcCleaner.GetBrokenHtlcs)
+    val brokenHtlcs = sender.expectMsgType[PostRestartHtlcCleaner.BrokenHtlcs]
+    val origin_target = Origin.Cold(Upstream.Cold(upstream_target))
+    // The decoy's timeout tx must not be attributed to the target htlc: the target is still relayed and must not be failed upstream.
+    assert(brokenHtlcs.relayedOut == Map(origin_target -> Set((data_downstream.channelId, htlc_target.id))))
+    assert(brokenHtlcs.notRelayed.isEmpty)
+    val channel_upstream = TestProbe()
+    system.eventStream.publish(ChannelStateChanged(channel_upstream.ref, data_upstream.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data_upstream.commitments)))
+    channel_upstream.expectNoMessage(100 millis)
+
+    // Mallory then claims the target htlc on-chain with the preimage: Alice relays it upstream.
+    sender.send(relayer, RES_ADD_SETTLED(origin_target, b, htlc_target, HtlcResult.OnChainFulfill(preimageTarget)))
+    register.expectMsg(Register.Forward(null, channelId_ab_1, CMD_FULFILL_HTLC(htlc_upstream_target.add.id, preimageTarget, None, None, commit = true)))
   }
 
   test("handle a channel relay htlc-fail") { f =>

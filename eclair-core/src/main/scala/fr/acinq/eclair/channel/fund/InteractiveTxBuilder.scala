@@ -163,6 +163,8 @@ object InteractiveTxBuilder {
     //    - 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     //    - 25 sat per kw greater than the `feerate` of the previously constructed transaction.
     val minNextFeerate: FeeratePerKw = Seq(targetFeerate * 25 / 24, targetFeerate + FeeratePerKw(25 sat)).max
+    /** True if we add inputs or outputs to the transaction, in which case we pay the mining fees for them. */
+    val localContributes: Boolean = localContribution != 0.sat || localOutputs.nonEmpty
     // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
     val serialIdParity: Int = if (isInitiator) 0 else 1
 
@@ -455,6 +457,15 @@ object InteractiveTxBuilder {
   // We restrict the number of inputs / outputs that our peer can send us to ensure the protocol eventually ends.
   val MAX_INPUTS_OUTPUTS_RECEIVED = 4096
 
+  // Our peer may have seen a few more blocks than us, but a later lock time would let them prevent us from publishing
+  // the transaction (and thus the commitments that spend it) for as long as they want.
+  val MAX_LOCKTIME_AHEAD_BLOCKS = 6
+
+  /** A relative lock time on one of its inputs (see BIP 68) would let our peer delay the publication of the transaction. */
+  def hasRelativeLockTime(sequence: Long): Boolean = {
+    (sequence & fr.acinq.bitcoin.TxIn.SEQUENCE_LOCKTIME_DISABLE_FLAG) == 0 && (sequence & fr.acinq.bitcoin.TxIn.SEQUENCE_LOCKTIME_MASK) != 0
+  }
+
 }
 
 private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Response],
@@ -593,6 +604,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     if (session.remoteInputs.exists(_.serialId == addInput.serialId)) {
       return Left(DuplicateSerialId(fundingParams.channelId, addInput.serialId))
     }
+    // This applies to every input, including the shared input whose nSequence is chosen by the initiator.
+    if (hasRelativeLockTime(addInput.sequence)) {
+      return Left(RelativeLockTimeInput(fundingParams.channelId, addInput.serialId, addInput.sequence))
+    }
+
     // We check whether this is the shared input or a remote input, and validate input details if it is not the shared input.
     // The remote input details are usually provided by sending the entire previous transaction.
     // But when splicing a taproot channel, it is possible to only send the previous txOut (which saves bandwidth and
@@ -779,6 +795,10 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     if (session.localInputs.length + session.remoteInputs.length > 252 || session.localOutputs.length + session.remoteOutputs.length > 252) {
       log.warn("invalid interactive tx ({} local inputs, {} remote inputs, {} local outputs and {} remote outputs)", session.localInputs.length, session.remoteInputs.length, session.localOutputs.length, session.remoteOutputs.length)
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "too many inputs or outputs"))
+    }
+    if (fundingParams.lockTime > nodeParams.currentBlockHeight.toLong + MAX_LOCKTIME_AHEAD_BLOCKS) {
+      log.warn("invalid interactive tx: lock time is too far in the future (lockTime={}, currentBlockHeight={})", fundingParams.lockTime, nodeParams.currentBlockHeight)
+      return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "lock time too far in the future"))
     }
 
     val sharedInputs = session.localInputs.collect { case i: Input.Shared => i } ++ session.remoteInputs.collect { case i: Input.Shared => i }
@@ -1179,12 +1199,25 @@ object InteractiveTxSigningSession {
       log.info("invalid tx_signatures: txId mismatch (expected={}, got={})", txWithSigs.signedTx.txid, remoteSigs.txId)
       return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
     }
+    // Our peer could otherwise create a valid transaction that cannot be relayed, which would prevent us from publishing
+    // our commitment if it spends that transaction.
+    if (!Transactions.isWitnessStandard(txWithSigs.signedTx, partiallySignedTx.tx.inputDetails)) {
+      log.info("invalid tx_signatures: non-standard witness")
+      return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
+    }
+    if (txWithSigs.signedTx.weight() > Transactions.MAX_STANDARD_TX_WEIGHT) {
+      log.info("invalid tx_signatures: exceeds standard weight (weight={})", txWithSigs.signedTx.weight())
+      return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
+    }
     // We allow a 5% error margin since witness size prediction could be inaccurate.
     // If they didn't contribute to the transaction, they're not responsible, so we don't check the feerate.
-    // If we didn't contribute to the transaction, we don't care if they use a lower feerate than expected.
+    // If we didn't contribute to a dual-funded channel open, we don't care if they use a lower feerate than expected.
+    // But a splice transaction funds our latest commitment, so it must be able to confirm even if we didn't contribute:
+    // otherwise our peer could use large witnesses to make the transaction impossible to relay.
     val localContributed = txWithSigs.tx.localInputs.nonEmpty || txWithSigs.tx.localOutputs.nonEmpty
     val remoteContributed = txWithSigs.tx.remoteInputs.nonEmpty || txWithSigs.tx.remoteOutputs.nonEmpty
-    if (localContributed && remoteContributed && txWithSigs.feerate < fundingParams.targetFeerate * 0.95) {
+    val isSplice = fundingParams.sharedInput_opt.nonEmpty
+    if ((localContributed || isSplice) && remoteContributed && txWithSigs.feerate < fundingParams.targetFeerate * 0.95) {
       return Left(InvalidFundingFeerate(fundingParams.channelId, fundingParams.targetFeerate, txWithSigs.feerate))
     }
     val previousOutputs = {

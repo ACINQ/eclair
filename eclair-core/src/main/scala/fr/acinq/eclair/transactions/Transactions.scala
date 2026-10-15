@@ -44,6 +44,46 @@ import scala.util.Try
 object Transactions {
 
   val MAX_STANDARD_TX_WEIGHT = 400_000
+  // Witness standardness limits from Bitcoin Core's policy.
+  val MAX_STANDARD_P2WSH_SCRIPT_SIZE = 3600
+  val MAX_STANDARD_P2WSH_STACK_ITEMS = 100
+  val MAX_STANDARD_P2WSH_STACK_ITEM_SIZE = 80
+  val MAX_STANDARD_TAPSCRIPT_STACK_ITEM_SIZE = 80
+
+  /**
+   * Bitcoin Core doesn't relay transactions with non-standard witnesses, even if they are valid: this mirrors the
+   * IsWitnessStandard policy check from Bitcoin Core, assuming that all inputs are native segwit inputs.
+   *
+   * @param inputs previous outputs spent by the transaction.
+   */
+  def isWitnessStandard(tx: Transaction, inputs: Map[OutPoint, TxOut]): Boolean = tx.txIn.forall { txIn =>
+    val stack = txIn.witness.stack
+    val pubkeyScript = inputs.get(txIn.outPoint).map(_.publicKeyScript)
+    val isPay2anchor = pubkeyScript.contains(Script.write(Script.pay2anchor))
+    val isPay2wsh = pubkeyScript.exists(s => s.length == 34 && s(0) == 0x00 && s(1) == 0x20)
+    val isPay2tr = pubkeyScript.exists(s => s.length == 34 && s(0) == 0x51 && s(1) == 0x20)
+    if (stack.isEmpty) {
+      true
+    } else if (!pubkeyScript.exists(s => Script.isNativeWitnessScript(s)) || isPay2anchor) {
+      false
+    } else if (isPay2wsh) {
+      stack.last.length <= MAX_STANDARD_P2WSH_SCRIPT_SIZE && stack.length - 1 <= MAX_STANDARD_P2WSH_STACK_ITEMS && stack.init.forall(_.length <= MAX_STANDARD_P2WSH_STACK_ITEM_SIZE)
+    } else if (isPay2tr) {
+      val hasAnnex = stack.length >= 2 && stack.last.nonEmpty && stack.last.head == 0x50
+      if (hasAnnex) {
+        false
+      } else if (stack.length >= 2) {
+        // This is a script path spend: the last two items are the script and the control block.
+        val controlBlock = stack.last
+        val isTapscript = controlBlock.nonEmpty && (controlBlock.head & 0xfe) == 0xc0
+        controlBlock.nonEmpty && (!isTapscript || stack.dropRight(2).forall(_.length <= MAX_STANDARD_TAPSCRIPT_STACK_ITEM_SIZE))
+      } else {
+        true
+      }
+    } else {
+      true
+    }
+  }
 
   /** Weight of a fully signed p2wpkh input (using a 73 bytes signature). */
   val p2wpkhInputWeight = 273

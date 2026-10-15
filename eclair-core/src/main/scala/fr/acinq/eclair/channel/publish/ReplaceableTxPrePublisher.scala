@@ -47,6 +47,7 @@ object ReplaceableTxPrePublisher {
   private case object CommitTxRecentlyConfirmed extends Command
   private case object CommitTxDeeplyConfirmed extends Command
   private case object ConcurrentCommitAvailable extends Command
+  private case object FundingOutputSpentByUnconfirmedTx extends Command
   private case object ConcurrentCommitRecentlyConfirmed extends Command
   private case object ConcurrentCommitDeeplyConfirmed extends Command
   private case object OutputAlreadySpent extends Command
@@ -66,7 +67,7 @@ object ReplaceableTxPrePublisher {
           case CheckPreconditions(replyTo, txInfo, commitTx, concurrentCommitTxs) =>
             val prePublisher = new ReplaceableTxPrePublisher(nodeParams, replyTo, bitcoinClient, context)
             txInfo match {
-              case _: ClaimLocalAnchorTx => prePublisher.checkLocalCommitAnchorPreconditions(commitTx)
+              case _: ClaimLocalAnchorTx => prePublisher.checkLocalCommitAnchorPreconditions(commitTx, concurrentCommitTxs)
               case _: ClaimRemoteAnchorTx => prePublisher.checkRemoteCommitAnchorPreconditions(commitTx)
               case _: SignedHtlcTx | _: ClaimHtlcTx => prePublisher.check2ndStageTxPreconditions(txInfo, commitTx, concurrentCommitTxs)
               case _: ClaimRemoteMainOutputTx => prePublisher.check2ndStageTxPreconditions(txInfo, commitTx, concurrentCommitTxs)
@@ -95,10 +96,10 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
    *  - our local commitment is unconfirmed
    *  - and we haven't seen a remote commitment (in which case it is more interesting to spend than the local commitment)
    */
-  private def checkLocalCommitAnchorPreconditions(commitTx: Transaction): Behavior[Command] = {
+  private def checkLocalCommitAnchorPreconditions(commitTx: Transaction, concurrentCommitTxs: Set[TxId]): Behavior[Command] = {
     val fundingOutpoint = commitTx.txIn.head.outPoint
     context.pipeToSelf(bitcoinClient.getTxConfirmations(fundingOutpoint.txid).flatMap {
-      case Some(_) =>
+      case Some(fundingTxConfirmations) =>
         // The funding transaction was found, let's see if we can still spend it.
         bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = true).flatMap {
           case true =>
@@ -111,10 +112,21 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
               case Success(Some(confirmations)) if confirmations > 0 => Future.successful(CommitTxRecentlyConfirmed)
               case Success(Some(0)) => Future.successful(ParentTxOk(confirmed = false)) // our commit tx is unconfirmed, let's publish our anchor transaction
               case _ =>
-                // Our commit tx is unconfirmed and cannot be found in our mempool: this means that a remote commit is
-                // either confirmed or in our mempool. In that case, we don't want to use our local commit tx: the
-                // remote commit is more interesting to us because we won't have any CSV delays on our outputs.
-                Future.successful(ConcurrentCommitAvailable)
+                // Our commit tx is unconfirmed and cannot be found in our mempool. If a remote commit is confirmed or in
+                // our mempool, we don't want to use our local commit tx: the remote commit is more interesting to us
+                // because we won't have any CSV delays on our outputs. Otherwise, if the funding output is spent by an
+                // unconfirmed transaction, it may be a splice transaction that our peer published without sending us
+                // their tx_signatures, and that they may double-spend later: we must keep trying to publish our commit tx.
+                checkConcurrentCommits(concurrentCommitTxs.toSeq).flatMap {
+                  case Some(_) => Future.successful(ConcurrentCommitAvailable)
+                  // If the funding transaction is unconfirmed (e.g. when using 0-conf), its outputs can only be spent by
+                  // unconfirmed transactions (and they're not in the UTXO set, so we cannot use the check below).
+                  case None if fundingTxConfirmations == 0 => Future.successful(FundingOutputSpentByUnconfirmedTx)
+                  case None => bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).map {
+                    case true => FundingOutputSpentByUnconfirmedTx
+                    case false => ConcurrentCommitAvailable
+                  }
+                }
             }
         }
       case None =>
@@ -143,6 +155,10 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
       case ConcurrentCommitAvailable =>
         log.warn("not publishing local anchor for commitTxId={}: we will use the remote commit tx instead", commitTx.txid)
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
+        Behaviors.stopped
+      case FundingOutputSpentByUnconfirmedTx =>
+        log.warn("not publishing local anchor for commitTxId={}: funding output is spent by an unconfirmed transaction, let's check again later", commitTx.txid)
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
         Behaviors.stopped
       case UnknownFailure(reason) =>
         log.error("could not check local anchor preconditions, proceeding anyway: ", reason)

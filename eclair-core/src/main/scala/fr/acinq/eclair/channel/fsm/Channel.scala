@@ -1343,6 +1343,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 case Left(t) =>
                   log.warning("rejecting rbf request with invalid liquidity ads: {}", t.getMessage)
                   stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, t.getMessage)
+                case Right(None) if rbf.latestFundingTx.fundingParams.localContributes && msg.feerate > nodeParams.maxRemoteFundingFeerate(remoteNodeId) =>
+                  // We keep our previous contribution and pay the mining fees for it at the feerate chosen by our peer:
+                  // we must bound that feerate, otherwise they could make us burn our funds in mining fees.
+                  val maxFeerate = nodeParams.maxRemoteFundingFeerate(remoteNodeId)
+                  log.info("rejecting rbf request: the new feerate must be at most {} (proposed={})", maxFeerate, msg.feerate)
+                  stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidRbfFeerateTooHigh(d.channelId, msg.feerate, maxFeerate).getMessage)
                 case Right(willFund_opt) =>
                   // We contribute the amount of liquidity requested by our peer, if liquidity ads is active.
                   // Otherwise we keep the same contribution we made to the previous funding transaction.
@@ -1838,12 +1844,24 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(shutdown: Shutdown, d: DATA_SHUTDOWN) =>
-      if (shutdown.scriptPubKey != d.remoteShutdown.scriptPubKey) {
-        log.debug("our peer updated their shutdown script (previous={}, current={})", d.remoteShutdown.scriptPubKey, shutdown.scriptPubKey)
+      // We only validate script updates: features may have changed since we accepted their current script.
+      val scriptValidation = if (shutdown.scriptPubKey == d.remoteShutdown.scriptPubKey) {
+        Right(shutdown.scriptPubKey)
+      } else {
+        d.commitments.channelParams.validateRemoteShutdownScript(shutdown.scriptPubKey)
       }
-      remoteCloseeNonce_opt = shutdown.closeeNonce_opt
-      // No need to persist the change in the DB: they will re-send shutdown on reconnection.
-      stay() using d.copy(remoteShutdown = shutdown)
+      scriptValidation match {
+        case Left(e) =>
+          log.warning("they sent an invalid closing script, ignoring their shutdown: {}", e.getMessage)
+          stay() sending Warning(d.channelId, "invalid closing script")
+        case Right(_) =>
+          if (shutdown.scriptPubKey != d.remoteShutdown.scriptPubKey) {
+            log.debug("our peer updated their shutdown script (previous={}, current={})", d.remoteShutdown.scriptPubKey, shutdown.scriptPubKey)
+          }
+          remoteCloseeNonce_opt = shutdown.closeeNonce_opt
+          // No need to persist the change in the DB: they will re-send shutdown on reconnection.
+          stay() using d.copy(remoteShutdown = shutdown)
+      }
 
     case Event(r: RevocationTimeout, d: DATA_SHUTDOWN) => handleRevocationTimeout(r, d)
 
@@ -1877,12 +1895,18 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
   when(NEGOTIATING)(handleExceptions {
     case Event(remoteShutdown: Shutdown, d: DATA_NEGOTIATING) =>
-      if (remoteShutdown.scriptPubKey != d.remoteShutdown.scriptPubKey) {
-        // This may lead to a signature mismatch if our peer changed their script without using option_simple_close.
-        log.warning("received shutdown changing remote script, this may lead to a signature mismatch: previous={}, current={}", d.remoteShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-        stay() using d.copy(remoteShutdown = remoteShutdown)
-      } else {
+      if (remoteShutdown.scriptPubKey == d.remoteShutdown.scriptPubKey) {
         stay()
+      } else {
+        d.commitments.channelParams.validateRemoteShutdownScript(remoteShutdown.scriptPubKey) match {
+          case Left(e) =>
+            log.warning("they sent an invalid closing script, ignoring their shutdown: {}", e.getMessage)
+            stay() sending Warning(d.channelId, "invalid closing script")
+          case Right(_) =>
+            // This may lead to a signature mismatch if our peer changed their script without using option_simple_close.
+            log.warning("received shutdown changing remote script, this may lead to a signature mismatch: previous={}, current={}", d.remoteShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
+            stay() using d.copy(remoteShutdown = remoteShutdown)
+        }
       }
 
     case Event(c: ClosingSigned, d: DATA_NEGOTIATING) =>
@@ -1992,13 +2016,21 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
   when(NEGOTIATING_SIMPLE)(handleExceptions {
     case Event(shutdown: Shutdown, d: DATA_NEGOTIATING_SIMPLE) =>
-      remoteCloseeNonce_opt = shutdown.closeeNonce_opt
-      if (shutdown.scriptPubKey != d.remoteScriptPubKey) {
-        // This may lead to a signature mismatch: peers must use closing_complete to update their closing script.
-        log.warning("received shutdown changing remote script, this may lead to a signature mismatch: previous={}, current={}", d.remoteScriptPubKey, shutdown.scriptPubKey)
-        stay() using d.copy(remoteScriptPubKey = shutdown.scriptPubKey)
-      } else {
+      if (shutdown.scriptPubKey == d.remoteScriptPubKey) {
+        // We don't re-validate their current script: features may have changed since we accepted it.
+        remoteCloseeNonce_opt = shutdown.closeeNonce_opt
         stay()
+      } else {
+        d.commitments.channelParams.validateRemoteShutdownScript(shutdown.scriptPubKey) match {
+          case Left(e) =>
+            log.warning("they sent an invalid closing script, ignoring their shutdown: {}", e.getMessage)
+            stay() sending Warning(d.channelId, "invalid closing script")
+          case Right(_) =>
+            remoteCloseeNonce_opt = shutdown.closeeNonce_opt
+            // This may lead to a signature mismatch: peers must use closing_complete to update their closing script.
+            log.warning("received shutdown changing remote script, this may lead to a signature mismatch: previous={}, current={}", d.remoteScriptPubKey, shutdown.scriptPubKey)
+            stay() using d.copy(remoteScriptPubKey = shutdown.scriptPubKey)
+        }
       }
 
     case Event(c: CMD_CLOSE, d: DATA_NEGOTIATING_SIMPLE) =>
@@ -2022,7 +2054,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       // On reconnection, we will retransmit shutdown with our latest scripts, so future signing attempts should work.
       val localClosingTxs = d.proposedClosingTxs.flatMap(_.all).map(_.tx.txid).toSet
       val remoteClosingTxCount = d.publishedClosingTxs.count(tx => !localClosingTxs.contains(tx.tx.txid))
-      if (remoteClosingTxCount >= nodeParams.channelConf.remoteRbfLimits.maxAttempts) {
+      // We only validate script updates: features may have changed since we accepted their current script.
+      if (closingComplete.closerScriptPubKey != d.remoteScriptPubKey && d.commitments.channelParams.validateRemoteShutdownScript(closingComplete.closerScriptPubKey).isLeft) {
+        log.warning("they sent an invalid closing script, ignoring their closing_complete")
+        stay() sending Warning(d.channelId, InvalidFinalScript(d.channelId).getMessage)
+      } else if (remoteClosingTxCount >= nodeParams.channelConf.remoteRbfLimits.maxAttempts) {
         stay() sending Warning(d.channelId, InvalidRbfAttemptsExhausted(d.channelId, nodeParams.channelConf.remoteRbfLimits.maxAttempts).getMessage)
       } else if (lastRemoteClosingCompleteBlockHeight_opt.exists(h => nodeParams.currentBlockHeight < h + nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks)) {
         stay() sending Warning(d.channelId, InvalidRbfAttemptTooSoon(d.channelId, lastRemoteClosingCompleteBlockHeight_opt.get, lastRemoteClosingCompleteBlockHeight_opt.get + nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks).getMessage)
@@ -2167,12 +2203,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             )
             val d1 = d.copy(commitments = commitments2)
             spendLocalCurrent(d1, d.maxClosingFeerate_opt)
-          } else if (d.localCommitPublished.exists(lcp => d.commitments.resolveCommitment(lcp.commitTx).exists(_.fundingTxIndex < commitment.fundingTxIndex))) {
-            // We force-closed using a previous commitment, because our peer hadn't sent their tx_signatures for this
-            // splice transaction and we couldn't publish it. They have now published it and it confirmed, which
-            // double-spends the commit tx we published: we must force-close again using the commitment that spends
-            // this splice transaction.
-            log.warning("splice fundingTxIndex={} fundingTxId={} confirmed after we force-closed using a previous commitment", commitment.fundingTxIndex, commitment.fundingTxId)
+          } else if (d.localCommitPublished.exists(lcp => d.commitments.resolveCommitment(lcp.commitTx).exists(c => c.fundingTxId != commitment.fundingTxId && c.fundingTxIndex <= commitment.fundingTxIndex))) {
+            // We force-closed using a previous commitment or an RBF sibling of this splice transaction, because our
+            // peer hadn't sent their tx_signatures for it and we couldn't publish it. They have now published it and
+            // it confirmed, which double-spends the commit tx we published: we must force-close again using the
+            // commitment that spends this splice transaction.
+            log.warning("splice fundingTxIndex={} fundingTxId={} confirmed after we force-closed using a commitment that it double-spends", commitment.fundingTxIndex, commitment.fundingTxId)
             spendLocalCurrent(d.copy(commitments = commitments1), d.maxClosingFeerate_opt)
           } else {
             // We're still on the same splice history, nothing to do

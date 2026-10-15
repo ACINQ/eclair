@@ -517,6 +517,9 @@ class Peer(val nodeParams: NodeParams,
               case status: OnTheFlyFunding.Status.Funded =>
                 context.child(paymentHash.toHex) match {
                   case Some(_) => log.debug("already relaying payment_hash={}", paymentHash)
+                  // We must relay on the channel where liquidity was purchased: when the HTLC expires, we only inspect
+                  // that channel to decide whether it is safe to fail upstream (see ChannelCloserHtlcTimeout).
+                  case None if e.channelId != status.channelId => log.debug("not relaying payment_hash={} on channel_id={}: it was funded on channel_id={}", paymentHash, e.channelId, status.channelId)
                   case None if e.fundingTxIndex < status.fundingTxIndex => log.debug("too early to relay payment_hash={}, funding not locked ({} < {})", paymentHash, e.fundingTxIndex, status.fundingTxIndex)
                   case None =>
                     val relayer = context.spawn(Behaviors.supervise(OnTheFlyFunding.PaymentRelayer(nodeParams, remoteNodeId, e.channelId, paymentHash)).onFailure(typed.SupervisorStrategy.stop), paymentHash.toHex)
@@ -833,7 +836,9 @@ class Peer(val nodeParams: NodeParams,
       e match {
         case success: OnTheFlyFunding.PaymentRelayer.RelaySuccess =>
           pendingOnTheFlyFunding.get(success.paymentHash) match {
-            case Some(pending) =>
+            // Note that the payment_hash may have been reused by a different payment after we stopped tracking the one
+            // that has been relayed: we only consider it relayed if it matches the payment we're currently tracking.
+            case Some(pending) if pending.proposed == success.proposed =>
               log.info("successfully relayed on-the-fly HTLC for payment_hash={}", success.paymentHash)
               // We've been paid for our liquidity fees: we can now fulfill upstream.
               pending.createFulfillCommands(success.preimage).foreach {
@@ -858,12 +863,14 @@ class Peer(val nodeParams: NodeParams,
               Metrics.OnTheFlyFundingFees.withoutTags().record(success.fees.toLong)
               nodeParams.db.liquidity.removePendingOnTheFlyFunding(remoteNodeId, success.paymentHash)
               pendingOnTheFlyFunding -= success.paymentHash
-            case None =>
+            case _ =>
               // We have already forgotten this payment, which happens when the HTLCs reached their expiry: we then
               // force-close the funded channel and stop tracking the proposal. But our peer may reveal the preimage
               // anyway, either off-chain if their update_fulfill_htlc raced our expiry, or on-chain by publishing an
               // HTLC-success transaction after our force-close. We must settle the upstream HTLCs in that case,
-              // otherwise we've paid our peer without being paid ourselves.
+              // otherwise we've paid our peer without being paid ourselves. If the payment_hash has been reused by a
+              // different payment, we must fulfill the upstream HTLCs of the payment that was relayed, and keep
+              // tracking the other one.
               // Note that we don't emit a relay event or update our metrics here: for multi-part payments, we receive
               // one result per downstream HTLC and only the first one finds a matching proposal, so doing that would
               // double-count relays. Sending a settlement command for an HTLC that we've already settled is harmless.

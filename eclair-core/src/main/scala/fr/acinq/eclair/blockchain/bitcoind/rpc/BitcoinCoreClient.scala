@@ -256,16 +256,22 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
       val walletInputs = fundedTx.txIn.map(_.outPoint).toSet -- tx.txIn.map(_.outPoint).toSet
       val addedOutputs = fundedTx.txOut.size - tx.txOut.size
       val feeSat = toSatoshi(fee)
-      Try {
+      unlockIfFails(walletInputs.toSeq)(Future.fromTry(Try {
         require(addedOutputs <= 1, "more than one change output added")
         require(addedOutputs == 0 || changePos >= 0, "change output added, but position not returned")
         require(options.changePosition.isEmpty || changePos_opt.isEmpty || changePos_opt == options.changePosition, "change output added at wrong position")
-        feeBudget_opt.foreach(feeBudget => require(feeSat <= feeBudget, s"mining fee is higher than budget ($feeSat > $feeBudget)"))
-        FundTransactionResponse(fundedTx, feeSat, changePos_opt)
-      } match {
-        case Success(response) => Future.successful(response)
-        case Failure(error) => unlockOutpoints(walletInputs.toSeq).flatMap(_ => Future.failed(error))
-      }
+      }).flatMap(_ => feeBudget_opt match {
+        case Some(feeBudget) =>
+          // We cannot trust the fee returned by bitcoin core: we compute the actual fee from the outputs spent by the
+          // funded transaction, which are authenticated by their txid.
+          getTxOutputs(fundedTx.txIn.map(_.outPoint).toSet).map(spentOutputs => {
+            val actualFee = spentOutputs.values.map(_.amount).sum - fundedTx.txOut.map(_.amount).sum
+            require(actualFee == feeSat, s"actual funding fees $actualFee do not match returned fees $feeSat: bitcoin core may be malicious")
+            require(actualFee <= feeBudget, s"mining fee is higher than budget ($actualFee > $feeBudget)")
+            FundTransactionResponse(fundedTx, actualFee, changePos_opt)
+          })
+        case None => Future.successful(FundTransactionResponse(fundedTx, feeSat, changePos_opt))
+      }))
     })
   }
 
@@ -474,7 +480,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
    * that modified transaction with SIGHASH_ALL without noticing.
    */
   private def checkUnsignedTx(expected: Psbt, actual: Psbt): Unit = {
-    require(actual.global.tx.txid == expected.global.tx.txid, s"bitcoin core modified our unsigned transaction (expected=${expected.global.tx.txid} actual=${actual.global.tx.txid}): bitcoin core may be malicious")
+    require(actual.global.tx.getTxid == expected.global.tx.getTxid, s"bitcoin core modified our unsigned transaction (expected=${expected.global.tx.getTxid} actual=${actual.global.tx.getTxid}): bitcoin core may be malicious")
   }
 
   def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {

@@ -21,7 +21,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.13</artifactId>
-        <version>0.14.3</version>
+        <version>0.14.4</version>
     </parent>
 
     <artifactId>eclair-core_2.13</artifactId>
@@ -62,8 +62,6 @@
                             <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
                         </manifest>
                         <manifestEntries>
-                            <!-- we hide the git commit in the Specification-Version standard field-->
-                            <Specification-Version>${git.commit.id}</Specification-Version>
                             <Url>${project.parent.url}</Url>
                         </manifestEntries>
                     </archive>
@@ -251,7 +249,7 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <version>42.7.11</version>
+            <version>42.7.12</version>
         </dependency>
         <dependency>
             <groupId>com.zaxxer</groupId>

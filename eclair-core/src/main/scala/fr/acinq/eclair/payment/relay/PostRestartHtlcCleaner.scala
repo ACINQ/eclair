@@ -438,8 +438,9 @@ object PostRestartHtlcCleaner {
               case None => Set.empty
             }
             val timedOutHtlcs: Set[Long] = (closingType_opt match {
-              case Some(c: Closing.LocalClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.localCommit, tx))
-              case Some(c: Closing.RemoteClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.remoteCommit, tx))
+              // The published commit tx may not match the latest commitment (see [[DATA_CLOSING.commitmentFor]]).
+              case Some(c: Closing.LocalClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitmentFor(c.localCommitPublished.commitTx.txid), c.localCommit, tx))
+              case Some(c: Closing.RemoteClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitmentFor(c.remoteCommitPublished.commitTx.txid), c.remoteCommit, tx))
               case Some(_: Closing.RevokedClose) => Set.empty // revoked commitments are handled using [[overriddenOutgoingHtlcs]] above
               case Some(_: Closing.RecoveryClose) => Set.empty // we lose htlc outputs in dataloss protection scenarios (future remote commit)
               case Some(_: Closing.MutualClose) => Set.empty

@@ -61,7 +61,7 @@ trait SpendFromChannelAddress {
           val localSig = tx.sign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
           tx.aggregateSigs(localFundingKey.publicKey, remoteFundingPubkey, localSig, individualRemoteSig)
         case remotePartialSig: ChannelSpendSignature.PartialSignatureWithNonce =>
-          val localPrivateNonce = nonces(localNonce_opt.get)
+          val localPrivateNonce = nonces.remove(localNonce_opt.get).get
           val Right(localSig) = tx.partialSign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty, localNonce = localPrivateNonce, publicNonces = Seq(localPrivateNonce.publicNonce, remotePartialSig.nonce))
           val Right(signedTx) = tx.aggregateSigs(localFundingKey.publicKey, remoteFundingPubkey, localSig, remotePartialSig, extraUtxos = Map.empty)
           signedTx
