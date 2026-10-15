@@ -48,6 +48,7 @@ import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.{LiquidityPurchaseAborted, LiquidityPurchaseSigned}
 import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.payment.relay.Relayer.InboundFees
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSettlingOnChain}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements
@@ -482,12 +483,15 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.lastAnnouncement_opt, normal.aliases, remoteNodeId))
           if (nodeParams.relayParams.resetExistingChannels) {
             // we refresh the relay fee settings if eclair has been restarted with a new conf
-            val fees = getRelayFees(nodeParams, remoteNodeId, normal.commitments.announceChannel)
+            val (fees, inboundFees_opt) = getRelayFees(nodeParams, remoteNodeId, normal.commitments.announceChannel)
             if (fees.feeBase != normal.channelUpdate.feeBaseMsat ||
               fees.feeProportionalMillionths != normal.channelUpdate.feeProportionalMillionths ||
+              inboundFees_opt != normal.channelUpdate.blip18InboundFees_opt ||
               nodeParams.channelConf.expiryDelta != normal.channelUpdate.cltvExpiryDelta) {
               log.debug("refreshing channel_update due to configuration changes")
-              self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths)
+              // The database is the reference for inbound fees: if it doesn't contain any for that peer, we must stop
+              // advertising them, otherwise this refresh would preserve them and fire again at every restart.
+              self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths, inboundFees_opt.map(_.feeBase), inboundFees_opt.map(_.feeProportionalMillionths), unsetInboundFees = inboundFees_opt.isEmpty)
             }
           }
           // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
@@ -980,7 +984,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 log.info("announcing channelId={} on the network with shortChannelId={} for fundingTxIndex={}", d.channelId, localAnnSigs.shortChannelId, c.fundingTxIndex)
                 // We generate a new channel_update because we can now use the scid of the announced funding transaction.
                 val scidForChannelUpdate = Helpers.scidForChannelUpdate(Some(channelAnn), d.aliases.localAlias)
-                val channelUpdate = Helpers.channelUpdate(nodeParams, scidForChannelUpdate, d.commitments, d.channelUpdate.relayFees, enable = true)
+                val channelUpdate = Helpers.channelUpdate(nodeParams, scidForChannelUpdate, d.commitments, d.channelUpdate.relayFees, enable = true, d.channelUpdate.blip18InboundFees_opt)
                 context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, Some(channelAnn), d.aliases, remoteNodeId))
                 // We use goto() instead of stay() because we want to fire transitions.
                 goto(NORMAL) using d.copy(lastAnnouncement_opt = Some(channelAnn), channelUpdate = channelUpdate) storing()
@@ -1002,7 +1006,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
-      val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), enable = true)
+      val inboundFees_opt = updatedInboundFees(c, d)
+      val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), enable = true, inboundFees_opt)
       log.debug(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
       replyTo ! RES_SUCCESS(c, d.channelId)
@@ -1011,7 +1016,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(BroadcastChannelUpdate(reason), d: DATA_NORMAL) =>
       val age = TimestampSecond.now() - d.channelUpdate.timestamp
-      val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = true)
+      val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = true, d.channelUpdate.blip18InboundFees_opt)
       reason match {
         case Reconnected if d.commitments.announceChannel && Announcements.areSame(channelUpdate1, d.channelUpdate) && age < REFRESH_CHANNEL_UPDATE_INTERVAL =>
           // we already sent an identical channel_update not long ago (flapping protection in case we keep being disconnected/reconnected)
@@ -1643,7 +1648,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       // if we have pending unsigned htlcs, then we cancel them and generate an update with the disabled flag set, that will be returned to the sender in a temporary channel failure
       if (d.commitments.changes.localChanges.proposed.collectFirst { case add: UpdateAddHtlc => add }.isDefined) {
         log.debug("updating channel_update announcement (reason=disabled)")
-        val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = false)
+        val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = false, d.channelUpdate.blip18InboundFees_opt)
         // NB: the htlcs stay in the commitments.localChange, they will be cleaned up after reconnection
         d.commitments.changes.localChanges.proposed.collect {
           case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), remoteNodeId, add, HtlcResult.DisconnectedBeforeSigned(channelUpdate1))
@@ -3376,7 +3381,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           log.debug("emitting channel down event")
           if (d.lastAnnouncement_opt.nonEmpty) {
             // We tell the rest of the network that this channel shouldn't be used anymore.
-            val disabledUpdate = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = false)
+            val disabledUpdate = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = false, d.channelUpdate.blip18InboundFees_opt)
             context.system.eventStream.publish(LocalChannelUpdate(self, d.channelId, d.aliases, remoteNodeId, d.lastAnnouncedCommitment_opt, disabledUpdate, d.commitments))
           }
           val lcd = LocalChannelDown(self, d.channelId, d.commitments.all.flatMap(_.shortChannelId_opt), d.aliases, remoteNodeId)
@@ -3538,7 +3543,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     if (d.channelUpdate.channelFlags.isEnabled) {
       // if the channel isn't disabled we generate a new channel_update
       log.debug("updating channel_update announcement (reason=disabled)")
-      val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = false)
+      val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = false, d.channelUpdate.blip18InboundFees_opt)
       // then we update the state and replay the request
       self forward c
       // we use goto() to fire transitions
@@ -3550,8 +3555,18 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     }
   }
 
+  /**
+   * Compute the bLIP-18 inbound fees to advertise for a relay fee update. When inbound fees are omitted from the command
+   * we preserve the ones currently advertised in our channel_update. Note that when bLIP-18 support is disabled, inbound
+   * fees are stripped from the resulting channel_update by [[Helpers.channelUpdate]].
+   */
+  private def updatedInboundFees(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL): Option[InboundFees] = {
+    InboundFees.fromOptions(c.inboundFeeBase_opt, c.inboundFeeProportionalMillionths_opt).orElse(if (c.unsetInboundFees) None else d.channelUpdate.blip18InboundFees_opt)
+  }
+
   private def handleUpdateRelayFeeDisconnected(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) = {
-    val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), enable = false)
+    val inboundFees_opt = updatedInboundFees(c, d)
+    val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), enable = false, inboundFees_opt)
     log.debug(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
     replyTo ! RES_SUCCESS(c, d.channelId)

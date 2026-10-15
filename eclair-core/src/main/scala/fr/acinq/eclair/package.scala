@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.crypto.StrongRandom
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.payment.relay.Relayer.{InboundFees, RelayFees}
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
@@ -124,6 +124,21 @@ package object eclair {
   }
 
   def nodeFee(relayFees: RelayFees, paymentAmount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees.feeBase, relayFees.feeProportionalMillionths, paymentAmount)
+
+  /**
+   * @return the fee that a node should be paid to forward an HTLC of 'amount' millisatoshis, including its bLIP-18
+   *         inbound fees (if any). The inbound fee is computed on the amount entering the node (amount to forward +
+   *         outbound fee); an inbound discount larger than the outbound fee doesn't make the total fee negative:
+   *         nodes don't pay to relay payments.
+   */
+  def totalFee(amount: MilliSatoshi, relayFees: RelayFees, inboundFees_opt: Option[InboundFees]): MilliSatoshi = inboundFees_opt match {
+    case Some(inboundFees) =>
+      val outFee = nodeFee(relayFees, amount)
+      val inFee = nodeFee(inboundFees.feeBase, inboundFees.feeProportionalMillionths, amount + outFee)
+      val total = outFee + inFee
+      if (total.toLong < 0) 0 msat else total
+    case None => nodeFee(relayFees, amount)
+  }
 
   /**
    * @param baseFee         fixed fee

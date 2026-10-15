@@ -45,6 +45,7 @@ trait Databases {
   def offers: OffersDb
   def pendingCommands: PendingCommandsDb
   def liquidity: LiquidityDb
+  def inboundFees: InboundFeesDb
   //@formatter:on
 }
 
@@ -68,16 +69,36 @@ object Databases extends Logging {
                                      payments: SqlitePaymentsDb,
                                      offers: SqliteOffersDb,
                                      pendingCommands: SqlitePendingCommandsDb,
+                                     inboundFees: SqliteInboundFeesDb,
                                      private val backupConnection: Connection) extends Databases with FileBackup {
-    override def backup(backupFile: File): Unit = SqliteUtils.using(backupConnection.createStatement()) {
-      statement => {
-        statement.executeUpdate(s"backup to ${backupFile.getAbsolutePath}")
+    override def backup(backupFile: File): Unit = {
+      // We back up the main database first: it holds our channel state and is critical for funds safety, so its backup
+      // must not be prevented by a failure of the (much less important) inbound fees backup below.
+      SqliteUtils.using(backupConnection.createStatement()) {
+        statement => {
+          statement.executeUpdate(s"backup to ${backupFile.getAbsolutePath}")
+        }
+      }
+      // Inbound fees are stored in a separate database file, which we back up next to the main backup file. Our caller
+      // only handles the temporary file and atomic move for the main backup file, so we do it ourselves here. A failure
+      // here is logged but not propagated, so that it doesn't prevent the main backup above from being finalized.
+      try {
+        val inboundFeesBackupFile = new File(backupFile.getAbsoluteFile.getParentFile, "inboundfees.sqlite.bak")
+        val inboundFeesTmpFile = new File(inboundFeesBackupFile.getAbsolutePath.concat(".tmp"))
+        SqliteUtils.using(inboundFees.sqlite.createStatement()) {
+          statement => {
+            statement.executeUpdate(s"backup to ${inboundFeesTmpFile.getAbsolutePath}")
+          }
+        }
+        Files.move(inboundFeesTmpFile.toPath, inboundFeesBackupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+      } catch {
+        case t: Throwable => logger.warn(s"could not backup the inbound fees database: ${t.getMessage}")
       }
     }
   }
 
   object SqliteDatabases {
-    def apply(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection, jdbcUrlFile_opt: Option[File]): SqliteDatabases = {
+    def apply(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection, inboundFeesJdbc: Connection, jdbcUrlFile_opt: Option[File]): SqliteDatabases = {
       jdbcUrlFile_opt.foreach(checkIfDatabaseUrlIsUnchanged("sqlite", _))
       // We check whether the node operator needs to run an intermediate eclair version first.
       using(eclairJdbc.createStatement(), inTransaction = true) { statement => checkChannelsDbVersion(statement, SqliteChannelsDb.DB_NAME, isSqlite = true) }
@@ -90,6 +111,7 @@ object Databases extends Logging {
         payments = new SqlitePaymentsDb(eclairJdbc),
         offers = new SqliteOffersDb(eclairJdbc),
         pendingCommands = new SqlitePendingCommandsDb(eclairJdbc),
+        inboundFees = new SqliteInboundFeesDb(inboundFeesJdbc),
         backupConnection = eclairJdbc
       )
     }
@@ -103,6 +125,7 @@ object Databases extends Logging {
                                        payments: PgPaymentsDb,
                                        offers: PgOffersDb,
                                        pendingCommands: PgPendingCommandsDb,
+                                       inboundFees: PgInboundFeesDb,
                                        dataSource: HikariDataSource,
                                        lock: PgLock) extends Databases with ExclusiveLock {
     override def obtainExclusiveLock(): Unit = lock.obtainExclusiveLock(dataSource)
@@ -169,6 +192,7 @@ object Databases extends Logging {
         payments = new PgPaymentsDb,
         offers = new PgOffersDb,
         pendingCommands = new PgPendingCommandsDb,
+        inboundFees = new PgInboundFeesDb,
         dataSource = ds,
         lock = lock)
 
@@ -301,6 +325,7 @@ object Databases extends Logging {
       eclairJdbc = SqliteUtils.openSqliteFile(dbdir, "eclair.sqlite", exclusiveLock = true, journalMode = "wal", syncFlag = "full"), // there should only be one process writing to this file
       networkJdbc = SqliteUtils.openSqliteFile(dbdir, "network.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "normal"), // we don't need strong durability guarantees on the network db
       auditJdbc = SqliteUtils.openSqliteFile(dbdir, "audit.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "full"),
+      inboundFeesJdbc = SqliteUtils.openSqliteFile(dbdir, "inboundfees.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "full"),
       jdbcUrlFile_opt = jdbcUrlFile_opt
     )
   }

@@ -104,6 +104,10 @@ object EclairInternalsSerializer {
       ("peerLimit" | int32) ::
       ("whitelist" | listOfN(uint16, publicKey).xmap[Set[PublicKey]](_.toSet, _.toList))).as[Router.SyncConf]
 
+  val blip18ParamsCodec: Codec[Router.Blip18Params] = (
+    ("enableInboundFees" | bool(8)) ::
+      ("excludePositiveInboundFees" | bool(8))).as[Router.Blip18Params]
+
   val routerConfCodec: Codec[RouterConf] = (
     ("watchSpentWindow" | finiteDurationCodec) ::
       ("channelSpentSpliceDelay" | int32) ::
@@ -112,7 +116,8 @@ object EclairInternalsSerializer {
       ("syncConf" | syncConfCodec) ::
       ("pathFindingExperimentConf" | pathFindingExperimentConfCodec) ::
       ("messageRouteParams" | messageRouteParamsCodec) ::
-      ("balanceEstimateHalfLife" | finiteDurationCodec)).as[RouterConf]
+      ("balanceEstimateHalfLife" | finiteDurationCodec) ::
+      ("blip18" | blip18ParamsCodec)).as[RouterConf]
 
   val overrideFeaturesListCodec: Codec[List[(PublicKey, Features[Feature])]] = listOfN(uint16, publicKey ~ lengthPrefixedFeaturesCodec)
 

@@ -243,13 +243,13 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay()
 
     case Event(fr: FinalizeRoute, d: Data) =>
-      stay() using RouteCalculation.finalizeRoute(d, nodeParams.nodeId, fr)
+      stay() using RouteCalculation.finalizeRoute(d, nodeParams.nodeId, fr, nodeParams.routerConf.blip18)
 
     case Event(r: RouteRequest, d: Data) =>
-      stay() using RouteCalculation.handleRouteRequest(d, nodeParams.currentBlockHeight, r)
+      stay() using RouteCalculation.handleRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.blip18)
 
     case Event(r: BlindedRouteRequest, d: Data) =>
-      stay() using RouteCalculation.handleBlindedRouteRequest(d, nodeParams.currentBlockHeight, r)
+      stay() using RouteCalculation.handleBlindedRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.blip18)
 
     case Event(r: MessageRouteRequest, d: Data) =>
       stay() using RouteCalculation.handleMessageRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.messageRouteParams)
@@ -407,6 +407,19 @@ object Router {
     require(maxQueriesPerSync > 0, "max queries per sync must be strictly greater than 0")
   }
 
+  /**
+   * bLIP-18 inbound routing fees settings.
+   *
+   * @param enableInboundFees          include bLIP-18 inbound fees when computing routes and relay fees.
+   * @param excludePositiveInboundFees exclude channels advertising positive inbound fees from path-finding, which helps
+   *                                   avoid `FeeInsufficient` errors and makes routing more reliable.
+   */
+  case class Blip18Params(enableInboundFees: Boolean, excludePositiveInboundFees: Boolean = false)
+
+  object Blip18Params {
+    val disabled: Blip18Params = Blip18Params(enableInboundFees = false, excludePositiveInboundFees = false)
+  }
+
   case class RouterConf(watchSpentWindow: FiniteDuration,
                         channelSpentSpliceDelay: Int,
                         channelExcludeDuration: FiniteDuration,
@@ -414,7 +427,8 @@ object Router {
                         syncConf: SyncConf,
                         pathFindingExperimentConf: PathFindingExperimentConf,
                         messageRouteParams: MessageRouteParams,
-                        balanceEstimateHalfLife: FiniteDuration)
+                        balanceEstimateHalfLife: FiniteDuration,
+                        blip18: Blip18Params)
 
   // @formatter:off
   case class ChannelDesc private(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey){
@@ -533,7 +547,8 @@ object Router {
     // @formatter:off
     def cltvExpiryDelta: CltvExpiryDelta
     def relayFees: Relayer.RelayFees
-    final def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees, amount)
+    def inboundFees_opt: Option[Relayer.InboundFees]
+    final def fee(amount: MilliSatoshi): MilliSatoshi = totalFee(amount, relayFees, inboundFees_opt)
     def htlcMinimum: MilliSatoshi
     def htlcMaximum_opt: Option[MilliSatoshi]
     // @formatter:on
@@ -541,7 +556,7 @@ object Router {
 
   object HopRelayParams {
     /** We learnt about this channel from a channel_update. */
-    case class FromAnnouncement(channelUpdate: ChannelUpdate) extends HopRelayParams {
+    case class FromAnnouncement(channelUpdate: ChannelUpdate, inboundFees_opt: Option[Relayer.InboundFees] = None) extends HopRelayParams {
       override val cltvExpiryDelta = channelUpdate.cltvExpiryDelta
       override val relayFees = channelUpdate.relayFees
       override val htlcMinimum = channelUpdate.htlcMinimumMsat
@@ -552,13 +567,15 @@ object Router {
     case class FromHint(extraHop: Invoice.ExtraEdge) extends HopRelayParams {
       override val cltvExpiryDelta = extraHop.cltvExpiryDelta
       override val relayFees = extraHop.relayFees
+      override val inboundFees_opt = None
       override val htlcMinimum = extraHop.htlcMinimum
       override val htlcMaximum_opt = extraHop.htlcMaximum_opt
     }
 
-    def areSame(a: HopRelayParams, b: HopRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
+    def areSame(a: HopRelayParams, b: HopRelayParams, ignoreHtlcSize: Boolean = false, ignoreInboundFees: Boolean = false): Boolean =
       a.cltvExpiryDelta == b.cltvExpiryDelta &&
         a.relayFees == b.relayFees &&
+        (ignoreInboundFees || a.inboundFees_opt == b.inboundFees_opt) &&
         (ignoreHtlcSize || (a.htlcMinimum == b.htlcMinimum && a.htlcMaximum_opt == b.htlcMaximum_opt))
   }
 

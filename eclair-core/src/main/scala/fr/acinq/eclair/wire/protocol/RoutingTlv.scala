@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
+import fr.acinq.eclair.payment.relay.Relayer.InboundFees
 import fr.acinq.eclair.wire.protocol.CommonCodecs.{timestampSecond, varint, varintoverflow}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import fr.acinq.eclair.{TimestampSecond, UInt64}
@@ -53,7 +54,20 @@ object ChannelAnnouncementTlv {
 sealed trait ChannelUpdateTlv extends Tlv
 
 object ChannelUpdateTlv {
-  val channelUpdateTlvCodec: Codec[TlvStream[ChannelUpdateTlv]] = tlvStream(discriminated[ChannelUpdateTlv].by(varint))
+  case class Blip18InboundFee(feeBase: Int, feeProportionalMillionths: Int) extends ChannelUpdateTlv
+
+  object Blip18InboundFee {
+    def apply(fees: InboundFees): Blip18InboundFee = Blip18InboundFee(fees.feeBase.toLong.toInt, fees.feeProportionalMillionths.toInt)
+  }
+
+  private val blip18InboundFeeCodec: Codec[Blip18InboundFee] = tlvField(Codec(
+    ("feeBase" | int32) ::
+      ("feeProportionalMillionths" | int32)
+  ).as[Blip18InboundFee])
+
+  val channelUpdateTlvCodec: Codec[TlvStream[ChannelUpdateTlv]] = TlvCodecs.tlvStream(discriminated.by(varint)
+    .typecase(UInt64(55555), blip18InboundFeeCodec)
+  )
 }
 
 sealed trait GossipTimestampFilterTlv extends Tlv
