@@ -1,4 +1,4 @@
-# Eclair vnext
+# Eclair v0.14.4
 
 This is a patch release that contains security hardening fixes, most originating from project Loupe.
 We highly recommend upgrading, as some of these issues can be exploited by malicious nodes.
@@ -39,8 +39,8 @@ $ sha256sum -c SHA256SUMS.stripped
 
 Eclair builds are deterministic. To reproduce our builds, please use the following environment (*):
 
-- Ubuntu 24.04.1
-- Adoptium OpenJDK 21.0.6
+- Ubuntu 26.04.1
+- Adoptium OpenJDK 21.0.12.1
 
 Then use the following command to generate the eclair-node packages:
 
