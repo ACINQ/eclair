@@ -499,7 +499,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.paymentHash == invoice.paymentHash, paymentSent)
     assert(paymentSent.recipientNodeId == nodes("F").nodeParams.nodeId, paymentSent)
     assert(paymentSent.recipientAmount == amount, paymentSent)
-    assert(paymentSent.feesPaid == amount * 0.002) // 0.2%
+    // The first attempt doesn't provide a large enough cltv_expiry_delta for G -> C -> F, so G rejects it and we retry.
+    assert(paymentSent.feesPaid == amount * 0.004) // 0.4%
 
     awaitCond(nodes("F").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("F").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
