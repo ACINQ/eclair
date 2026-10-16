@@ -200,6 +200,7 @@ object Graph {
    * @param currentBlockHeight      the height of the chain tip (latest block)
    * @param boundaries              a predicate function that can be used to impose limits on the outcome of the search
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
+   * @param firstHop_opt            if provided, only paths starting with this channel will be returned
    */
   def yenKshortestPaths(g: GraphWithBalanceEstimates,
                         sourceNode: PublicKey,
@@ -212,12 +213,13 @@ object Graph {
                         wr: WeightRatios[PaymentPathWeight],
                         currentBlockHeight: BlockHeight,
                         boundaries: PaymentPathWeight => Boolean,
-                        includeLocalChannelCost: Boolean): Seq[WeightedPath[PaymentPathWeight]] = {
+                        includeLocalChannelCost: Boolean,
+                        firstHop_opt: Option[ShortChannelId] = None): Seq[WeightedPath[PaymentPathWeight]] = {
     // find the shortest path (k = 0)
     val targetWeight = PaymentPathWeight(amount)
     // we don't require any specific feature for intermediate nodes
     val validateNodeFeatures = (_: Features[NodeFeature]) => true
-    dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost) match {
+    dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost, firstHop_opt) match {
       case None => Seq.empty // if we can't even find a single path, avoid returning a Seq(Seq.empty)
       case Some(shortestPath) =>
 
@@ -236,8 +238,11 @@ object Graph {
         for (k <- 1 until pathsToFind) {
           if (!allSpurPathsFound) {
             val PathWithSpur(WeightedPath(prevShortestPath, _), spurIndex) = shortestPaths(k - 1)
+            // When the first hop is fixed, all paths start with the same edge: we skip the last spur node (the end of the
+            // first hop) because that would require finding a path that doesn't use that edge, which is impossible.
+            val maxSpurIndex = if (firstHop_opt.isDefined) prevShortestPath.length - 1 else prevShortestPath.length
             // for every new edge in the path, we will try to find a different path before that edge
-            for (i <- spurIndex until prevShortestPath.length) {
+            for (i <- spurIndex until maxSpurIndex) {
               // select the spur node as the i-th element from the target of the previous shortest path
               val spurNode = prevShortestPath(prevShortestPath.length - 1 - i).desc.b
               // select the sub-path from the spur node to the target
@@ -255,7 +260,7 @@ object Graph {
               val alreadyExploredVertices = rootPathEdges.map(_.desc.b).toSet
               val rootPathWeight = pathWeight(g.balances, sourceNode, rootPathEdges, amount, currentBlockHeight, wr, includeLocalChannelCost)
               // find the "spur" path, a sub-path going from the spur node to the target avoiding previously found sub-paths
-              dijkstraShortestPath(g, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost) match {
+              dijkstraShortestPath(g, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost, firstHop_opt) match {
                 case Some(spurPath) =>
                   val completePath = spurPath ++ rootPathEdges
                   val candidatePath = WeightedPath(completePath, pathWeight(g.balances, sourceNode, completePath, amount, currentBlockHeight, wr, includeLocalChannelCost))
@@ -295,6 +300,7 @@ object Graph {
    * @param currentBlockHeight      the height of the chain tip (latest block)
    * @param wr                      ratios used to 'weight' edges when searching for the shortest path
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
+   * @param firstHop_opt            if provided, the only edge starting at @param sourceNode that can be used
    */
   private def dijkstraShortestPath[RichWeight <: PathWeight](g: GraphWithBalanceEstimates,
                                                              sourceNode: PublicKey,
@@ -307,7 +313,8 @@ object Graph {
                                                              validateNodeFeatures: Features[NodeFeature] => Boolean,
                                                              currentBlockHeight: BlockHeight,
                                                              wr: WeightRatios[RichWeight],
-                                                             includeLocalChannelCost: Boolean): Option[Seq[GraphEdge]] = {
+                                                             includeLocalChannelCost: Boolean,
+                                                             firstHop_opt: Option[ShortChannelId] = None): Option[Seq[GraphEdge]] = {
     // the graph does not contain source/destination nodes
     val sourceNotInGraph = !g.graph.containsVertex(sourceNode) && !extraEdges.exists(_.desc.a == sourceNode)
     val targetNotInGraph = !g.graph.containsVertex(targetNode) && !extraEdges.exists(_.desc.b == targetNode)
@@ -346,6 +353,7 @@ object Graph {
           if (current.weight.canUseEdge(edge) &&
             !ignoredEdges.contains(edge.desc) &&
             !ignoredVertices.contains(neighbor) &&
+            (neighbor != sourceNode || firstHop_opt.forall(_ == edge.desc.shortChannelId)) &&
             (neighbor == sourceNode || validateNodeFeatures(g.graph.getVertexFeatures(neighbor)))) {
             // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
             // will be relayed through that edge is the one in `currentWeight`.

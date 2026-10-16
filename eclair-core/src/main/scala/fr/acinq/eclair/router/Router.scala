@@ -111,6 +111,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
         awaiting = Map.empty,
         privateChannels = Map.empty,
         scid2PrivateChannels = Map.empty,
+        localPublicChannels = Map.empty,
         excludedChannels = Map.empty,
         graphWithBalances = GraphWithBalanceEstimates(graph, nodeParams.routerConf.balanceEstimateHalfLife),
         sync = Map.empty,
@@ -391,7 +392,8 @@ object Router {
       heuristics = heuristics,
       mpp = mpp,
       experimentName = experimentName,
-      includeLocalChannelCost = false
+      includeLocalChannelCost = false,
+      firstHopChannelId_opt = None
     )
   }
 
@@ -640,7 +642,8 @@ object Router {
                          heuristics: HeuristicsConstants,
                          mpp: MultiPartParams,
                          experimentName: String,
-                         includeLocalChannelCost: Boolean) {
+                         includeLocalChannelCost: Boolean,
+                         firstHopChannelId_opt: Option[ByteVector32] = None) { // if provided, routes must start with this local channel
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
       // The payment fee must satisfy either the flat fee or the proportional fee, not necessarily both.
       boundaries.maxFeeFlat.max(amount * boundaries.maxFeeProportional)
@@ -858,6 +861,7 @@ object Router {
                   awaiting: Map[ChannelAnnouncement, Seq[GossipOrigin]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
                   privateChannels: Map[ByteVector32, PrivateChannel], // indexed by channel id
                   scid2PrivateChannels: Map[Long, ByteVector32], // real scid or alias to channel_id, only to be used for private channels
+                  localPublicChannels: Map[ByteVector32, RealShortChannelId], // channel_id to real scid, only for our local public channels (private channels are already indexed by channel_id)
                   excludedChannels: Map[ChannelDesc, ExcludedChannelStatus], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graphWithBalances: GraphWithBalanceEstimates,
                   sync: Map[PublicKey, Syncing], // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
@@ -879,6 +883,9 @@ object Router {
     def resolve(channelId: ByteVector32, realScid_opt: Option[RealShortChannelId]): Option[KnownChannel] = {
       privateChannels.get(channelId).orElse(realScid_opt.flatMap(channels.get))
     }
+
+    /** Resolve one of our local channels using its channel_id. */
+    def resolveLocal(channelId: ByteVector32): Option[KnownChannel] = resolve(channelId, localPublicChannels.get(channelId))
   }
 
   // @formatter:off

@@ -585,7 +585,7 @@ object Validation {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     import nodeParams.db.{network => db}
     log.debug("handleLocalChannelUpdate lcu={}", lcu)
-    d.resolve(lcu.channelId, lcu.announcement_opt.map(_.shortChannelId)) match {
+    val dUpdated = d.resolve(lcu.channelId, lcu.announcement_opt.map(_.shortChannelId)) match {
       case Some(publicChannel: PublicChannel) =>
         // This a known public channel, we only need to process the channel_update.
         log.debug("this is a known public channel, processing channel_update publicChannel={}", publicChannel)
@@ -635,17 +635,26 @@ object Validation {
             handleChannelUpdate(d, db, nodeParams.currentBlockHeight, Left(lcu))
         }
     }
+    // Public channels are indexed by real scid: we keep track of the real scid of our local public channels, which lets
+    // us find them using their channel_id (e.g. when specifying the first hop of a payment). This scid changes when a
+    // splice is announced.
+    val localPublicChannels1 = lcu.announcement_opt match {
+      case Some(ann) => dUpdated.localPublicChannels + (lcu.channelId -> ann.shortChannelId)
+      case None => dUpdated.localPublicChannels - lcu.channelId
+    }
+    dUpdated.copy(localPublicChannels = localPublicChannels1)
   }
 
   def handleLocalChannelDown(d: Data, localNodeId: PublicKey, lcd: LocalChannelDown)(implicit log: LoggingAdapter): Data = {
     import lcd.{channelId, remoteNodeId}
     log.debug("handleLocalChannelDown lcd={}", lcd)
     val scid2PrivateChannels1 = d.scid2PrivateChannels - lcd.aliases.localAlias.toLong -- lcd.realScids.map(_.toLong)
+    val localPublicChannels1 = d.localPublicChannels - lcd.channelId
     // a local channel has permanently gone down
     if (lcd.realScids.exists(d.channels.contains)) {
       // the channel was public, we will receive (or have already received) a WatchSpent event, that will trigger a clean up of the channel
       // so let's not do anything here
-      d.copy(scid2PrivateChannels = scid2PrivateChannels1)
+      d.copy(scid2PrivateChannels = scid2PrivateChannels1, localPublicChannels = localPublicChannels1)
     } else if (d.privateChannels.contains(lcd.channelId)) {
       // the channel was private or public-but-not-yet-announced, let's do the clean up
       val localAlias = d.privateChannels(channelId).aliases.localAlias
@@ -654,9 +663,9 @@ object Validation {
       val graphWithBalances1 = d.graphWithBalances
         .removeChannel(ChannelDesc(localAlias, localNodeId, remoteNodeId))
       // and we remove the channel and channel_update from our state
-      d.copy(privateChannels = d.privateChannels - channelId, scid2PrivateChannels = scid2PrivateChannels1, graphWithBalances = graphWithBalances1)
+      d.copy(privateChannels = d.privateChannels - channelId, scid2PrivateChannels = scid2PrivateChannels1, localPublicChannels = localPublicChannels1, graphWithBalances = graphWithBalances1)
     } else {
-      d
+      d.copy(localPublicChannels = localPublicChannels1)
     }
   }
 

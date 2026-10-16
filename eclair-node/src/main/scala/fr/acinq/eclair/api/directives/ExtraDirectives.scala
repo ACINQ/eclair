@@ -51,6 +51,7 @@ trait ExtraDirectives extends Directives {
   val routeFormatFormParam: NameUnmarshallerReceptacle[RouteFormat] = "format".as[RouteFormat](routeFormatUnmarshaller)
   val ignoreNodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "ignoreNodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
   val ignoreShortChannelIdsFormParam: NameUnmarshallerReceptacle[List[ShortChannelId]] = "ignoreShortChannelIds".as[List[ShortChannelId]](shortChannelIdsUnmarshaller)
+  val firstHopChannelIdFormParam: NameUnmarshallerReceptacle[ByteVector32] = "firstHopChannelId".as[ByteVector32](bytes32Unmarshaller)
   val maxFeeMsatFormParam: NameReceptacle[MilliSatoshi] = "maxFeeMsat".as[MilliSatoshi]
   val maxCltvExpiryDeltaFormParam: NameReceptacle[CltvExpiryDelta] = "maxCltvExpiryDelta".as[CltvExpiryDelta]
   val countFormParam: NameReceptacle[Int] = "count".as[Int]
