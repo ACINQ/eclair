@@ -490,6 +490,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   private val localFundingKey: PrivateKey = channelKeys.fundingKey(purpose.fundingTxIndex)
   private val fundingPubkeyScript: ByteVector = Transactions.makeFundingScript(localFundingKey.publicKey, fundingParams.remoteFundingPubKey, fundingParams.commitmentFormat).pubkeyScript
   private val remoteNodeId = channelParams.remoteParams.nodeId
+  // Remote inputs for which our peer only sent the previous txOut: we must check them before signing (see checkPreviousTxOuts).
+  private var remoteInputsWithoutPreviousTx = Set.empty[UInt64]
   private val previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction] = purpose match {
     case rbf: FundingTxRbf => rbf.previousTransactions
     case rbf: SpliceTxRbf => rbf.previousTransactions
@@ -668,12 +670,16 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
               replyTo ! RemoteFailure(f)
               unlockAndStop(session)
             case Right(input) =>
-              val next = session.copy(
+              input match {
+                case _: Input.Remote if addInput.previousTx_opt.isEmpty => remoteInputsWithoutPreviousTx += input.serialId
+                case _ => ()
+              }
+              val session1 = session.copy(
                 remoteInputs = session.remoteInputs :+ input,
                 inputsReceivedCount = session.inputsReceivedCount + 1,
                 txCompleteReceived = None,
               )
-              send(next)
+              send(session1)
           }
         case addOutput: TxAddOutput =>
           receiveOutput(session, addOutput) match {
@@ -691,6 +697,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         case removeInput: TxRemoveInput =>
           session.remoteInputs.find(_.serialId == removeInput.serialId) match {
             case Some(_) =>
+              remoteInputsWithoutPreviousTx -= removeInput.serialId
               val next = session.copy(
                 remoteInputs = session.remoteInputs.filterNot(_.serialId == removeInput.serialId),
                 txCompleteReceived = None,
@@ -731,6 +738,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val remoteOnlyInputs = session.remoteInputs.collect { case i: Input.Remote => i }
     // Similarly, we ignore the shared output, which has been validated separately.
     val remoteOnlyOutputs = session.remoteOutputs.collect { case o: Output.Remote => o }
+    val remoteInputsToCheck = remoteOnlyInputs.filter(i => remoteInputsWithoutPreviousTx.contains(i.serialId))
+    val previousTxOutValidation: () => Future[Unit] = () => checkPreviousTxOuts(remoteInputsToCheck)
     val confirmationValidation: () => Future[Unit] = if (fundingParams.requireConfirmedInputs.forRemote) {
       () => checkInputsConfirmed(remoteOnlyInputs, minConfirmations = 1, maxConfirmations_opt = None)
     } else {
@@ -740,8 +749,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case p: ValidateInteractiveTxPlugin => () => p.validateSharedTx(remoteNodeId, remoteOnlyInputs.map(i => i.outPoint -> i.txOut).toMap, remoteOnlyOutputs.map(o => TxOut(o.amount, o.pubkeyScript)))
     }
     // We run all checks, stopping at the first failing one. Note that plugin validation is only called if the previous
-    // checks completed without errors.
-    context.pipeToSelf((confirmationValidation +: pluginValidation).foldLeft(Future.successful(())) {
+    // checks completed without errors. The previous txOut validation comes first, since other checks use those txOuts.
+    context.pipeToSelf((previousTxOutValidation +: confirmationValidation +: pluginValidation).foldLeft(Future.successful(())) {
       case (current, nextCheck) => current.flatMap(_ => nextCheck()) // NB: sequential execution
     }) {
       case Success(_) => ValidateSharedTx
@@ -766,6 +775,23 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         unlockAndStop(session)
       case Abort =>
         unlockAndStop(session)
+    }
+  }
+
+  /**
+   * When splicing taproot channels, our peer may only send the txOut of their inputs instead of the previous transaction.
+   * Nothing guarantees that this txOut matches the actual output: our peer could lie about its amount or script. Since
+   * taproot signatures commit to every spent output, we would then sign a transaction that can never confirm, while our
+   * peer keeps our signature for the previous commitment. We thus check those txOuts against our bitcoin node, which
+   * finds both confirmed and mempool transactions (even if their outputs are spent by a previous attempt we're replacing
+   * with RBF). Our peer must send the previous transaction instead if it is unknown to our bitcoin node.
+   */
+  private def checkPreviousTxOuts(inputs: Seq[Input.Remote]): Future[Unit] = {
+    inputs.foldLeft(Future.successful(())) {
+      case (current, input) => current.flatMap(_ => wallet.getTransaction(input.outPoint.txid).map(_.txOut.lift(input.outPoint.index.toInt)).recover { case _ => None }.flatMap {
+        case Some(txOut) if txOut == input.txOut => Future.successful(())
+        case _ => Future.failed(InvalidPreviousTxOut(fundingParams.channelId, input.serialId, input.outPoint.txid, input.outPoint.index))
+      })
     }
   }
 

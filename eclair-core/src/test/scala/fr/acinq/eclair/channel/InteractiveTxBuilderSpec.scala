@@ -2214,6 +2214,86 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
+  test("reject previous txOut that doesn't match the blockchain") {
+    val targetFeerate = FeeratePerKw(2_500 sat)
+    val fundingA1 = 100_000 sat
+    val utxosA = Seq(340_000 sat, 40_000 sat, 35_000 sat)
+    val fundingB1 = 80_000 sat
+    val utxosB = Seq(290_000 sat, 20_000 sat, 15_000 sat)
+    withFixture(ChannelTypes.SimpleTaprootChannel(), fundingA1, utxosA, fundingB1, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
+      import f._
+
+      val probe = TestProbe()
+      alice ! Start(alice2bob.ref)
+      bob ! Start(bob2alice.ref)
+
+      // Alice --- tx_add_input --> Bob
+      fwd.forwardAlice2Bob[TxAddInput]
+      // Alice <-- tx_add_input --- Bob
+      fwd.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_add_output --- Bob
+      fwd.forwardBob2Alice[TxAddOutput]
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      fwd.forwardBob2Alice[TxComplete]
+      // Alice --- tx_complete --> Bob
+      fwd.forwardAlice2Bob[TxComplete]
+
+      val successA1 = alice2bob.expectMsgType[Succeeded]
+      val successB1 = bob2alice.expectMsgType[Succeeded]
+      val (txA1, commitmentA1, _, commitmentB1) = fixtureParams.exchangeSigsBobFirst(bobParams, successA1, successB1)
+      walletA.publishTransaction(txA1.signedTx).pipeTo(probe.ref)
+      probe.expectMsg(txA1.txId)
+
+      // Alice splices some funds in, which requires using an additional input.
+      val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA1, commitmentB1)
+      val spliceFixtureParams = fixtureParams.createSpliceFixtureParams(fundingTxIndex = 1, fundingAmountA = 25_000 sat, fundingAmountB = 0 sat, aliceParams.targetFeerate, aliceParams.dustLimit, aliceParams.lockTime, sharedInputA = sharedInputA, sharedInputB = sharedInputB, requireConfirmedInputs = aliceParams.requireConfirmedInputs)
+      val aliceSplice = fixtureParams.spawnTxBuilderSpliceAlice(spliceFixtureParams.fundingParamsA, commitmentA1, walletA)
+      val bobSplice = fixtureParams.spawnTxBuilderSpliceBob(spliceFixtureParams.fundingParamsB, commitmentB1, walletB)
+      val fwdSplice = TypeCheckedForwarder(aliceSplice, bobSplice, alice2bob, bob2alice)
+
+      aliceSplice ! Start(alice2bob.ref)
+      bobSplice ! Start(bob2alice.ref)
+
+      // Alice only sends the txOut of her wallet input and lies about its amount. Since taproot signatures commit to the
+      // amounts of all spent outputs, the splice transaction would be invalid and could never confirm.
+      def replacePrevTxWithInvalidPrevTxOut(input: TxAddInput): TxAddInput = input.previousTx_opt match {
+        case None => input
+        case Some(tx) =>
+          val txOut = tx.txOut(input.previousTxOutput.toInt)
+          input.copy(previousTx_opt = None, tlvStream = TlvStream(TxAddInputTlv.PrevTxOut(tx.txid, txOut.amount + 10_000.sat, txOut.publicKeyScript)))
+      }
+
+      // Alice --- tx_add_input --> Bob
+      val input1 = alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxAddInput]
+      bobSplice ! ReceiveMessage(replacePrevTxWithInvalidPrevTxOut(input1))
+      // Alice <-- tx_complete --- Bob
+      fwdSplice.forwardBob2Alice[TxComplete]
+      // Alice --- tx_add_input --> Bob
+      val input2 = alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxAddInput]
+      bobSplice ! ReceiveMessage(replacePrevTxWithInvalidPrevTxOut(input2))
+      // Alice <-- tx_complete --- Bob
+      fwdSplice.forwardBob2Alice[TxComplete]
+      // Alice --- tx_add_output --> Bob
+      fwdSplice.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      fwdSplice.forwardBob2Alice[TxComplete]
+      // Alice --- tx_add_output --> Bob
+      fwdSplice.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      fwdSplice.forwardBob2Alice[TxComplete]
+      // Alice --- tx_complete --> Bob
+      fwdSplice.forwardAlice2Bob[TxComplete]
+
+      // Bob checks the txOut against his bitcoin node and aborts before signing.
+      val walletInput = Seq(input1, input2).find(_.previousTx_opt.nonEmpty).get
+      assert(bob2alice.expectMsgType[RemoteFailure].cause == InvalidPreviousTxOut(spliceFixtureParams.fundingParamsA.channelId,walletInput.serialId, walletInput.previousTx_opt.get.txid, walletInput.previousTxOutput))
+    }
+  }
+
   test("not enough funds for rbf attempt") {
     val targetFeerate = FeeratePerKw(10_000 sat)
     val fundingA = 80_000 sat
