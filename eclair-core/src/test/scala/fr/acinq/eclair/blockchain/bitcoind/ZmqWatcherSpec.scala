@@ -22,7 +22,7 @@ import akka.actor.{ActorRef, Props, typed}
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, MilliBtcDouble, OutPoint, SatoshiLong, Script, Transaction, TxId, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockId, Btc, MilliBtcDouble, OutPoint, SatoshiLong, Script, Transaction, TxId, TxOut}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec._
@@ -38,9 +38,9 @@ import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Promise
+import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.concurrent.duration._
 
 class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with BitcoindService with BeforeAndAfterAll with Logging {
@@ -72,12 +72,12 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
   case class Fixture(blockHeight: AtomicLong, bitcoinClient: BitcoinCoreClient, watcher: typed.ActorRef[ZmqWatcher.Command], probe: TestProbe, listener: TestProbe)
 
   // NB: we can't use ScalaTest's fixtures, they would see uninitialized bitcoind fields because they sandbox each test.
-  private def withWatcher(testFun: Fixture => Any, scanPastBlock: Boolean = false): Unit = {
+  private def withWatcher(testFun: Fixture => Any, scanPastBlock: Boolean = false, bitcoinClient_opt: Option[BitcoinCoreClient] = None): Unit = {
     val blockCount = new AtomicLong()
     val probe = TestProbe()
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[CurrentBlockHeight])
-    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val bitcoinClient = bitcoinClient_opt.getOrElse(new BitcoinCoreClient(bitcoinrpcclient))
     val nodeParams = TestConstants.Alice.nodeParams
       .modify(_.chainHash).setTo(Block.RegtestGenesisBlock.hash)
       // We disable previous block scan by default.
@@ -319,6 +319,59 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       watcher ! WatchFundingSpent(probe.ref, tx1.txid, 0, Set.empty)
       probe.expectMsg(WatchFundingSpentTriggered(tx2))
     })
+  }
+
+  test("retry looking for the spending tx") {
+    // The txospenderindex may be lagging behind the tip when we set the watch: we simulate that by failing the first
+    // two attempts to find the spending tx.
+    val findSpendingTxAttempts = new AtomicInteger(0)
+    val flakyClient = new BitcoinCoreClient(bitcoinrpcclient) {
+      override def findSpendingTx(outPoint: OutPoint)(implicit ec: ExecutionContext): Future[Option[(Transaction, Option[BlockId])]] = {
+        if (findSpendingTxAttempts.incrementAndGet() <= 2) {
+          Future.successful(None)
+        } else {
+          super.findSpendingTx(outPoint)(ec)
+        }
+      }
+    }
+
+    withWatcher(f => {
+      import f._
+
+      val (priv, address) = createExternalAddress()
+      val tx = sendToAddress(address, Btc(1), probe)
+      val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))
+      val spendingTx = createSpendP2WPKH(tx, priv, priv.publicKey, 500 sat, 0, 0)
+
+      // We confirm both transactions *before* setting the watch: the watcher won't see the spending tx in the mempool
+      // or in a new block, its only way of finding it is to look it up.
+      bitcoinClient.publishTransaction(spendingTx).pipeTo(probe.ref)
+      probe.expectMsg(spendingTx.txid)
+      generateBlocks(1)
+      bitcoinClient.getBlockHeight().pipeTo(probe.ref)
+      val initialBlockHeight = probe.expectMsgType[BlockHeight]
+      listener.fishForMessage() { case c: CurrentBlockHeight => c.blockHeight >= initialBlockHeight }
+
+      // The first attempt doesn't find the spending tx, so the watch isn't triggered.
+      watcher ! WatchFundingSpent(probe.ref, tx.txid, outputIndex, Set.empty)
+      awaitCond(findSpendingTxAttempts.get() == 1)
+      probe.expectNoMessage(100 millis)
+
+      // We try again at the next block, and still don't find it.
+      generateBlocks(1)
+      awaitCond(findSpendingTxAttempts.get() == 2)
+      probe.expectNoMessage(100 millis)
+
+      // The third attempt succeeds: the watch is finally triggered.
+     generateBlocks(1)
+      assert(probe.expectMsgType[WatchFundingSpentTriggered].spendingTx.txid == spendingTx.txid)
+
+      // Now that we've found the spending tx, we stop looking for it at every block.
+      generateBlocks(1)
+      listener.fishForMessage() { case c: CurrentBlockHeight => c.blockHeight >= initialBlockHeight + 3 }
+      probe.expectNoMessage(100 millis)
+      assert(findSpendingTxAttempts.get() == 3)
+    }, bitcoinClient_opt = Some(flakyClient))
   }
 
   test("unwatch external channel") {
