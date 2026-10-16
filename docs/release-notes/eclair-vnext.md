@@ -12,15 +12,7 @@
 
 ### API changes
 
-The API now rejects requests that carry an `Origin` header, which means it cannot be used from a web browser anymore.
-
-Our API relies on HTTP basic authentication, which web browsers attach to cross-site requests once it has been cached:
-any web page the node operator visits could then forge authenticated API calls, and since our endpoints accept
-form-encoded parameters, a plain HTML form is enough (the attacker cannot read the response, but the API call has
-already been made). Browsers set the `Origin` header on those requests, while `curl` and `eclair-cli` never do.
-
-Command-line usage is unaffected. If you were serving a web front-end for the API, you now need to put a back-end of
-your own in front of it.
+<insert changes>
 
 ### Miscellaneous improvements and bug fixes
 
