@@ -191,16 +191,22 @@ object RouteCalculation {
       val ignoredEdges = r.ignore.channels ++ d.excludedChannels.keySet
       val (targetNodeId, amountToSend, maxFee, extraEdges) = computeTarget(r, ignoredEdges)
       val routesToFind = if (r.routeParams.randomize) DEFAULT_ROUTES_COUNT else 1
+      // The first hop may be provided using any of the channel's identifiers: we use the one that is used in the graph.
+      val routeParams = r.routeParams.copy(firstHop_opt = r.routeParams.firstHop_opt.map(scid => d.resolve(scid) match {
+        case Some(pc: PublicChannel) => pc.ann.shortChannelId
+        case Some(pc: PrivateChannel) => pc.aliases.localAlias
+        case None => scid
+      }))
 
       log.info(s"finding routes ${r.source}->$targetNodeId with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", extraEdges.map(_.desc.shortChannelId).mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
-      log.debug("finding routes with params={}, multiPart={}", r.routeParams, r.allowMultiPart)
+      log.debug("finding routes with params={}, multiPart={}", routeParams, r.allowMultiPart)
       log.debug("local channels to target node: {}", d.graphWithBalances.graph.getEdgesBetween(r.source, targetNodeId).map(e => s"${e.desc.shortChannelId} (${e.balance_opt}/${e.capacity})").mkString(", "))
       val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(amountToSend))
       KamonExt.time(Metrics.FindRouteDuration.withTags(tags.withTag(Tags.NumberOfRoutes, routesToFind.toLong))) {
         val result = if (r.allowMultiPart) {
-          findMultiPartRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, r.routeParams, currentBlockHeight)
+          findMultiPartRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, routeParams, currentBlockHeight)
         } else {
-          findRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, r.routeParams, currentBlockHeight)
+          findRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, routeParams, currentBlockHeight)
         }
         result.map(routes => addFinalHop(r.target, routes)) match {
           case Success(routes) =>
@@ -219,7 +225,7 @@ object RouteCalculation {
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "NegativeProbability")).increment()
             r.replyTo ! PaymentRouteNotFound(failure)
           case Failure(t) =>
-            val failure = if (isNeighborBalanceTooLow(d.graphWithBalances.graph, r.source, targetNodeId, amountToSend)) BalanceTooLow else t
+            val failure = if (isNeighborBalanceTooLow(d.graphWithBalances.graph, r.source, targetNodeId, amountToSend, routeParams.firstHop_opt)) BalanceTooLow else t
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
             r.replyTo ! PaymentRouteNotFound(failure)
         }
@@ -341,7 +347,7 @@ object RouteCalculation {
 
     val boundaries: PaymentPathWeight => Boolean = { weight => feeOk(weight.amount - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
 
-    val foundRoutes: Seq[WeightedPath[PaymentPathWeight]] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
+    val foundRoutes: Seq[WeightedPath[PaymentPathWeight]] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost, routeParams.firstHop_opt)
     if (foundRoutes.nonEmpty) {
       val (directRoutes, indirectRoutes) = foundRoutes.partition(_.path.length == 1)
       val routes = if (routeParams.randomize) {
@@ -412,7 +418,7 @@ object RouteCalculation {
     // When the recipient is a direct peer, we have complete visibility on our local channels so we can use more accurate MPP parameters.
     val routeParams1 = {
       case class DirectChannel(balance: MilliSatoshi, isEmpty: Boolean)
-      val directChannels = g.graph.getEdgesBetween(localNodeId, targetNodeId).collect {
+      val directChannels = g.graph.getEdgesBetween(localNodeId, targetNodeId).filter(e => routeParams.firstHop_opt.forall(_ == e.desc.shortChannelId)).collect {
         // We should always have balance information available for local channels.
         // NB: htlcMinimumMsat is set by our peer and may be 0 msat (even though it's not recommended).
         case GraphEdge(_, params, _, Some(balance)) => DirectChannel(balance, balance <= 0.msat || balance < params.htlcMinimum)
@@ -576,8 +582,8 @@ object RouteCalculation {
    * requested amount. We could potentially relay the payment by using indirect routes, but since we're connected to
    * the target node it means we'd like to reach it via direct channels as much as possible.
    */
-  private def isNeighborBalanceTooLow(g: DirectedGraph, source: PublicKey, target: PublicKey, amount: MilliSatoshi): Boolean = {
-    val neighborEdges = g.getEdgesBetween(source, target)
+  private def isNeighborBalanceTooLow(g: DirectedGraph, source: PublicKey, target: PublicKey, amount: MilliSatoshi, firstHop_opt: Option[ShortChannelId]): Boolean = {
+    val neighborEdges = g.getEdgesBetween(source, target).filter(e => firstHop_opt.forall(_ == e.desc.shortChannelId))
     neighborEdges.nonEmpty && neighborEdges.map(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)).sum < amount
   }
 
