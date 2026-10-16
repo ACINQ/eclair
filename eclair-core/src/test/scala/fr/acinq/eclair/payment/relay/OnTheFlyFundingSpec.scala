@@ -1098,8 +1098,8 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     val preimage = randomBytes32()
     val paymentHash = Crypto.sha256(preimage)
-    val upstream = upstreamChannel(11_000_000 msat, expiryIn, paymentHash)
-    val willAdd = proposeFunding(10_000_000 msat, expiryOut, paymentHash, upstream)
+    val upstream = upstreamChannel(21_000_000 msat, expiryIn, paymentHash)
+    val willAdd = proposeFunding(20_000_000 msat, expiryOut, paymentHash, upstream)
     val fees = LiquidityAds.Fees(10_000 sat, 5_000 sat)
     val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(List(paymentHash)), fees = fees)
 
@@ -1117,6 +1117,43 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val proposal = OnTheFlyFunding.Proposal(willAdd, upstream, Nil)
     peer ! OnTheFlyFunding.PaymentRelayer.RelaySuccess(purchase.channelId, paymentHash, preimage, fees.total.toMilliSatoshi, proposal :: Nil)
     awaitCond(nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
+  }
+
+  test("disable from_future_htlc when remote fails HTLCs before liquidity purchase is signed") { f =>
+    import f._
+
+    connect(peer)
+    val channelId = openChannel(500_000 sat)
+
+    val upstream1 = upstreamChannel(60_000_000 msat, expiryIn, paymentHash)
+    val willAdd1 = proposeFunding(50_000_000 msat, expiryOut, paymentHash, upstream1)
+    val requestFunding1 = LiquidityAds.RequestFunding(
+      100_000 sat,
+      LiquidityAds.FundingRate(10_000 sat, 500_000 sat, 0, 250, 1_000 sat, 0 sat),
+      LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash :: Nil)
+    )
+    val splice1 = createSpliceMessage(channelId, requestFunding1)
+    peerConnection.send(peer, splice1)
+    channel.expectMsg(splice1)
+
+    // Our peer fails the payment that should pay for the liquidity purchase while the splice is being negotiated.
+    peerConnection.send(peer, WillFailHtlc(willAdd1.id, paymentHash, randomBytes(42)))
+    verifyFailedUpstream(upstream1)
+
+    // We sign the splice anyway, so we won't be paid: we disable from_future_htlc for their future payments.
+    assert(nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
+    signLiquidityPurchase(requestFunding1.requestedAmount, requestFunding1.paymentDetails, channelId, requestFunding1.fees(TestConstants.feeratePerKw, isChannelCreation = false), fundingTxIndex = 1)
+    awaitCond(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
+
+    // Their next liquidity purchase using from_future_htlc is rejected.
+    val paymentHash2 = randomBytes32()
+    val upstream2 = upstreamChannel(60_000_000 msat, expiryIn, paymentHash2)
+    proposeFunding(50_000_000 msat, expiryOut, paymentHash2, upstream2)
+    val requestFunding2 = requestFunding1.copy(paymentDetails = LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash2 :: Nil))
+    peerConnection.send(peer, createSpliceMessage(channelId, requestFunding2))
+    assert(peerConnection.expectMsgType[CancelOnTheFlyFunding].channelId == channelId)
+    verifyFailedUpstream(upstream2)
+    channel.expectNoMessage(100 millis)
   }
 
   test("don't relay payments if added to fee credit while signing", Tag(withFeeCredit)) { f =>
