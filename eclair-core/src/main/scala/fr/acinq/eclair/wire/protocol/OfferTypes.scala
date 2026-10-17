@@ -314,6 +314,9 @@ object OfferTypes {
 
     def validate(records: TlvStream[OfferTlv]): Either[InvalidTlvPayload, Offer] = {
       if (records.get[OfferDescription].isEmpty && records.get[OfferAmount].nonEmpty) return Left(MissingRequiredTlv(UInt64(10)))
+      if (records.get[OfferDescription].exists(d => !CommonCodecs.isValidUtf8(d.description))) return Left(ForbiddenTlv(UInt64(10)))
+      if (records.get[OfferIssuer].exists(i => !CommonCodecs.isValidUtf8(i.issuer))) return Left(ForbiddenTlv(UInt64(18)))
+      if (records.get[OfferFeatures].exists(_.features.headOption.contains(0))) return Left(ForbiddenTlv(UInt64(12)))
       if (records.get[OfferAmount].exists(_.amount == 0)) return Left(ForbiddenTlv(UInt64(10)))
       if (records.get[OfferNodeId].isEmpty && records.get[OfferPaths].isEmpty) return Left(MissingRequiredTlv(UInt64(22)))
       if (records.get[OfferCurrency].nonEmpty && records.get[OfferAmount].isEmpty) return Left(MissingRequiredTlv(UInt64(8)))
@@ -432,6 +435,8 @@ object OfferTypes {
       if (records.get[InvoiceRequestMetadata].isEmpty) return Left(MissingRequiredTlv(UInt64(0)))
       if (records.get[InvoiceRequestAmount].isEmpty && records.get[OfferAmount].isEmpty) return Left(MissingRequiredTlv(UInt64(82)))
       if (records.get[InvoiceRequestPayerId].isEmpty) return Left(MissingRequiredTlv(UInt64(88)))
+      if (records.get[InvoiceRequestFeatures].exists(_.features.headOption.contains(0))) return Left(ForbiddenTlv(UInt64(84)))
+      if (records.get[InvoiceRequestPayerNote].exists(n => !CommonCodecs.isValidUtf8(n.note))) return Left(ForbiddenTlv(UInt64(89)))
       if (records.get[Signature].isEmpty) return Left(MissingRequiredTlv(UInt64(240)))
       if (records.unknown.exists(!isInvoiceRequestTlv(_))) return Left(ForbiddenTlv(records.unknown.find(!isInvoiceRequestTlv(_)).get.tag))
       Right(InvoiceRequest(records))
