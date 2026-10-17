@@ -835,7 +835,11 @@ class Peer(val nodeParams: NodeParams,
       }
       stay()
 
-    case Event(e: LiquidityPurchaseAborted, _: ConnectedData) =>
+    case Event(e: LiquidityPurchaseAborted, _) =>
+      // This event is sent by the channel, so it may reach us after we've been disconnected: we must handle it in every
+      // state, otherwise we would keep waiting for a funding transaction that will never be published.
+      // If we had flagged this purchase as underpaid, we didn't lose anything since it was aborted.
+      nodeParams.onTheFlyFundingConfig.liquidityPurchaseAborted(e.txId)
       pendingOnTheFlyFunding.foreach {
         case (paymentHash, pending) => pending.status match {
           case status: OnTheFlyFunding.Status.Funded if status.channelId == e.channelId && status.txId == e.txId && status.fundingTxIndex == e.fundingTxIndex =>

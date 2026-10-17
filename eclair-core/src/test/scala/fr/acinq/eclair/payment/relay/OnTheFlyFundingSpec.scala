@@ -1188,6 +1188,37 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     assert(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
   }
 
+  test("re-enable from_future_htlc when an underpaid liquidity purchase is aborted") { f =>
+    import f._
+
+    connect(peer)
+    val channelId = openChannel(500_000 sat)
+
+    val upstream = upstreamChannel(25_000_000 msat, expiryIn, paymentHash)
+    val willAdd = proposeFunding(20_000_000 msat, expiryOut, paymentHash, upstream)
+
+    // Our peer fails the payment while the splice is being negotiated (for example because they disconnected).
+    peerConnection.send(peer, WillFailHtlc(willAdd.id, paymentHash, randomBytes(42)))
+    verifyFailedUpstream(upstream)
+
+    // We sign the splice anyway, so we won't be paid: we disable from_future_htlc.
+    val fees = LiquidityAds.Fees(5_000 sat, 5_000 sat)
+    val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash :: Nil), channelId, fees, fundingTxIndex = 1)
+    awaitCond(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
+
+    // An unrelated liquidity purchase is aborted: from_future_htlc stays disabled.
+    peer ! LiquidityPurchaseAborted(channelId, randomTxId(), purchase.fundingTxIndex)
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    probe.expectMsgType[Peer.PeerInfo]
+    assert(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
+
+    // The splice is aborted before being published, so we didn't lose anything: we re-enable from_future_htlc.
+    // Note that the abort may reach us after we've been disconnected, since it is sent asynchronously by the channel.
+    disconnect(channelCount = 1)
+    peer ! LiquidityPurchaseAborted(channelId, purchase.txId, purchase.fundingTxIndex)
+    awaitCond(nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
+  }
+
   test("don't relay payments if added to fee credit while signing", Tag(withFeeCredit)) { f =>
     import f._
 
@@ -1557,6 +1588,11 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     cfg.fromFutureHtlcFulfilled(paymentHash2)
     assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId1))
     assert(cfg.isFromFutureHtlcAllowed(remoteNodeId2))
+    // If the liquidity purchase is aborted, we didn't lose anything.
+    cfg.liquidityPurchaseAborted(txId2) // noop
+    assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId1))
+    cfg.liquidityPurchaseAborted(txId1)
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId1))
     // We can also manually reactivate from_future_htlc.
     cfg.liquidityPurchaseUnderpaid(txId1, remoteNodeId1)
     cfg.liquidityPurchaseUnderpaid(txId2, remoteNodeId2)

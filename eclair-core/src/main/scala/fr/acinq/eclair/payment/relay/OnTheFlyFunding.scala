@@ -74,6 +74,11 @@ object OnTheFlyFunding {
       updateMetrics()
     }
 
+    /** If an underpaid liquidity purchase is aborted, we haven't lost anything, which may re-enable from_future_htlc. */
+    def liquidityPurchaseAborted(txId: TxId): Unit = {
+      suspiciousEvents.remove(SuspiciousEvent.UnderpaidPurchase(txId)).foreach(_ => updateMetrics())
+    }
+
     /** Remove suspicious events (except those from the provided list of nodes) which potentially re-enables from_future_htlc. */
     def enableFromFutureHtlc(suspiciousNodes: Set[PublicKey]): Unit = {
       suspiciousEvents.filterInPlace { case (_, remoteNodeId) => suspiciousNodes.contains(remoteNodeId) }
@@ -94,7 +99,8 @@ object OnTheFlyFunding {
     case class FailedRelay(paymentHash: ByteVector32) extends SuspiciousEvent
     /**
      * We signed a liquidity purchase after our peer withdrew some of the payments that should pay its fees. Contrary to
-     * failed relays, fulfilling payments later doesn't mean that we've been paid for this purchase.
+     * failed relays, fulfilling payments later doesn't mean that we've been paid for this purchase: we only forget it if
+     * the purchase is aborted (in which case we haven't lost anything).
      */
     case class UnderpaidPurchase(txId: TxId) extends SuspiciousEvent
   }
