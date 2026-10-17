@@ -149,6 +149,18 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send3.paymentHash == ByteVector32.Zeroes)
     assert(send3.routeParams.boundaries.maxFeeFlat == 123000.msat) // conversion sat -> msat
     assert(send3.routeParams.boundaries.maxFeeProportional == 0.042)
+    assert(send3.routeParams.firstHop_opt.isEmpty)
+
+    // with a specific first hop
+    eclair.send(None, 123 msat, invoice0, firstHop_opt = Some(ShortChannelId(561)))
+    val send4 = paymentInitiator.expectMsgType[SendPaymentToNode]
+    assert(send4.recipientNodeId == nodePrivKey.publicKey)
+    assert(send4.routeParams.firstHop_opt.contains(ShortChannelId(561)))
+
+    eclair.sendBlocking(None, 123 msat, invoice0, firstHop_opt = Some(ShortChannelId(562)))
+    val send5 = paymentInitiator.expectMsgType[SendPaymentToNode]
+    assert(send5.blockUntilComplete)
+    assert(send5.routeParams.firstHop_opt.contains(ShortChannelId(562)))
 
     val invalidExternalId = "Robert'); DROP TABLE received_payments; DROP TABLE sent_payments; DROP TABLE payments;"
     assertThrows[IllegalArgumentException](Await.result(eclair.send(Some(invalidExternalId), 123 msat, invoice0), 50 millis))
@@ -383,6 +395,17 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val routeRequest1 = router.expectMsgType[RouteRequest]
     assert(routeRequest1.target.nodeId == c)
     assert(routeRequest1.ignore == Router.Ignore.empty)
+    assert(routeRequest1.routeParams.firstHop_opt.isEmpty)
+
+    eclair.findRoute(c, 250_000 msat, None, firstHop_opt = Some(aliases4.localAlias))
+    val routeRequest3 = router.expectMsgType[RouteRequest]
+    assert(routeRequest3.source == kit.nodeParams.nodeId)
+    assert(routeRequest3.routeParams.firstHop_opt.contains(aliases4.localAlias))
+
+    eclair.findRouteBetween(a, c, 250_000 msat, None, firstHop_opt = Some(channel1.shortChannelId))
+    val routeRequest4 = router.expectMsgType[RouteRequest]
+    assert(routeRequest4.source == a)
+    assert(routeRequest4.routeParams.firstHop_opt.contains(channel1.shortChannelId))
 
     val unknownNodeId = randomKey().publicKey
     val unknownScid = Alias(42)
@@ -413,6 +436,12 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send.recipientAmount == 12345.msat)
     assert(send.paymentHash == Crypto.sha256(send.paymentPreimage))
     assert(send.userCustomTlvs.isEmpty)
+    assert(send.routeParams.firstHop_opt.isEmpty)
+
+    eclair.sendWithPreimage(None, nodeId, 12345 msat, firstHop_opt = Some(ShortChannelId(561)))
+    val send1 = paymentInitiator.expectMsgType[SendSpontaneousPayment]
+    assert(send1.recipientNodeId == nodeId)
+    assert(send1.routeParams.firstHop_opt.contains(ShortChannelId(561)))
   }
 
   test("call sendWithPreimage, giving a specific preimage, to perform a KeySend payment") { f =>
