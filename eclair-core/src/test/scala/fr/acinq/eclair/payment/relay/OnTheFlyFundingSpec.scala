@@ -1156,6 +1156,38 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     channel.expectNoMessage(100 millis)
   }
 
+  test("keep from_future_htlc disabled when the remaining payments of an underpaid liquidity purchase are fulfilled") { f =>
+    import f._
+
+    connect(peer)
+    val channelId = openChannel(500_000 sat)
+
+    // The payment is split in two parts: each of them can only pay part of the liquidity fees.
+    val preimage = randomBytes32()
+    val paymentHash = Crypto.sha256(preimage)
+    val upstream1 = upstreamChannel(7_000_000 msat, expiryIn, paymentHash)
+    val willAdd1 = proposeFunding(6_000_000 msat, expiryOut, paymentHash, upstream1)
+    val upstream2 = upstreamChannel(7_000_000 msat, expiryIn, paymentHash)
+    val willAdd2 = proposeFunding(6_000_000 msat, expiryOut, paymentHash, upstream2)
+
+    // Our peer fails one of the parts while the splice is being negotiated.
+    peerConnection.send(peer, WillFailHtlc(willAdd1.id, paymentHash, randomBytes(42)))
+    verifyFailedUpstream(upstream1)
+
+    // We sign the splice anyway: the remaining part doesn't pay all the fees, so we disable from_future_htlc.
+    val fees = LiquidityAds.Fees(5_000 sat, 5_000 sat)
+    val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash :: Nil), channelId, fees, fundingTxIndex = 1)
+    awaitCond(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
+
+    // Our peer fulfills the remaining part: we've only been paid part of the fees, so from_future_htlc stays disabled.
+    val proposal2 = OnTheFlyFunding.Proposal(willAdd2, upstream2, Nil)
+    peer ! OnTheFlyFunding.PaymentRelayer.RelaySuccess(purchase.channelId, paymentHash, preimage, willAdd2.amount - 1.msat, proposal2 :: Nil)
+    verifyFulfilledUpstream(upstream2, preimage)
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    probe.expectMsgType[Peer.PeerInfo]
+    assert(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
+  }
+
   test("don't relay payments if added to fee credit while signing", Tag(withFeeCredit)) { f =>
     import f._
 
@@ -1511,6 +1543,29 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     assert(cfg.isFromFutureHtlcAllowed(remoteNodeId1))
     assert(cfg.isFromFutureHtlcAllowed(remoteNodeId2))
     assert(cfg.isFromFutureHtlcAllowed(remoteNodeId3))
+
+    // We detect liquidity purchases that were signed without being fully paid.
+    val txId1 = randomTxId()
+    val txId2 = randomTxId()
+    cfg.liquidityPurchaseUnderpaid(txId1, remoteNodeId1)
+    assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId1))
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId2))
+    cfg.fromFutureHtlcFailed(paymentHash2, remoteNodeId2)
+    assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId3))
+    // Fulfilling a payment with the same payment_hash doesn't pay for an underpaid liquidity purchase.
+    cfg.fromFutureHtlcFulfilled(paymentHash1)
+    cfg.fromFutureHtlcFulfilled(paymentHash2)
+    assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId1))
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId2))
+    // We can also manually reactivate from_future_htlc.
+    cfg.liquidityPurchaseUnderpaid(txId1, remoteNodeId1)
+    cfg.liquidityPurchaseUnderpaid(txId2, remoteNodeId2)
+    assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId3))
+    cfg.enableFromFutureHtlc(Set(remoteNodeId2))
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId1))
+    assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId2))
+    cfg.enableFromFutureHtlc(Set.empty)
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId2))
   }
 
 }

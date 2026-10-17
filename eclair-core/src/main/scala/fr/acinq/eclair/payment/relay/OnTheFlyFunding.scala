@@ -46,11 +46,11 @@ object OnTheFlyFunding {
     // to limit our exposure.
     // Note that this state is flushed when restarting: node operators should explicitly remove the from_future_htlc
     // payment type from their liquidity ads configuration if they want to keep it disabled.
-    private val suspectFromFutureHtlcRelays = scala.collection.concurrent.TrieMap.empty[ByteVector32, PublicKey]
+    private val suspiciousEvents = scala.collection.concurrent.TrieMap.empty[SuspiciousEvent, PublicKey]
 
     /** We allow using from_future_htlc if we don't have too many pending payments that are abusing it. */
     def isFromFutureHtlcAllowed(remoteNodeId: PublicKey): Boolean = {
-      val suspiciousPeers = suspectFromFutureHtlcRelays.values.toSet
+      val suspiciousPeers = suspiciousEvents.values.toSet
       val alreadySuspicious = suspiciousPeers.contains(remoteNodeId)
       val maxSuspiciousReached = suspiciousPeers.size >= maxSuspiciousPeers
       !alreadySuspicious && !maxSuspiciousReached
@@ -58,25 +58,47 @@ object OnTheFlyFunding {
 
     /** An on-the-fly payment using from_future_htlc was failed by the remote node: they may be malicious. */
     def fromFutureHtlcFailed(paymentHash: ByteVector32, remoteNodeId: PublicKey): Unit = {
-      suspectFromFutureHtlcRelays.addOne(paymentHash, remoteNodeId)
-      Metrics.SuspiciousFromFutureHtlcRelays.withoutTags().update(suspectFromFutureHtlcRelays.size)
+      suspiciousEvents.addOne(SuspiciousEvent.FailedRelay(paymentHash), remoteNodeId)
+      updateMetrics()
     }
 
     /** If a fishy payment is fulfilled, we remove it from the list, which may re-enabled from_future_htlc. */
     def fromFutureHtlcFulfilled(paymentHash: ByteVector32): Unit = {
-      suspectFromFutureHtlcRelays.remove(paymentHash).foreach { _ =>
-        // We only need to update the metric if an entry was actually removed.
-        Metrics.SuspiciousFromFutureHtlcRelays.withoutTags().update(suspectFromFutureHtlcRelays.size)
-      }
+      // We only need to update the metric if an entry was actually removed.
+      suspiciousEvents.remove(SuspiciousEvent.FailedRelay(paymentHash)).foreach(_ => updateMetrics())
     }
 
-    /** Remove suspect payments (except those from the provided list) which potentially re-enables from_future_htlc. */
+    /** We signed a liquidity purchase using from_future_htlc but our peer withdrew some of the payments that should pay its fees. */
+    def liquidityPurchaseUnderpaid(txId: TxId, remoteNodeId: PublicKey): Unit = {
+      suspiciousEvents.addOne(SuspiciousEvent.UnderpaidPurchase(txId), remoteNodeId)
+      updateMetrics()
+    }
+
+    /** Remove suspicious events (except those from the provided list of nodes) which potentially re-enables from_future_htlc. */
     def enableFromFutureHtlc(suspiciousNodes: Set[PublicKey]): Unit = {
-      val pending = suspectFromFutureHtlcRelays.collect { case (paymentHash, remoteNodeId) if !suspiciousNodes.contains(remoteNodeId) => paymentHash }
-      pending.foreach(paymentHash => suspectFromFutureHtlcRelays.remove(paymentHash))
-      Metrics.SuspiciousFromFutureHtlcRelays.withoutTags().update(suspectFromFutureHtlcRelays.size)
+      suspiciousEvents.filterInPlace { case (_, remoteNodeId) => suspiciousNodes.contains(remoteNodeId) }
+      updateMetrics()
+    }
+
+    private def updateMetrics(): Unit = {
+      Metrics.SuspiciousFromFutureHtlcRelays.withoutTags().update(suspiciousEvents.keys.count(_.isInstanceOf[SuspiciousEvent.FailedRelay]))
+      Metrics.UnderpaidLiquidityPurchases.withoutTags().update(suspiciousEvents.keys.count(_.isInstanceOf[SuspiciousEvent.UnderpaidPurchase]))
     }
   }
+
+  // @formatter:off
+  /** Events that make us suspect a peer of abusing from_future_htlc. */
+  sealed trait SuspiciousEvent
+  object SuspiciousEvent {
+    /** Our peer failed an on-the-fly HTLC while we were still owed fees for it: we forget this if the payment is later fulfilled. */
+    case class FailedRelay(paymentHash: ByteVector32) extends SuspiciousEvent
+    /**
+     * We signed a liquidity purchase after our peer withdrew some of the payments that should pay its fees. Contrary to
+     * failed relays, fulfilling payments later doesn't mean that we've been paid for this purchase.
+     */
+    case class UnderpaidPurchase(txId: TxId) extends SuspiciousEvent
+  }
+  // @formatter:on
 
   // @formatter:off
   sealed trait Status

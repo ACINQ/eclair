@@ -828,8 +828,9 @@ class Peer(val nodeParams: NodeParams,
           // by failing them, letting them time out or disconnecting. We've signed anyway, so we won't be paid those fees.
           // They're likely malicious (but not always, they may have simply disconnected while signing): as we do when
           // they fail funded HTLCs, we disable funding from future HTLCs to limit our exposure to fee siphoning.
+          // We track this purchase separately from payments: fulfilling the remaining payments doesn't pay those fees.
           log.warning("liquidity purchase signed for txId={} but {} of fees won't be paid: our peer may be malicious", e.txId, remainingFees)
-          paymentHashes.foreach(paymentHash => nodeParams.onTheFlyFundingConfig.fromFutureHtlcFailed(paymentHash, remoteNodeId))
+          nodeParams.onTheFlyFundingConfig.liquidityPurchaseUnderpaid(e.txId, remoteNodeId)
         case _ => ()
       }
       stay()
