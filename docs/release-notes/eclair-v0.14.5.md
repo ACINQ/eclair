@@ -3,6 +3,8 @@
 This is a patch release that contains security hardening fixes.
 We highly recommend upgrading, as some of these issues can be exploited by malicious nodes.
 
+Many thanks to @Nuhiat-Arefin and @mptfire for their responsible disclosures.
+
 ## Verifying signatures
 
 You will need `gpg` and our release signing key E04E48E72C205463. Note that you can get it:
