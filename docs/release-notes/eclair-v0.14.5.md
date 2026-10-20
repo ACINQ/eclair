@@ -1,22 +1,9 @@
-# Eclair vnext
+# Eclair v0.14.5
 
-<insert here a high-level description of the release>
+This is a patch release that contains security hardening fixes.
+We highly recommend upgrading, as some of these issues can be exploited by malicious nodes.
 
-## Major changes
-
-<insert changes>
-
-### Configuration changes
-
-<insert changes>
-
-### API changes
-
-<insert changes>
-
-### Miscellaneous improvements and bug fixes
-
-<insert changes>
+Many thanks to @Nuhiat-Arefin and @mptfire for their responsible disclosures.
 
 ## Verifying signatures
 
