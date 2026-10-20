@@ -96,7 +96,11 @@ object Sphinx extends Logging {
     // Each onion frame contains a variable-length per-hop payload.
     // The first bytes contain a varint encoding the length of the payload data (not including the trailing mac).
     // Since messages are always smaller than 65535 bytes, this varint will either be 1 or 3 bytes long.
-    MacLength + PaymentOnionCodecs.payloadLengthDecoder.decode(payload.bits).require.value.toInt
+    val payloadLength = PaymentOnionCodecs.payloadLengthDecoder.decode(payload.bits).require.value
+    // But the varint may use up to 9 bytes: a malicious sender can choose a value that overflows when converted to an
+    // Int (or even a Long, once the varint size is added) and wraps around to a negative or small positive length.
+    require(0 <= payloadLength && payloadLength <= Int.MaxValue - MacLength, s"invalid per-hop payload length: $payloadLength")
+    MacLength + payloadLength.toInt
   }
 
   /**
