@@ -13,13 +13,15 @@ COPY eclair-node/pom.xml eclair-node/pom.xml
 COPY eclair-node/modules/assembly.xml eclair-node/modules/assembly.xml
 RUN mkdir -p eclair-core/src/main/scala && touch eclair-core/src/main/scala/empty.scala
 # Blank build. We only care about eclair-node, and we use install because eclair-node depends on eclair-core
-RUN ./mvnw install -pl eclair-node -am
+# We skip checksum verification which won't work for eclair-core since we're building without source files
+RUN ./mvnw install -pl eclair-node -am  -Daether.artifactResolver.postProcessor.trustedChecksums=false
 RUN ./mvnw clean
 
 # Only then do we copy the sources
 COPY . .
 
 # And this time we can build in offline mode, specifying 'notag' instead of git commit
+# checksums (dependencies and eclair-core for release versions) will be checked here.
 RUN ./mvnw package -pl eclair-node -am -DskipTests -Dgit.commit.id=notag -Dgit.commit.id.abbrev=notag -o
 # It might be good idea to run the tests here, so that the docker build fail if the code is bugged
 
