@@ -34,7 +34,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.ProcessCurrentBlockHeight
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, SetChannelId}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.crypto.keymanager.RemoteCommitmentKeys
@@ -4032,6 +4032,46 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitmentFor(commitTx2.txid).fundingTxIndex == fundingTxIndex + 1)
   }
 
+  test("claim htlc outputs of previous remote commit tx before it is deeply confirmed") { f =>
+    import f._
+
+    val htlcs = setupHtlcs(f)
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    alice2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    bob2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+
+    // Bob publishes his commit tx for the previous commitment, which double-spends the splice transaction.
+    val bobCommitments = bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments
+    val previousCommitment = bobCommitments.active.find(_.fundingTxIndex == 0).get
+    val bobCommitTx = previousCommitment.fullySignedLocalCommitTx(bobCommitments.channelParams, bob.underlyingActor.channelKeys)
+    alice ! WatchFundingSpentTriggered(bobCommitTx)
+    // We act on it as soon as it confirms.
+    assert(alice2blockchain.fishForMessage() {
+      case w: WatchAlternativeCommitTxConfirmed => w.txId == bobCommitTx.txid
+      case _ => false
+    }.asInstanceOf[WatchAlternativeCommitTxConfirmed].minDepth == 1)
+    awaitCond(alice.stateName == CLOSING)
+
+    // Bob's commit tx confirms: it may still be reorged out, so we keep our commitments, but we immediately claim its
+    // htlc outputs, because Bob may be able to claim them as well with htlc-success transactions.
+    alice ! WatchAlternativeCommitTxConfirmedTriggered(alice.underlyingActor.nodeParams.currentBlockHeight, 42, bobCommitTx)
+    assert(alice2blockchain.fishForMessage() {
+      case w: WatchAlternativeCommitTxConfirmed => w.txId == bobCommitTx.txid
+      case _ => false
+    }.asInstanceOf[WatchAlternativeCommitTxConfirmed].minDepth == alice.underlyingActor.nodeParams.channelConf.minDepth)
+    val htlcTimeoutTxs = htlcs.aliceToBob.map(_ => alice2blockchain.fishForMessage() {
+      case p: PublishReplaceableTx => p.txInfo.isInstanceOf[ClaimHtlcTimeoutTx]
+      case _ => false
+    }.asInstanceOf[PublishReplaceableTx])
+    htlcTimeoutTxs.foreach(p => assert(p.input.txid == bobCommitTx.txid))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.map(_.commitTx.txid).contains(bobCommitTx.txid))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.active.map(_.fundingTxId).toSet == Set(spliceTx.txid, previousCommitment.fundingTxId))
+
+    // Once Bob's commit tx is deeply confirmed, we forget the splice commitment.
+    alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(399_000), 42, bobCommitTx)
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.active.map(_.fundingTxId) == Seq(previousCommitment.fundingTxId))
+  }
+
   test("force-close with unsigned splice (tx_signatures not received)") { f =>
     import f._
 
@@ -4195,7 +4235,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed].txId == bobCommitTx1.txid)
     alice2blockchain.expectNoMessage(100 millis)
     // Bob's commit tx confirms.
-    alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(400000), 42, bobCommitTx1)
+    alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(399_000), 42, bobCommitTx1)
 
     // We're back to the normal handling of remote commit.
     val remoteAnchor = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
@@ -4283,7 +4323,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     (htlcs.bobToAlice.map(_._2) ++ Seq(htlcIn)).map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
 
     // Bob's revoked commit tx wins.
-    alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(400000), 42, bobRevokedCommitTx)
+    alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(399_000), 42, bobRevokedCommitTx)
     // Alice reacts by punishing bob.
     val remoteMain = alice2blockchain.expectFinalTxPublished("remote-main")
     val mainPenalty = alice2blockchain.expectFinalTxPublished("main-penalty")
@@ -4386,7 +4426,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectNoMessage(100 millis)
 
     // bob's remote tx wins
-    alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(400000), 42, bobCommitTx1)
+    alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(399_000), 42, bobCommitTx1)
     // we're back to the normal handling of remote commit
     val remoteAnchor = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
     val remoteMain = alice2blockchain.expectFinalTxPublished("remote-main")
@@ -4487,7 +4527,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectNoMessage(100 millis)
 
     // bob's revoked tx wins
-    alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(400000), 42, bobRevokedCommitTx)
+    alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(399_000), 42, bobRevokedCommitTx)
     // alice reacts by punishing bob
     val remoteMain = alice2blockchain.expectFinalTxPublished("remote-main")
     val mainPenalty = alice2blockchain.expectFinalTxPublished("main-penalty")
@@ -4643,7 +4683,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectNoMessage(100 millis)
 
     // Alice's commit tx confirms.
-    bob ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(450_000), 5, aliceCommitTx)
+    bob ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(399_000), 5, aliceCommitTx)
     val anchorTx = bob2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
     val mainTx = bob2blockchain.expectFinalTxPublished("remote-main")
     Transaction.correctlySpends(mainTx.tx, Seq(aliceCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -4687,7 +4727,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectNoMessage(100 millis)
 
     // Alice's commit tx confirms.
-    bob ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(450_000), 5, aliceCommitTx)
+    bob ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(399_000), 5, aliceCommitTx)
     val mainTx = bob2blockchain.expectFinalTxPublished("remote-main")
     Transaction.correctlySpends(mainTx.tx, Seq(aliceCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     val penaltyTx = bob2blockchain.expectFinalTxPublished("main-penalty")
@@ -4793,7 +4833,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectNoMessage(100 millis)
 
     // Alice's revoked commit tx confirms.
-    bob ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(450_000), 5, aliceCommitTx)
+    bob ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(399_000), 5, aliceCommitTx)
     val mainTx = bob2blockchain.expectFinalTxPublished("remote-main")
     Transaction.correctlySpends(mainTx.tx, Seq(aliceCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     val penaltyTx = bob2blockchain.expectFinalTxPublished("main-penalty")
