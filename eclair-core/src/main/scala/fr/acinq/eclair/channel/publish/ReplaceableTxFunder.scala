@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong, Transaction, TxIn, Tx
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
-import fr.acinq.eclair.channel.FullCommitment
+import fr.acinq.eclair.channel.{FullCommitment, LocalFundingStatus}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
@@ -52,12 +52,20 @@ object ReplaceableTxFunder {
   private case class AddInputsFailed(reason: Throwable) extends Command
   private case class SignWalletInputsOk(signedTx: Transaction) extends Command
   private case class SignWalletInputsFailed(reason: Throwable) extends Command
+  private case class WrappedUnconfirmedAncestors(cmd: FundTransaction, ancestors: UnconfirmedAncestors) extends Command
   private case object UtxosUnlocked extends Command
   // @formatter:on
 
   case class FundedTx(txInfo: ForceCloseTransaction, walletInputs_opt: Option[WalletInputs], signedTx: Transaction, feerate: FeeratePerKw) {
     val totalAmountIn: Satoshi = txInfo.amountIn + walletInputs_opt.map(_.amountIn).getOrElse(0 sat)
     val fee: Satoshi = txInfo.fee + walletInputs_opt.map(_.fee).getOrElse(0 sat)
+  }
+
+  /** Unconfirmed ancestors of a commit tx (e.g. an unconfirmed splice transaction), that we pay for when CPFP-ing it. */
+  case class UnconfirmedAncestors(weight: Int, fee: Satoshi)
+
+  object UnconfirmedAncestors {
+    val empty: UnconfirmedAncestors = UnconfirmedAncestors(0, 0 sat)
   }
 
   // @formatter:off
@@ -71,15 +79,31 @@ object ReplaceableTxFunder {
       Behaviors.withMdc(txPublishContext.mdc()) {
         Behaviors.receiveMessagePartial {
           case cmd: FundTransaction =>
-            val txInfo = cmd.txInfo.fold(fundedTx => fundedTx.txInfo, tx => tx)
-            val targetFeerate = cmd.targetFeerate.min(maxFeerate(txInfo, cmd.commitTx, cmd.commitment, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf))
-            val txFunder = new ReplaceableTxFunder(cmd.replyTo, cmd.commitTx, cmd.commitment, bitcoinClient, context)
-            cmd.txInfo match {
-              case Right(txInfo) => txFunder.fund(txInfo, targetFeerate)
-              case Left(previousTx) => txFunder.bump(previousTx, targetFeerate)
+            cmd.txInfo.fold(fundedTx => fundedTx.txInfo, tx => tx) match {
+              case _: ClaimAnchorTx if cmd.commitment.localFundingStatus.isInstanceOf[LocalFundingStatus.UnconfirmedFundingTx] =>
+                // Our commit tx spends an unconfirmed funding tx: our anchor tx must also pay for its unconfirmed ancestors.
+                context.pipeToSelf(bitcoinClient.getMempoolPackage(Set(cmd.commitment.fundingTxId))(ExecutionContext.Implicits.global)) {
+                  case Success(txs) => WrappedUnconfirmedAncestors(cmd, UnconfirmedAncestors(txs.values.map(_.weight.toInt).sum, txs.values.map(_.fees).sum))
+                  // The funding tx isn't in our mempool: it is either confirmed, or our commit tx cannot be published anyway.
+                  case Failure(_) => WrappedUnconfirmedAncestors(cmd, UnconfirmedAncestors.empty)
+                }
+                Behaviors.receiveMessagePartial {
+                  case WrappedUnconfirmedAncestors(cmd, ancestors) => startFunding(nodeParams, bitcoinClient, context, cmd, ancestors)
+                }
+              case _ => startFunding(nodeParams, bitcoinClient, context, cmd, UnconfirmedAncestors.empty)
             }
         }
       }
+    }
+  }
+
+  private def startFunding(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, context: ActorContext[Command], cmd: FundTransaction, ancestors: UnconfirmedAncestors): Behavior[Command] = {
+    val txInfo = cmd.txInfo.fold(fundedTx => fundedTx.txInfo, tx => tx)
+    val targetFeerate = cmd.targetFeerate.min(maxFeerate(txInfo, cmd.commitTx, cmd.commitment, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, ancestors.weight))
+    val txFunder = new ReplaceableTxFunder(cmd.replyTo, cmd.commitTx, cmd.commitment, ancestors, bitcoinClient, context)
+    cmd.txInfo match {
+      case Right(txInfo) => txFunder.fund(txInfo, targetFeerate)
+      case Left(previousTx) => txFunder.bump(previousTx, targetFeerate)
     }
   }
 
@@ -87,7 +111,7 @@ object ReplaceableTxFunder {
    * The on-chain feerate can be arbitrarily high, but it wouldn't make sense to pay more fees than the amount we're
    * trying to claim on-chain. We compute how much funds we have at risk and the feerate that matches this amount.
    */
-  def maxFeerate(tx: ForceCloseTransaction, commitTx: Transaction, commitment: FullCommitment, currentFeerates: FeeratesPerKw, feeConf: OnChainFeeConf): FeeratePerKw = {
+  def maxFeerate(tx: ForceCloseTransaction, commitTx: Transaction, commitment: FullCommitment, currentFeerates: FeeratesPerKw, feeConf: OnChainFeeConf, unconfirmedAncestorsWeight: Int = 0): FeeratePerKw = {
     // We don't want to pay more in fees than the amount at risk in pending HTLCs.
     val maxFee = tx match {
       case _: ClaimAnchorTx =>
@@ -101,9 +125,9 @@ object ReplaceableTxFunder {
     }
     // We cannot know beforehand how many wallet inputs will be added, but an estimation should be good enough.
     val weight = tx match {
-      // When claiming our anchor output, it must pay for the weight of the commitment transaction.
-      // We usually add a wallet input and a change output.
-      case tx: ClaimAnchorTx => commitTx.weight() + tx.expectedWeight + Transactions.maxWalletInputWeight + Transactions.maxWalletOutputWeight
+      // When claiming our anchor output, it must pay for the weight of the commitment transaction and its unconfirmed
+      // ancestors. We usually add a wallet input and a change output.
+      case tx: ClaimAnchorTx => commitTx.weight() + unconfirmedAncestorsWeight + tx.expectedWeight + Transactions.maxWalletInputWeight + Transactions.maxWalletOutputWeight
       // For HTLC transactions, we usually add a wallet input and a change output.
       case tx: SignedHtlcTx => tx.expectedWeight + Transactions.maxWalletInputWeight + Transactions.maxWalletOutputWeight
       // Other transactions don't use any additional inputs or outputs.
@@ -119,6 +143,7 @@ object ReplaceableTxFunder {
 private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingResult],
                                   commitTx: Transaction,
                                   commitment: FullCommitment,
+                                  unconfirmedAncestors: ReplaceableTxFunder.UnconfirmedAncestors,
                                   bitcoinClient: BitcoinCoreClient,
                                   context: ActorContext[ReplaceableTxFunder.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
@@ -126,7 +151,10 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
 
   private val dustLimit = commitment.localCommitParams.dustLimit
   private val commitFee: Satoshi = commitment.capacity - commitTx.txOut.map(_.amount).sum
-  private val commitFeerate: FeeratePerKw = Transactions.fee2rate(commitFee, commitTx.weight())
+  // When CPFP-ing our commit tx, our anchor tx must pay for the whole package, including unconfirmed ancestors.
+  private val packageFee: Satoshi = commitFee + unconfirmedAncestors.fee
+  private val packageWeight: Int = commitTx.weight() + unconfirmedAncestors.weight
+  private val packageFeerate: FeeratePerKw = Transactions.fee2rate(packageFee, packageWeight)
 
   private val log = context.log
 
@@ -134,8 +162,8 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
     log.info("funding {} tx (targetFeerate={})", tx.desc, targetFeerate)
     tx match {
       case anchorTx: ClaimAnchorTx =>
-        if (targetFeerate <= commitFeerate) {
-          log.info("skipping {}: commit feerate is high enough (feerate={})", tx.desc, commitFeerate)
+        if (targetFeerate <= packageFeerate) {
+          log.info("skipping {}: commit feerate is high enough (feerate={})", tx.desc, packageFeerate)
           // We set retry = true in case the on-chain feerate rises before the commit tx is confirmed: if that happens
           // we'll want to claim our anchor to raise the feerate of the commit tx and get it confirmed faster.
           replyTo ! FundingFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
@@ -168,8 +196,8 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
     log.info("bumping {} tx (targetFeerate={})", previousTx.txInfo.desc, targetFeerate)
     val targetFee = previousTx.txInfo match {
       case _: ClaimAnchorTx =>
-        val totalWeight = previousTx.signedTx.weight() + commitTx.weight()
-        weight2fee(targetFeerate, totalWeight) - commitFee
+        val totalWeight = previousTx.signedTx.weight() + packageWeight
+        weight2fee(targetFeerate, totalWeight) - packageFee
       case _ =>
         weight2fee(targetFeerate, previousTx.signedTx.weight())
     }
@@ -302,7 +330,7 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
               case Right(signedTx) =>
                 val actualFees = kmp2scala(processPsbtResponse.psbt.computeFees())
                 val actualWeight = tx match {
-                  case _: ClaimAnchorTx => signedTx.weight() + commitTx.weight()
+                  case _: ClaimAnchorTx => signedTx.weight() + packageWeight
                   case _: SignedHtlcTx => signedTx.weight()
                 }
                 val actualFeerate = Transactions.fee2rate(actualFees, actualWeight)
@@ -355,9 +383,9 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
     // commit tx: it would fail because it cannot find the input in the utxo set. So we instead ask bitcoind to fund an
     // empty transaction that pays the fees we must add to the transaction package, and we then add the input spending
     // the commit tx and adjust the change output.
-    val expectedCommitFee = Transactions.weight2fee(targetFeerate, commitTx.weight())
+    val expectedPackageFee = Transactions.weight2fee(targetFeerate, packageWeight)
     val anchorFee = Transactions.weight2fee(targetFeerate, anchorTx.expectedWeight)
-    val missingFee = expectedCommitFee - commitFee + anchorFee
+    val missingFee = expectedPackageFee - packageFee + anchorFee
     for {
       changeScript <- bitcoinClient.getChangePublicKeyScript()
       txNotFunded = Transaction(2, Nil, TxOut(dustLimit + missingFee, changeScript) :: Nil, 0)
@@ -367,10 +395,10 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
     } yield {
       // We merge our dummy change output with the one added by Bitcoin Core, if any, and adjust the change amount to
       // pay the expected package feerate.
-      val packageWeight = commitTx.weight() + anchorTx.commitmentFormat.anchorInputWeight + fundTxResponse.tx.weight()
-      val expectedFee = Transactions.weight2fee(targetFeerate, packageWeight)
+      val totalWeight = packageWeight + anchorTx.commitmentFormat.anchorInputWeight + fundTxResponse.tx.weight()
+      val expectedFee = Transactions.weight2fee(targetFeerate, totalWeight)
       // Note that we haven't taken into account yet the amount of the anchor output, so we add it here.
-      val currentFee = commitFee + fundTxResponse.fee + anchorTx.input.txOut.amount
+      val currentFee = packageFee + fundTxResponse.fee + anchorTx.input.txOut.amount
       val changeAmount = (fundTxResponse.tx.txOut.map(_.amount).sum - expectedFee + currentFee).max(dustLimit)
       WalletInputs(walletInputs, changeOutput_opt = Some(TxOut(changeAmount, changeScript)))
     }
