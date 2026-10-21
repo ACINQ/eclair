@@ -200,6 +200,8 @@ object Channel {
   private[channel] case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
   private[channel] case object BITCOIN_FUNDING_TIMEOUT extends BitcoinEvent
   private[channel] case class BITCOIN_FUNDING_DOUBLE_SPENT(fundingTxIds: Set[TxId]) extends BitcoinEvent
+  /** Our local commit tx should spend a different funding tx, which our bitcoind knows (see checkLocalCommitFundingTx). */
+  private[channel] case class PublishableCommitmentFound(commitTxId: TxId, fundingTxId: TxId) extends BitcoinEvent
   // @formatter:on
 
   case object TickChannelOpenTimeout
@@ -2217,9 +2219,22 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case Left(_) => stay()
       }
 
+    case Event(ProcessCurrentBlockHeight(_), d: DATA_CLOSING) =>
+      checkLocalCommitFundingTx(d)
+      stay()
+
+    case Event(e: PublishableCommitmentFound, d: DATA_CLOSING) =>
+      (d.localCommitPublished.filter(lcp => lcp.commitTx.txid == e.commitTxId && !lcp.isConfirmed), d.commitments.active.find(_.fundingTxId == e.fundingTxId)) match {
+        case (Some(lcp), Some(commitment)) =>
+          log.warning("force-closing again using fundingTxIndex={} fundingTxId={}: the funding tx of our local commit tx {} is unknown or a more recent one was published", commitment.fundingTxIndex, commitment.fundingTxId, lcp.commitTx.txid)
+          spendLocalCurrent(d, d.maxClosingFeerate_opt, commitment_opt = Some(FullCommitment(d.commitments.channelParams, d.commitments.changes, commitment)))
+        case _ => stay()
+      }
+
     case Event(WatchFundingSpentTriggered(tx), d: DATA_CLOSING) =>
       if (d.commitments.all.map(_.fundingTxId).contains(tx.txid)) {
-        // if the spending tx is itself a funding tx, this is a splice and there is nothing to do
+        // If the spending tx is itself a funding tx, this is a splice: we may need to use the corresponding commitment.
+        checkLocalCommitFundingTx(d)
         stay()
       } else if (d.mutualClosePublished.exists(_.tx.txid == tx.txid)) {
         // we already know about this tx, probably because we have published it ourselves after successful negotiation
