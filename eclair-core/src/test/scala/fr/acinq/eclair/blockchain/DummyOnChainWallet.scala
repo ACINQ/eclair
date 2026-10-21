@@ -219,7 +219,12 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainAddressCache {
     }
   }
 
-  override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(Some(6).filter(_ => SingleKeyOnChainWallet.confirmedInputTxs.contains(txid)))
+  override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = {
+    val confirmedInput_opt = Some(6).filter(_ => SingleKeyOnChainWallet.confirmedInputTxs.contains(txid))
+    // Transactions that we have published are in our mempool, unless they have been confirmed.
+    val published_opt = published.get(txid).map(_ => 0)
+    Future.successful(confirmedInput_opt.orElse(published_opt))
+  }
 
   override def isTransactionOutputSpendable(txid: TxId, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 

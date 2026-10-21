@@ -27,9 +27,11 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{NewTransaction, SingleKeyOnChainWallet}
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.channel.fsm.Channel.ProcessCurrentBlockHeight
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId}
@@ -3929,6 +3931,105 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(bob.stateName == CLOSED)
     assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingTxId == commitTx2.txid)
     assert(bob.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == fundingTx2.txid)
+  }
+
+  test("force-close with fully signed splice that cannot be published") { f =>
+    import f._
+
+    setupHtlcs(f)
+    val fundingInput = bob.commitments.latest.fundingInput
+    val fundingTxIndex = bob.commitments.latest.fundingTxIndex
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    alice2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    bob2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    assert(bob.commitments.latest.fundingTxId == spliceTx.txid)
+
+    // The splice transaction is not in Bob's mempool: Alice may for example have double-spent one of her inputs.
+    val bobWallet1 = bobWallet.asInstanceOf[SingleKeyOnChainWallet]
+    awaitCond(bobWallet1.published.contains(spliceTx.txid))
+    bobWallet1.published.remove(spliceTx.txid)
+
+    // Bob force-closes: his commit tx for the splice cannot confirm, so he must use the previous commitment instead.
+    bob ! CMD_FORCECLOSE(ActorRef.noSender)
+    bob2alice.expectMsgType[Error]
+    val commitTx = bob2blockchain.fishForMessage() {
+      case p: PublishFinalTx => p.desc == "commit-tx" && p.tx.txIn.map(_.outPoint) == Seq(fundingInput)
+      case _ => false
+    }.asInstanceOf[PublishFinalTx].tx
+    awaitCond(bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.map(_.commitTx.txid).contains(commitTx.txid))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitmentFor(commitTx.txid).fundingTxIndex == fundingTxIndex)
+    // The splice commitment is kept, in case the splice transaction confirms after all.
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.fundingTxId == spliceTx.txid)
+  }
+
+  test("force-close with fully signed splice that is double-spent after force-closing") { f =>
+    import f._
+
+    setupHtlcs(f)
+    val fundingInput = bob.commitments.latest.fundingInput
+    val fundingTxIndex = bob.commitments.latest.fundingTxIndex
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    alice2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    bob2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    val bobWallet1 = bobWallet.asInstanceOf[SingleKeyOnChainWallet]
+    awaitCond(bobWallet1.published.contains(spliceTx.txid))
+
+    // Bob force-closes while the splice transaction is in his mempool.
+    bob ! CMD_FORCECLOSE(ActorRef.noSender)
+    bob2alice.expectMsgType[Error]
+    val commitTx1 = bob2blockchain.expectFinalTxPublished("commit-tx").tx
+    assert(commitTx1.txIn.map(_.outPoint.txid) == Seq(spliceTx.txid))
+
+    // Alice then double-spends one of her inputs: the splice transaction is evicted from Bob's mempool.
+    bobWallet1.published.remove(spliceTx.txid)
+    bob ! ProcessCurrentBlockHeight(CurrentBlockHeight(BlockHeight(400_001)))
+    val commitTx2 = bob2blockchain.fishForMessage() {
+      case p: PublishFinalTx => p.desc == "commit-tx" && p.tx.txIn.map(_.outPoint) == Seq(fundingInput)
+      case _ => false
+    }.asInstanceOf[PublishFinalTx].tx
+    awaitCond(bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.map(_.commitTx.txid).contains(commitTx2.txid))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitmentFor(commitTx2.txid).fundingTxIndex == fundingTxIndex)
+  }
+
+  test("force-close with unsigned splice published by our peer") { f =>
+    import f._
+
+    setupHtlcs(f)
+    val fundingInput = bob.commitments.latest.fundingInput
+    val fundingTxIndex = bob.commitments.latest.fundingTxIndex
+
+    // Alice splices in: Bob doesn't contribute any input, so he must send his tx_signatures first.
+    val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    val bobSigs = bob2alice.expectMsgType[TxSignatures] // Alice doesn't send her tx_signatures to Bob
+    bob2blockchain.expectWatchFundingConfirmed(bobSigs.txId)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+
+    // Bob cannot publish the splice transaction, so he force-closes using the previous commitment.
+    bob ! CMD_FORCECLOSE(ActorRef.noSender)
+    bob2alice.expectMsgType[Error]
+    val commitTx1 = bob2blockchain.expectFinalTxPublished("commit-tx").tx
+    assert(commitTx1.txIn.map(_.outPoint) == Seq(fundingInput))
+
+    // Alice publishes the splice transaction, which double-spends Bob's commit tx: it may stay unconfirmed for a long
+    // time, so Bob must force-close using the splice commitment to be able to CPFP it.
+    bob2alice.forward(alice, bobSigs)
+    alice2bob.expectMsgType[TxSignatures]
+    sender.expectMsgType[RES_SPLICE]
+    val spliceTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
+    assert(spliceTx.txid == bobSigs.txId)
+    bobWallet.asInstanceOf[SingleKeyOnChainWallet].published.put(spliceTx.txid, spliceTx)
+    bob ! WatchFundingSpentTriggered(spliceTx)
+    val commitTx2 = bob2blockchain.fishForMessage() {
+      case p: PublishFinalTx => p.desc == "commit-tx" && p.tx.txIn.map(_.outPoint.txid) == Seq(spliceTx.txid)
+      case _ => false
+    }.asInstanceOf[PublishFinalTx].tx
+    Transaction.correctlySpends(commitTx2, Seq(spliceTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    awaitCond(bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.map(_.commitTx.txid).contains(commitTx2.txid))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitmentFor(commitTx2.txid).fundingTxIndex == fundingTxIndex + 1)
   }
 
   test("force-close with unsigned splice (tx_signatures not received)") { f =>
