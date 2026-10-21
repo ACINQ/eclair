@@ -368,11 +368,11 @@ object RouteCalculation {
       }
       Right(routes)
     } else if (routeParams.boundaries.maxRouteLength < ROUTE_MAX_LENGTH) {
-      // if not found within the constraints we relax and repeat the search
+      // if not found within the constraints we relax the route length and repeat the search
+      // NB: we must never relax maxCltv: callers (e.g. trampoline relay) rely on it to ensure that the outgoing htlc expires before the incoming one
       val relaxedRouteParams = routeParams.copy(
         boundaries = routeParams.boundaries.copy(
           maxRouteLength = ROUTE_MAX_LENGTH,
-          maxCltv = DEFAULT_ROUTE_MAX_CLTV,
         )
       )
       findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, relaxedRouteParams, currentBlockHeight, blip18)

@@ -93,6 +93,10 @@ class SphinxSpec extends AnyFunSuite {
 
     // The legacy fixed-size payload is not supported.
     assertThrows[IllegalArgumentException](peekPayloadLength(hex"00"))
+    // The varint may encode values that overflow when converted to an Int (or even to a Long).
+    assertThrows[IllegalArgumentException](peekPayloadLength(hex"fe80000005"))
+    assertThrows[IllegalArgumentException](peekPayloadLength(hex"ff0000000100000000"))
+    assertThrows[IllegalArgumentException](peekPayloadLength(hex"ff7fffffffffffffff"))
   }
 
   test("is last packet") {
@@ -135,8 +139,17 @@ class SphinxSpec extends AnyFunSuite {
     // The sender knows the shared secret, so it can create a packet with a valid hmac that decrypts to an invalid per-hop payload length.
     val sharedSecret = computeSharedSecret(publicKeys.head, sessionKey)
     val stream = generateStream(generateKey("rho", sharedSecret), 1300)
-    for (declaredLength <- Seq(hex"fd0514", hex"fdffff")) {
-      val payload = (declaredLength ++ ByteVector.fill(1297)(0)) xor stream
+    val declaredLengths = Seq(
+      hex"fd0514",
+      hex"fdffff",
+      // Lengths that overflow when converted to an Int: the first one wraps around to a negative value, the other two
+      // wrap around to small positive values (the last one even overflows a Long once the varint size is added).
+      hex"fe80000005",
+      hex"ff0000000100000000",
+      hex"ff7fffffffffffffff",
+    )
+    for (declaredLength <- declaredLengths) {
+      val payload = (declaredLength ++ ByteVector.fill(1300 - declaredLength.length)(0)) xor stream
       val hmac = mac(generateKey("mu", sharedSecret), payload ++ associatedData.get)
       val packet = OnionRoutingPacket(0, sessionKey.publicKey.value, payload, hmac)
       val Left(onionErr) = peel(privKeys.head, associatedData, packet)
