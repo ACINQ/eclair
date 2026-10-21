@@ -368,6 +368,19 @@ trait ErrorHandlers extends CommonHandlers {
     goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, closingTxs, commitment)
   }
 
+  /**
+   * Our peer published its (current or next) commit tx for a previous commitment, which double-spends our more recent
+   * splice transactions. It isn't deeply confirmed yet, so we don't forget our other commitments, but we claim its outputs
+   * immediately: our peer may claim our outgoing HTLCs with htlc-success transactions one block after it confirms.
+   */
+  def claimPreviousRemoteCommitOutputs(commitTx: Transaction, d: DATA_CLOSING, commitment: FullCommitment, remoteCommit: RemoteCommit, isNextRemoteCommit: Boolean): FSM.State[ChannelState, ChannelData] = {
+    log.warning("claiming outputs of remote commit txid={} for fundingTxIndex={} before it is deeply confirmed", commitTx.txid, commitment.fundingTxIndex)
+    val closingFeerate = nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, d.maxClosingFeerate_opt)
+    val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, commitTx, closingFeerate, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
+    val d1 = if (isNextRemoteCommit) d.copy(nextRemoteCommitPublished = Some(remoteCommitPublished)) else d.copy(remoteCommitPublished = Some(remoteCommitPublished))
+    stay() using d1 storing() calling doPublish(remoteCommitPublished, closingTxs, commitment)
+  }
+
   /** Publish 2nd-stage transactions for the remote commitment (no need for 3rd-stage transactions in that case). */
   def doPublish(rcp: RemoteCommitPublished, txs: Closing.RemoteClose.SecondStageTransactions, commitment: FullCommitment): Unit = {
     val remoteCommit = commitment.nextRemoteCommit_opt match {

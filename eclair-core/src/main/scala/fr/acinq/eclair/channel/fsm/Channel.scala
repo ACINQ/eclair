@@ -2268,13 +2268,26 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         d.commitments.resolveCommitment(tx) match {
           case Some(commitment) =>
             log.warning("a commit tx for an older commitment has been published fundingTxId={} fundingTxIndex={}", tx.txid, commitment.fundingTxIndex)
-            blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepth)
+            // We react as soon as it confirms (see WatchAlternativeCommitTxConfirmedTriggered).
+            blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, minDepth = 1)
             stay()
           case None =>
             // This must be a former funding tx that has already been pruned, because watches are unordered.
             log.warning(s"ignoring unrecognized tx=${tx.txid}")
             stay()
         }
+      }
+
+    case Event(WatchAlternativeCommitTxConfirmedTriggered(blockHeight, _, tx), d: DATA_CLOSING) if nodeParams.currentBlockHeight - blockHeight + 1 < nodeParams.channelConf.minDepth =>
+      // A commit tx for a previous commitment confirmed, but it may still be reorged out: we wait until it is deeply
+      // confirmed to forget our other commitments, but if this is our peer's commit tx, we claim its outputs right now.
+      blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepth)
+      d.commitments.resolveCommitment(tx).map(c => FullCommitment(d.commitments.channelParams, d.commitments.changes, c)) match {
+        case Some(commitment) if commitment.remoteCommit.txId == tx.txid && commitment.remoteCommit.index == d.commitments.remoteCommitIndex =>
+          claimPreviousRemoteCommitOutputs(tx, d, commitment, commitment.remoteCommit, isNextRemoteCommit = false)
+        case Some(commitment) if commitment.nextRemoteCommit_opt.exists(_.txId == tx.txid) && commitment.remoteCommit.index == d.commitments.remoteCommitIndex && d.commitments.remoteNextCommitInfo.isLeft =>
+          claimPreviousRemoteCommitOutputs(tx, d, commitment, commitment.nextRemoteCommit_opt.get, isNextRemoteCommit = true)
+        case _ => stay()
       }
 
     case Event(WatchAlternativeCommitTxConfirmedTriggered(_, _, tx), d: DATA_CLOSING) =>
@@ -3323,7 +3336,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           case Some(commitment) =>
             log.warning("a commit tx for an older commitment has been published fundingTxId={} fundingTxIndex={}", tx.txid, commitment.fundingTxIndex)
             // We watch the commitment tx, in the meantime we force close using the latest commitment.
-            blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepth)
+            // We react as soon as it confirms (see WatchAlternativeCommitTxConfirmedTriggered).
+            blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, minDepth = 1)
             spendLocalCurrent(d, maxClosingFeerateOverride_opt = None)
           case None =>
             // This must be a former funding tx that has already been pruned, because watches are unordered.
