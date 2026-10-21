@@ -30,7 +30,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.crypto.{NonceGenerator, ShaChain}
 import fr.acinq.eclair.db.ChannelsDb
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.payment.relay.Relayer.{InboundFees, RelayFees}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
@@ -349,7 +349,7 @@ object Helpers {
     }
   }
 
-  def channelUpdate(nodeParams: NodeParams, shortChannelId: ShortChannelId, commitments: Commitments, relayFees: RelayFees, enable: Boolean): ChannelUpdate = {
+  def channelUpdate(nodeParams: NodeParams, shortChannelId: ShortChannelId, commitments: Commitments, relayFees: RelayFees, enable: Boolean, inboundFees_opt: Option[InboundFees]): ChannelUpdate = {
     Announcements.makeChannelUpdate(
       chainHash = nodeParams.chainHash,
       nodeSecret = nodeParams.privateKey,
@@ -362,6 +362,12 @@ object Helpers {
       htlcMaximumMsat = maxHtlcAmount(nodeParams, commitments),
       isPrivate = !commitments.announceChannel,
       enable = enable,
+      timestamp = TimestampSecond.now(),
+      // We never advertise inbound fees when bLIP-18 support is disabled: the relay wouldn't honour them, so keeping
+      // them in our channel_update (e.g. from before the feature was disabled) would give senders a fee they cannot
+      // actually use. We also never advertise them on unannounced channels: bLIP-18 says we MUST NOT set inbound fees
+      // on private channels. This gate applies to all channel_update paths (fee updates, periodic refresh, disable, etc.).
+      inboundFees_opt = if (nodeParams.routerConf.blip18.enableInboundFees && commitments.announceChannel) inboundFees_opt else None
     )
   }
 
@@ -402,9 +408,13 @@ object Helpers {
     commitments.maxHtlcValueInFlight
   }
 
-  def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, announceChannel: Boolean): RelayFees = {
+  def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, announceChannel: Boolean): (RelayFees, Option[InboundFees]) = {
     val defaultFees = nodeParams.relayParams.defaultFees(announceChannel)
-    nodeParams.db.peers.getRelayFees(remoteNodeId).getOrElse(defaultFees)
+    val relayFees = nodeParams.db.peers.getRelayFees(remoteNodeId).getOrElse(defaultFees)
+    // We only query the inbound fees database when bLIP-18 support is enabled and the channel is announced (bLIP-18
+    // says we MUST NOT set inbound fees on private channels), to avoid a useless db lookup otherwise.
+    val inboundFees_opt = if (nodeParams.routerConf.blip18.enableInboundFees && announceChannel) nodeParams.db.inboundFees.getInboundFees(remoteNodeId) else None
+    (relayFees, inboundFees_opt)
   }
 
   object Funding {

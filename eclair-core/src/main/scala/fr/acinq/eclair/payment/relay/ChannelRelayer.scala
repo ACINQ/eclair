@@ -83,8 +83,10 @@ object ChannelRelayer {
               case Some(nextNodeId) => node2channels.get(nextNodeId).flatMap(channels.get).map(c => c.channelId -> c).toMap
               case None => Map.empty
             }
+            // bLIP-18 inbound fees advertised in our channel_update for the incoming channel apply to this relay.
+            val incomingChannel_opt = channels.get(channelRelayPacket.add.channelId)
             context.log.debug(s"spawning a new handler with relayId=$relayId to nextNodeId={} with channels={}", nextNodeId_opt.getOrElse(""), nextChannels.keys.mkString(","))
-            context.spawn(ChannelRelay.apply(nodeParams, register, reputationRecorder_opt, nextChannels, originNode, relayId, channelRelayPacket, incomingChannelOccupancy), name = relayId.toString)
+            context.spawn(ChannelRelay.apply(nodeParams, register, reputationRecorder_opt, nextChannels, originNode, relayId, channelRelayPacket, incomingChannelOccupancy, incomingChannel_opt), name = relayId.toString)
             Behaviors.same
 
           case GetOutgoingChannels(replyTo, Relayer.GetOutgoingChannels(enabledOnly)) =>

@@ -20,7 +20,9 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Btc, MilliBtc, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Invoice
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.router.Router.HopRelayParams
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, NodeAnnouncement}
@@ -47,8 +49,11 @@ object Graph {
    * @param successProbability estimate of the probability that the payment would succeed using this path
    * @param fees               total fees of the path
    * @param weight             cost multiplied by a factor based on heuristics
+   * @param outboundFee        outbound fee of the last edge added to the path (paths are computed backwards, so this is
+   *                           the fee of the node closest to the sender so far): it caps the inbound fee discount
+   *                           (bLIP-18) of the next edge we add.
    */
-  case class PaymentPathWeight(amount: MilliSatoshi, length: Int, cltv: CltvExpiryDelta, successProbability: Double, fees: MilliSatoshi, virtualFees: MilliSatoshi, weight: Double) extends PathWeight {
+  case class PaymentPathWeight(amount: MilliSatoshi, length: Int, cltv: CltvExpiryDelta, successProbability: Double, fees: MilliSatoshi, virtualFees: MilliSatoshi, weight: Double, outboundFee: MilliSatoshi) extends PathWeight {
     override def canUseEdge(edge: GraphEdge): Boolean =
       amount <= edge.capacity &&
         edge.balance_opt.forall(amount <= _) &&
@@ -57,7 +62,7 @@ object Graph {
   }
 
   object PaymentPathWeight {
-    def apply(amount: MilliSatoshi): PaymentPathWeight = PaymentPathWeight(amount, 0, CltvExpiryDelta(0), 1.0, 0 msat, 0 msat, 0.0)
+    def apply(amount: MilliSatoshi): PaymentPathWeight = PaymentPathWeight(amount, 0, CltvExpiryDelta(0), 1.0, 0 msat, 0 msat, 0.0, 0 msat)
   }
 
   /**
@@ -83,8 +88,9 @@ object Graph {
      * @param prev                    weight of the rest of the path
      * @param currentBlockHeight      the height of the chain tip (latest block).
      * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
+     * @param inbound_opt             bLIP-18 inbound fees charged by the edge's target for relaying the payment
      */
-    def addEdgeWeight(sender: PublicKey, edge: GraphEdge, balance: BalanceEstimate, prev: RichWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean): RichWeight
+    def addEdgeWeight(sender: PublicKey, edge: GraphEdge, balance: BalanceEstimate, prev: RichWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean, inbound_opt: Option[Relayer.InboundFees]): RichWeight
   }
 
   /**
@@ -98,8 +104,9 @@ object Graph {
    * @param usePastRelaysData use data from past relays to estimate the balance of the channels
    */
   case class HeuristicsConstants(lockedFundsRisk: Double, failureFees: RelayFees, hopFees: RelayFees, useLogProbability: Boolean, usePastRelaysData: Boolean) extends WeightRatios[PaymentPathWeight] {
-    override def addEdgeWeight(sender: PublicKey, edge: GraphEdge, balance: BalanceEstimate, prev: PaymentPathWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean): PaymentPathWeight = {
-      val totalAmount = if (edge.desc.a == sender && !includeLocalChannelCost) prev.amount else addEdgeFees(edge, prev.amount)
+    override def addEdgeWeight(sender: PublicKey, edge: GraphEdge, balance: BalanceEstimate, prev: PaymentPathWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean, inbound_opt: Option[Relayer.InboundFees]): PaymentPathWeight = {
+      val isSenderEdge = edge.desc.a == sender && !includeLocalChannelCost
+      val (totalAmount, edgeOutboundFee) = addEdgeFeesWithInbound(edge, prev, inbound_opt, isSenderEdge)
       val fee = totalAmount - prev.amount
       val totalFees = prev.fees + fee
       val totalCltv = prev.cltv + edge.params.cltvExpiryDelta
@@ -119,14 +126,18 @@ object Graph {
       }
       val totalSuccessProbability = prev.successProbability * successProbability
       val failureCost = nodeFee(failureFees, totalAmount)
+      // The weight must never decrease when adding an edge, otherwise Dijkstra's assumption of non-negative edge
+      // weights is violated: settled nodes could be improved, corrupting the paths found. Inbound fee discounts
+      // (bLIP-18) can make an edge's fee negative, so we floor each edge's weight contribution at zero (like lnd
+      // does): a hop can at best be free, it can never make the path cheaper.
       val richWeight = if (useLogProbability) {
         val riskCost = totalAmount.toLong * edge.params.cltvExpiryDelta.toInt * lockedFundsRisk
-        val weight = prev.weight + fee.toLong + hopCost.toLong + riskCost - failureCost.toLong * math.log(successProbability)
-        PaymentPathWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, weight)
+        val edgeCost = math.max(0.0, fee.toLong + hopCost.toLong + riskCost - failureCost.toLong * math.log(successProbability))
+        PaymentPathWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, prev.weight + edgeCost, edgeOutboundFee)
       } else {
         val totalRiskCost = totalAmount.toLong * totalCltv.toInt * lockedFundsRisk
-        val weight = totalFees.toLong + totalHopsCost.toLong + totalRiskCost + failureCost.toLong / totalSuccessProbability
-        PaymentPathWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, weight)
+        val weight = math.max(prev.weight, totalFees.toLong + totalHopsCost.toLong + totalRiskCost + failureCost.toLong / totalSuccessProbability)
+        PaymentPathWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, weight, edgeOutboundFee)
       }
       if (edge.desc.a == sender) {
         // If this is a local channel it shouldn't add any weight. We always prefer local channels.
@@ -143,7 +154,7 @@ object Graph {
     require(ageFactor >= 0.0, "ratio-channel-age must be nonnegative")
     require(capacityFactor >= 0.0, "ratio-channel-capacity must be nonnegative")
 
-    override def addEdgeWeight(sender: PublicKey, edge: GraphEdge, balance: BalanceEstimate, prev: MessagePathWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean): MessagePathWeight = {
+    override def addEdgeWeight(sender: PublicKey, edge: GraphEdge, balance: BalanceEstimate, prev: MessagePathWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean, inbound_opt: Option[Relayer.InboundFees]): MessagePathWeight = {
       import RoutingHeuristics._
 
       // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
@@ -212,12 +223,13 @@ object Graph {
                         wr: WeightRatios[PaymentPathWeight],
                         currentBlockHeight: BlockHeight,
                         boundaries: PaymentPathWeight => Boolean,
-                        includeLocalChannelCost: Boolean): Seq[WeightedPath[PaymentPathWeight]] = {
+                        includeLocalChannelCost: Boolean,
+                        blip18: Blip18Params = Blip18Params.disabled): Seq[WeightedPath[PaymentPathWeight]] = {
     // find the shortest path (k = 0)
     val targetWeight = PaymentPathWeight(amount)
     // we don't require any specific feature for intermediate nodes
     val validateNodeFeatures = (_: Features[NodeFeature]) => true
-    dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost) match {
+    dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost, blip18) match {
       case None => Seq.empty // if we can't even find a single path, avoid returning a Seq(Seq.empty)
       case Some(shortestPath) =>
 
@@ -228,7 +240,7 @@ object Graph {
 
         var allSpurPathsFound = false
         val shortestPaths = new mutable.Queue[PathWithSpur]
-        shortestPaths.enqueue(PathWithSpur(WeightedPath(shortestPath, pathWeight(g.balances, sourceNode, shortestPath, amount, currentBlockHeight, wr, includeLocalChannelCost)), 0))
+        shortestPaths.enqueue(PathWithSpur(WeightedPath(shortestPath, pathWeight(g.balances, sourceNode, shortestPath, amount, currentBlockHeight, wr, includeLocalChannelCost, g.graph, blip18)), 0))
         // stores the candidates for the k-th shortest path, sorted by path cost
         val candidates = new mutable.PriorityQueue[PathWithSpur]
 
@@ -250,16 +262,26 @@ object Graph {
               // [...] --> B --+--> D --> E
               //               |
               // [...] --> C --+
-              val alreadyExploredEdges = shortestPaths.collect { case p if p.p.path.takeRight(i) == rootPathEdges => p.p.path(p.p.path.length - 1 - i).desc }.toSet
+              // We compare channel descriptors rather than full edges: bLIP-18 enrichment stamps predecessor-dependent
+              // inbound fees onto edge params, so two topologically identical suffixes reached from different
+              // predecessors would otherwise compare unequal and fail to exclude the already-explored edge.
+              val alreadyExploredEdges = shortestPaths.collect { case p if p.p.path.takeRight(i).map(_.desc) == rootPathEdges.map(_.desc) => p.p.path(p.p.path.length - 1 - i).desc }.toSet
               // we also want to ignore any vertex on the root path to prevent loops
               val alreadyExploredVertices = rootPathEdges.map(_.desc.b).toSet
-              val rootPathWeight = pathWeight(g.balances, sourceNode, rootPathEdges, amount, currentBlockHeight, wr, includeLocalChannelCost)
+              val rootPathWeight = pathWeight(g.balances, sourceNode, rootPathEdges, amount, currentBlockHeight, wr, includeLocalChannelCost, g.graph, blip18)
               // find the "spur" path, a sub-path going from the spur node to the target avoiding previously found sub-paths
-              dijkstraShortestPath(g, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost) match {
+              dijkstraShortestPath(g, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost, blip18) match {
                 case Some(spurPath) =>
-                  val completePath = spurPath ++ rootPathEdges
-                  val candidatePath = WeightedPath(completePath, pathWeight(g.balances, sourceNode, completePath, amount, currentBlockHeight, wr, includeLocalChannelCost))
-                  candidates.enqueue(PathWithSpur(candidatePath, i))
+                  // The root-path edges were enriched relative to their predecessor in the previous shortest path; after
+                  // concatenation with the spur path their actual predecessor changes, so we recompute inbound fees.
+                  val completePath = enrichPathWithInboundFees(spurPath ++ rootPathEdges, g.graph, blip18)
+                  val candidatePath = WeightedPath(completePath, pathWeight(g.balances, sourceNode, completePath, amount, currentBlockHeight, wr, includeLocalChannelCost, g.graph, blip18))
+                  // The spur search treats the spur node as its target and therefore skips that node's inbound fees; the
+                  // recomputed weight above includes them, so we must re-check the boundaries (e.g. maxFee) before
+                  // accepting the candidate, otherwise we could return a route whose actual fee exceeds the budget.
+                  if (boundaries(candidatePath.weight)) {
+                    candidates.enqueue(PathWithSpur(candidatePath, i))
+                  }
                 case None => ()
               }
             }
@@ -295,6 +317,7 @@ object Graph {
    * @param currentBlockHeight      the height of the chain tip (latest block)
    * @param wr                      ratios used to 'weight' edges when searching for the shortest path
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
+   * @param blip18                  enable BLIP-18
    */
   private def dijkstraShortestPath[RichWeight <: PathWeight](g: GraphWithBalanceEstimates,
                                                              sourceNode: PublicKey,
@@ -307,7 +330,8 @@ object Graph {
                                                              validateNodeFeatures: Features[NodeFeature] => Boolean,
                                                              currentBlockHeight: BlockHeight,
                                                              wr: WeightRatios[RichWeight],
-                                                             includeLocalChannelCost: Boolean): Option[Seq[GraphEdge]] = {
+                                                             includeLocalChannelCost: Boolean,
+                                                             blip18: Blip18Params): Option[Seq[GraphEdge]] = {
     // the graph does not contain source/destination nodes
     val sourceNotInGraph = !g.graph.containsVertex(sourceNode) && !extraEdges.exists(_.desc.a == sourceNode)
     val targetNotInGraph = !g.graph.containsVertex(targetNode) && !extraEdges.exists(_.desc.b == targetNode)
@@ -347,19 +371,25 @@ object Graph {
             !ignoredEdges.contains(edge.desc) &&
             !ignoredVertices.contains(neighbor) &&
             (neighbor == sourceNode || validateNodeFeatures(g.graph.getVertexFeatures(neighbor)))) {
-            // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
-            // will be relayed through that edge is the one in `currentWeight`.
-            val neighborWeight = wr.addEdgeWeight(sourceNode, edge, g.balances.get(edge), current.weight, currentBlockHeight, includeLocalChannelCost)
-            if (boundaries(neighborWeight)) {
-              val previousNeighborWeight = bestWeights.get(neighbor)
-              // if this path between neighbor and the target has a shorter distance than previously known, we select it
-              if (previousNeighborWeight.forall(_.weight > neighborWeight.weight)) {
-                // update the best edge for this vertex
-                bestEdges.put(neighbor, edge)
-                // add this updated node to the list for further exploration
-                toExplore.enqueue(WeightedNode(neighbor, neighborWeight)) // O(1)
-                // update the minimum known distance array
-                bestWeights.put(neighbor, neighborWeight)
+            // Inbound fees never apply to the last edge of the path: the recipient doesn't relay the payment, so it
+            // cannot charge relay fees, regardless of what its channel_update advertises.
+            val inboundFees_opt = if (blip18.enableInboundFees && edge.desc.b != targetNode) getInboundFees(g.graph, edge) else None
+            val excludeEdge = blip18.excludePositiveInboundFees && inboundFees_opt.exists(i => i.feeBase.toLong > 0 || i.feeProportionalMillionths > 0)
+            if (!excludeEdge) {
+              // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
+              // will be relayed through that edge is the one in `currentWeight`.
+              val neighborWeight = wr.addEdgeWeight(sourceNode, edge, g.balances.get(edge), current.weight, currentBlockHeight, includeLocalChannelCost, inboundFees_opt)
+              if (boundaries(neighborWeight)) {
+                val previousNeighborWeight = bestWeights.get(neighbor)
+                // if this path between neighbor and the target has a shorter distance than previously known, we select it
+                if (previousNeighborWeight.forall(_.weight > neighborWeight.weight)) {
+                  // update the best edge for this vertex
+                  bestEdges.put(neighbor, edge)
+                  // add this updated node to the list for further exploration
+                  toExplore.enqueue(WeightedNode(neighbor, neighborWeight)) // O(1)
+                  // update the minimum known distance array
+                  bestWeights.put(neighbor, neighborWeight)
+                }
               }
             }
           }
@@ -377,7 +407,7 @@ object Graph {
           throw InfiniteLoop(edgePath.toSeq)
         }
       }
-      Some(edgePath.toSeq)
+      Some(enrichPathWithInboundFees(edgePath.toSeq, g.graph, blip18))
     } else {
       None
     }
@@ -391,7 +421,7 @@ object Graph {
                           currentBlockHeight: BlockHeight,
                           wr: MessageWeightRatios): Option[Seq[GraphEdge]] = {
     val validateNodeFeatures = (f: Features[NodeFeature]) => f.hasFeature(Features.OnionMessages) || f.hasFeature(Features.OnionMessagesChannelsOnly)
-    dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges = Set.empty, ignoredVertices, extraEdges = Set.empty, MessagePathWeight.zero, boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost = true)
+    dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges = Set.empty, ignoredVertices, extraEdges = Set.empty, MessagePathWeight.zero, boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost = true, Blip18Params.disabled)
   }
 
   /**
@@ -409,15 +439,16 @@ object Graph {
                          pathsToFind: Int,
                          wr: WeightRatios[PaymentPathWeight],
                          currentBlockHeight: BlockHeight,
-                         boundaries: PaymentPathWeight => Boolean): Seq[WeightedPath[PaymentPathWeight]] = {
+                         boundaries: PaymentPathWeight => Boolean,
+                         blip18: Blip18Params): Seq[WeightedPath[PaymentPathWeight]] = {
     val paths = new mutable.ArrayBuffer[WeightedPath[PaymentPathWeight]](pathsToFind)
     val verticesToIgnore = new mutable.HashSet[PublicKey]()
     verticesToIgnore.addAll(ignoredVertices)
     val validateNodeFeatures = (f: Features[NodeFeature]) => f.hasFeature(Features.RouteBlinding)
     for (_ <- 1 to pathsToFind) {
-      dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges, verticesToIgnore.toSet, extraEdges = Set.empty, PaymentPathWeight(amount), boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost = true) match {
+      dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges, verticesToIgnore.toSet, extraEdges = Set.empty, PaymentPathWeight(amount), boundaries, validateNodeFeatures, currentBlockHeight, wr, includeLocalChannelCost = true, blip18) match {
         case Some(path) =>
-          val weight = pathWeight(g.balances, sourceNode, path, amount, currentBlockHeight, wr, includeLocalChannelCost = true)
+          val weight = pathWeight(g.balances, sourceNode, path, amount, currentBlockHeight, wr, includeLocalChannelCost = true, g.graph, blip18)
           paths += WeightedPath(path, weight)
           // Additional paths must keep using the source and target nodes, but shouldn't use any of the same intermediate nodes.
           verticesToIgnore.addAll(path.drop(1).map(_.desc.a))
@@ -426,6 +457,31 @@ object Graph {
     }
     paths.toSeq
   }
+
+  /**
+   * Set each edge's bLIP-18 inbound fees from its predecessor's back-edge (the channel_update the relaying node
+   * advertises for the channel it receives the payment on). The first edge has no predecessor and thus no inbound fees
+   * (the sender doesn't charge itself). Any fees already set are recomputed, which is required after concatenating
+   * sub-paths (e.g. in Yen's algorithm), where a root-path edge may carry fees computed for a different predecessor.
+   */
+  private[router] def enrichPathWithInboundFees(path: Seq[GraphEdge], g: GraphStructure.DirectedGraph, blip18: Blip18Params): Seq[GraphEdge] = {
+    if (!blip18.enableInboundFees) {
+      path
+    } else {
+      // We pair every edge with its predecessor (None for the first one). Enrichment only changes params, not desc, so
+      // pairing with the un-enriched predecessor yields the same back-edge lookup as threading the enriched one would.
+      path.zip(None +: path.map(Some(_))).map {
+        case (edge, previousEdge_opt) => edge.params match {
+          case params: HopRelayParams.FromAnnouncement => edge.copy(params = params.copy(inboundFees_opt = previousEdge_opt.flatMap(getInboundFees(g, _))))
+          case _ => edge
+        }
+      }
+    }
+  }
+
+  private def getInboundFees(graph: GraphStructure.DirectedGraph, edge: GraphEdge): Option[Relayer.InboundFees] = graph.getBackEdge(edge.desc)
+    .flatMap(_.getChannelUpdate)
+    .flatMap(_.blip18InboundFees_opt)
 
   /**
    * Calculate the minimum amount that the start node needs to receive to be able to forward @amountWithFees to the end
@@ -437,6 +493,45 @@ object Graph {
    */
   private def addEdgeFees(edge: GraphEdge, amountToForward: MilliSatoshi): MilliSatoshi = {
     amountToForward + edge.params.fee(amountToForward)
+  }
+
+  /**
+   * Calculate the minimum amount that the start node needs to send to forward to the end node,
+   * including both outbound and inbound fees (BLIP-18), following LND's approach.
+   *
+   * During backward traversal, when considering edge A→B:
+   * - Inbound fee: charged by B for receiving from A (from B→A channel_update's BLIP-18 TLV),
+   *   calculated on prev.amount (what B receives), capped so that B's total node fee >= 0
+   * - Outbound fee: charged by A for forwarding (from A→B channel_update),
+   *   calculated on (prev.amount + capped inbound fee)
+   *
+   * @param edge              the edge we want to cross (A→B)
+   * @param prev              weight of the rest of the path (from B toward target)
+   * @param inbound_opt       B's inbound fees for traffic from A (None when bLIP-18 is disabled, which reduces to the
+   *                          plain outbound fee computation)
+   * @param isSenderEdge      true if A is the payment sender (no outbound fee charged)
+   * @return (totalAmount, outboundFee) where totalAmount is what A needs to receive and
+   *         outboundFee is A's outbound fee (stored for next iteration's inbound fee capping)
+   */
+  private def addEdgeFeesWithInbound(edge: GraphEdge, prev: PaymentPathWeight, inbound_opt: Option[Relayer.InboundFees], isSenderEdge: Boolean): (MilliSatoshi, MilliSatoshi) = {
+    val inboundFee = inbound_opt
+      .map(inbound => nodeFee(inbound.feeBase, inbound.feeProportionalMillionths, prev.amount))
+      .getOrElse(0 msat)
+
+    val cappedInboundFee = if (inboundFee.toLong < -prev.outboundFee.toLong) {
+      MilliSatoshi(-prev.outboundFee.toLong)
+    } else {
+      inboundFee
+    }
+
+    val amountToSend = prev.amount + cappedInboundFee
+
+    if (isSenderEdge) {
+      (amountToSend, 0 msat)
+    } else {
+      val outboundFee = nodeFee(edge.params.relayFees, amountToSend)
+      (amountToSend + outboundFee, outboundFee)
+    }
   }
 
   /** Validate that all edges along the path can relay the amount with fees. */
@@ -463,10 +558,17 @@ object Graph {
    * @param currentBlockHeight      the height of the chain tip (latest block).
    * @param wr                      ratios used to 'weight' edges when searching for the shortest path
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
+   * @param graph                   the graph structure for back-edge lookups (used for inbound fees)
+   * @param blip18                  bLIP-18 inbound fees settings
    */
-  def pathWeight(balances: BalancesEstimates, sender: PublicKey, path: Seq[GraphEdge], amount: MilliSatoshi, currentBlockHeight: BlockHeight, wr: WeightRatios[PaymentPathWeight], includeLocalChannelCost: Boolean): PaymentPathWeight = {
+  def pathWeight(balances: BalancesEstimates, sender: PublicKey, path: Seq[GraphEdge], amount: MilliSatoshi, currentBlockHeight: BlockHeight, wr: WeightRatios[PaymentPathWeight], includeLocalChannelCost: Boolean, graph: GraphStructure.DirectedGraph, blip18: Blip18Params): PaymentPathWeight = {
+    if (path.isEmpty) return PaymentPathWeight(amount)
+    val targetNode = path.last.desc.b
     path.foldRight(PaymentPathWeight(amount)) { (edge, prev) =>
-      wr.addEdgeWeight(sender, edge, balances.get(edge), prev, currentBlockHeight, includeLocalChannelCost)
+      // Inbound fees never apply to the last edge of the path: the recipient doesn't relay the payment, so it
+      // cannot charge relay fees, regardless of what its channel_update advertises.
+      val inboundFees_opt = if (blip18.enableInboundFees && edge.desc.b != targetNode) getInboundFees(graph, edge) else None
+      wr.addEdgeWeight(sender, edge, balances.get(edge), prev, currentBlockHeight, includeLocalChannelCost, inboundFees_opt)
     }
   }
 
@@ -503,6 +605,11 @@ object Graph {
      */
     case class GraphEdge private(desc: ChannelDesc, params: HopRelayParams, capacity: Satoshi, balance_opt: Option[MilliSatoshi]) {
       def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)
+
+      def getChannelUpdate: Option[ChannelUpdate] = params match {
+        case HopRelayParams.FromAnnouncement(update, _) => Some(update)
+        case _ => None
+      }
     }
 
     object GraphEdge {
@@ -616,6 +723,10 @@ object Graph {
 
       def getEdge(desc: ChannelDesc): Option[GraphEdge] =
         vertices.get(desc.b).flatMap(_.incomingEdges.get(desc))
+
+      def getBackEdge(desc: ChannelDesc): Option[GraphEdge] = getEdge(desc.reversed)
+
+      def getBackEdge(edge: GraphEdge): Option[GraphEdge] = getBackEdge(edge.desc)
 
       /**
        * @param keyA the key associated with the starting vertex

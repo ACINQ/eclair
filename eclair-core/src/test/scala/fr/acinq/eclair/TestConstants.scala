@@ -222,7 +222,7 @@ object TestConstants {
           channelQueryChunkSize = 5,
           maxQueriesPerSync = 2000,
           peerLimit = 10,
-          whitelist = Set.empty
+          whitelist = Set.empty,
         ),
         pathFindingExperimentConf = PathFindingExperimentConf(Map("alice-test-experiment" -> PathFindingConf(
           randomize = false,
@@ -247,6 +247,7 @@ object TestConstants {
           experimentPercentage = 100))),
         messageRouteParams = MessageRouteParams(8, MessageWeightRatios(0.7, 0.1, 0.2)),
         balanceEstimateHalfLife = 1 day,
+        blip18 = Blip18Params.disabled,
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
@@ -472,6 +473,7 @@ object TestConstants {
           experimentPercentage = 100))),
         messageRouteParams = MessageRouteParams(9, MessageWeightRatios(0.5, 0.2, 0.3)),
         balanceEstimateHalfLife = 1 day,
+        blip18 = Blip18Params.disabled,
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,

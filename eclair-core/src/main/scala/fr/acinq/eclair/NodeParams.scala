@@ -518,7 +518,6 @@ object NodeParams extends Logging {
       experimentName = name,
       experimentPercentage = config.getInt("percentage"))
 
-
     def getPathFindingExperimentConf(config: Config): PathFindingExperimentConf = {
       val experiments = config.root.asScala.keys.map(name => name -> getPathFindingConf(config.getConfig(name), name))
       PathFindingExperimentConf(experiments.toMap)
@@ -735,7 +734,11 @@ object NodeParams extends Logging {
         pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments")),
         messageRouteParams = getMessageRouteParams(config.getConfig("router.message-path-finding")),
         balanceEstimateHalfLife = FiniteDuration(config.getDuration("router.balance-estimate-half-life").getSeconds, TimeUnit.SECONDS),
-      ),
+        blip18 = Router.Blip18Params(
+          enableInboundFees = config.getBoolean("router.path-finding.blip18-inbound-fees"),
+          excludePositiveInboundFees = config.getBoolean("router.path-finding.exclude-channels-with-positive-inbound-fees"),
+        ),
+    ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
       paymentFinalExpiry = PaymentFinalExpiryConf(CltvExpiryDelta(config.getInt("send.recipient-final-expiry.min-delta")), CltvExpiryDelta(config.getInt("send.recipient-final-expiry.max-delta"))),
