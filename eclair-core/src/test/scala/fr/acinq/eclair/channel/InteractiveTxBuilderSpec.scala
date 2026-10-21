@@ -2957,6 +2957,45 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId, "too many inputs or outputs"))
   }
 
+  test("too many remote inputs in splice") {
+    val probe = TestProbe()
+    val wallet = new SingleKeyOnChainWallet()
+    val params = createFixtureParams(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 75_000 sat, 25_000 sat, FeeratePerKw(5000 sat), 500 sat, 0)
+    val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 75_000_000 msat).active.head
+    val fundingParams = params.fundingParamsB.copy(localContribution = 0 sat, remoteContribution = 0 sat, sharedInput_opt = Some(params.dummySharedInputB(100_000 sat)))
+    val bob = params.spawnTxBuilderSpliceBob(fundingParams, previousCommitment, wallet)
+    bob ! Start(probe.ref)
+    (1 to InteractiveTxBuilder.MAX_REMOTE_SPLICE_INPUTS_OUTPUTS + 1).foreach(i => {
+      // Alice --- tx_add_input --> Bob
+      bob ! ReceiveMessage(createInput(params.channelId, UInt64(2 * i), 5000 sat))
+      // Alice <-- tx_complete --- Bob
+      probe.expectMsgType[SendMessage]
+    })
+    // Alice --- tx_complete --> Bob
+    bob ! ReceiveMessage(TxComplete(params.channelId))
+    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId, "too many remote inputs or outputs"))
+  }
+
+  test("too many remote outputs in splice") {
+    val probe = TestProbe()
+    val wallet = new SingleKeyOnChainWallet()
+    val params = createFixtureParams(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 75_000 sat, 25_000 sat, FeeratePerKw(5000 sat), 500 sat, 0)
+    val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 75_000_000 msat).active.head
+    val fundingParams = params.fundingParamsB.copy(localContribution = 0 sat, remoteContribution = 0 sat, sharedInput_opt = Some(params.dummySharedInputB(100_000 sat)))
+    val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey))
+    val bob = params.spawnTxBuilderSpliceBob(fundingParams, previousCommitment, wallet)
+    bob ! Start(probe.ref)
+    (1 to InteractiveTxBuilder.MAX_REMOTE_SPLICE_INPUTS_OUTPUTS + 1).foreach(i => {
+      // Alice --- tx_add_output --> Bob
+      bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(2 * i), 2500 sat, validScript))
+      // Alice <-- tx_complete --- Bob
+      probe.expectMsgType[SendMessage]
+    })
+    // Alice --- tx_complete --> Bob
+    bob ! ReceiveMessage(TxComplete(params.channelId))
+    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId, "too many remote inputs or outputs"))
+  }
+
   test("missing funding output") {
     val probe = TestProbe()
     val wallet = new SingleKeyOnChainWallet()

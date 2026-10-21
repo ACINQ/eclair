@@ -103,6 +103,7 @@ object Channel {
                          unhandledExceptionStrategy: UnhandledExceptionStrategy,
                          revocationTimeout: FiniteDuration,
                          requireConfirmedInputsForDualFunding: Boolean,
+                         requireConfirmedInputsForSplicing: Boolean,
                          channelOpenerWhitelist: Set[PublicKey],
                          maxPendingChannelsPerPeer: Int,
                          maxTotalPendingChannelsPrivateNodes: Int,

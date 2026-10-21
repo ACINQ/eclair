@@ -456,6 +456,9 @@ object InteractiveTxBuilder {
 
   // We restrict the number of inputs / outputs that our peer can send us to ensure the protocol eventually ends.
   val MAX_INPUTS_OUTPUTS_RECEIVED = 4096
+  // Maximum number of inputs and outputs that our peer can add to a splice transaction: this limits the size
+  // of the splice transaction, which we may need to pay for with CPFP if we force-close before it confirms.
+  val MAX_REMOTE_SPLICE_INPUTS_OUTPUTS = 10
 
   // Our peer may have seen a few more blocks than us, but a later lock time would let them prevent us from publishing
   // the transaction (and thus the commitments that spend it) for as long as they want.

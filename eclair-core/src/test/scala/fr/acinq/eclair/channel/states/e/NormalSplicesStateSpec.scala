@@ -61,9 +61,16 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
+  /** If set, Alice and Bob only splice with confirmed inputs. */
+  private val RequireConfirmedSpliceInputs = "require_confirmed_splice_inputs"
+
   override def withFixture(test: OneArgTest): Outcome = {
     val tags = test.tags + ChannelStateTestsTags.DualFunding
-    val setup = init(tags = tags)
+    val nodeParamsA = TestConstants.Alice.nodeParams
+      .modify(_.channelConf.requireConfirmedInputsForSplicing).setToIf(tags.contains(RequireConfirmedSpliceInputs))(true)
+    val nodeParamsB = TestConstants.Bob.nodeParams
+      .modify(_.channelConf.requireConfirmedInputsForSplicing).setToIf(tags.contains(RequireConfirmedSpliceInputs))(true)
+    val setup = init(nodeParamsA = nodeParamsA, nodeParamsB = nodeParamsB, tags = tags)
     import setup._
     reachNormal(setup, tags)
     alice2bob.ignoreMsg { case _: ChannelUpdate => true }
@@ -729,6 +736,38 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     sender.expectMsgType[RES_FAILURE[_, _]]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+  }
+
+  test("recv splice_init (unconfirmed remote inputs)", Tag(RequireConfirmedSpliceInputs)) { f =>
+    import f._
+
+    // Alice splices in using unconfirmed wallet inputs: Bob rejects them.
+    val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), sendTxComplete = false)
+    bob2alice.expectMsgType[TxComplete]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxComplete]
+    alice2bob.forward(bob)
+    val txAbortBob = bob2alice.expectMsgType[TxAbort]
+    assert(txAbortBob.toAscii == UnconfirmedInteractiveTxInputs(bob.stateData.asInstanceOf[DATA_NORMAL].channelId).getMessage)
+    bob2alice.forward(alice, txAbortBob)
+    val txAbortAlice = alice2bob.expectMsgType[TxAbort]
+    alice2bob.forward(bob, txAbortAlice)
+    sender.expectMsgType[RES_FAILURE[_, _]]
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    assert(bob.commitments.active.size == 1)
+  }
+
+  test("recv CMD_SPLICE (unconfirmed previous splice)", Tag(RequireConfirmedSpliceInputs)) { f =>
+    import f._
+
+    val spliceTx = initiateSplice(f, spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+    assert(alice.commitments.latest.fundingTxId == spliceTx.txid)
+    // Alice cannot splice on top of an unconfirmed splice transaction: it would spend an unconfirmed parent.
+    val sender = TestProbe()
+    alice ! CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = None, requestFunding_opt = None, channelType_opt = None)
+    assert(sender.expectMsgType[RES_FAILURE[_, _]].t == InvalidSpliceWithUnconfirmedTx(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, spliceTx.txid))
+    alice2bob.expectNoMessage(100 millis)
   }
 
   test("recv CMD_SPLICE (remote splices out below its reserve)") { f =>
