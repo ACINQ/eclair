@@ -206,14 +206,14 @@ trait ErrorHandlers extends CommonHandlers {
       require(output.txid == parentTx.txid && output.index < parentTx.txOut.size, s"output doesn't belong to the given parentTx: output=${output.txid}:${output.index} (expected txid=${parentTx.txid} index < ${parentTx.txOut.size})")
     }
     val (skip, process) = outputs.partition(irrevocablySpent.contains)
-    process.foreach(output => blockchain ! WatchOutputSpent(self, parentTx.txid, output.index.toInt, parentTx.txOut(output.index.toInt).amount, Set.empty))
+    process.foreach(output => blockchain ! WatchOutputSpent(self, parentTx.txid, output.index.toInt, parentTx.txOut(output.index.toInt).amount))
     skip.foreach(output => log.debug(s"no need to watch output=${output.txid}:${output.index}, it has already been spent by txid=${irrevocablySpent.get(output).map(_.txid)}"))
   }
 
   /** This helper method will watch the given output only if it hasn't already been irrevocably spent. */
   private def watchSpentIfNeeded(input: InputInfo, irrevocablySpent: Map[OutPoint, Transaction]): Unit = {
     if (!irrevocablySpent.contains(input.outPoint)) {
-      blockchain ! WatchOutputSpent(self, input.outPoint.txid, input.outPoint.index.toInt, input.txOut.amount, Set.empty)
+      blockchain ! WatchOutputSpent(self, input.outPoint.txid, input.outPoint.index.toInt, input.txOut.amount)
     }
   }
 
