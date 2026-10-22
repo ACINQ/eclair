@@ -1042,6 +1042,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         log.warning("cannot initiate splice, the previous splice has unconfirmed rbf attempts")
         cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceWithUnconfirmedTx(d.channelId, d.commitments.latest.fundingTxId))
         stay()
+      } else if (requireConfirmedSpliceParent(d) && d.commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx]) {
+        log.warning("cannot initiate splice, the previous funding transaction is unconfirmed")
+        cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceWithUnconfirmedTx(d.channelId, d.commitments.latest.fundingTxId))
+        stay()
       } else {
         d.spliceStatus match {
           case SpliceStatus.NoSplice =>
@@ -1202,7 +1206,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   fundingContribution = willFund_opt.map(_.purchase.amount).getOrElse(0 sat),
                   fundingPubKey = localFundingPubKey,
                   pushAmount = 0.msat,
-                  requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
+                  requireConfirmedInputs = requireConfirmedRemoteSpliceInputs(d),
                   willFund_opt = willFund_opt.map(_.willFund),
                   feeCreditUsed_opt = msg.useFeeCredit_opt,
                   channelType_opt = msg.channelType_opt
@@ -3864,7 +3868,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         feerate = targetFeerate,
         fundingPubKey = channelKeys.fundingKey(parentCommitment.fundingTxIndex + 1).publicKey,
         pushAmount = cmd.pushAmount,
-        requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
+        requireConfirmedInputs = requireConfirmedRemoteSpliceInputs(d),
         requestFunding_opt = cmd.requestFunding_opt,
         channelType_opt = cmd.channelType_opt
       )
@@ -3890,6 +3894,16 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
     })
   }
+
+  /**
+   * Splices must only spend confirmed transactions (see require-confirmed-inputs-for-splicing): otherwise our peer may
+   * make the splice transaction invalid after signing by double-spending one of its unconfirmed parents. Our own wallet
+   * inputs are safe, since bitcoind never selects unconfirmed outputs of transactions that have inputs we don't own.
+   */
+  private def requireConfirmedRemoteSpliceInputs(d: DATA_NORMAL): Boolean = nodeParams.channelConf.requireConfirmedInputsForSplicing
+
+  /** We don't splice on top of an unconfirmed splice transaction (see require-confirmed-inputs-for-splicing). */
+  private def requireConfirmedSpliceParent(d: DATA_NORMAL): Boolean = nodeParams.channelConf.requireConfirmedInputsForSplicing
 
   private def getSpliceRbfContext(cmd_opt: Option[CMD_BUMP_FUNDING_FEE], d: DATA_NORMAL): Either[ChannelException, InteractiveTxBuilder.SpliceTxRbf] = {
     d.commitments.latest.localFundingStatus match {

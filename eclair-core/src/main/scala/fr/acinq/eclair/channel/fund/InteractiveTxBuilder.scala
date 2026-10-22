@@ -825,6 +825,14 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       log.warn("invalid interactive tx ({} local inputs, {} remote inputs, {} local outputs and {} remote outputs)", session.localInputs.length, session.remoteInputs.length, session.localOutputs.length, session.remoteOutputs.length)
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "too many inputs or outputs"))
     }
+    if (fundingParams.sharedInput_opt.nonEmpty) {
+      val remoteInputsCount = session.remoteInputs.count(_.isInstanceOf[Input.Remote])
+      val remoteOutputsCount = session.remoteOutputs.count(_.isInstanceOf[Output.Remote])
+      if (remoteInputsCount > MAX_REMOTE_SPLICE_INPUTS_OUTPUTS || remoteOutputsCount > MAX_REMOTE_SPLICE_INPUTS_OUTPUTS) {
+        log.warn("invalid splice tx: too many remote inputs or outputs ({} remote inputs, {} remote outputs)", remoteInputsCount, remoteOutputsCount)
+        return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "too many remote inputs or outputs"))
+      }
+    }
     if (fundingParams.lockTime > nodeParams.currentBlockHeight.toLong + MAX_LOCKTIME_AHEAD_BLOCKS) {
       log.warn("invalid interactive tx: lock time is too far in the future (lockTime={}, currentBlockHeight={})", fundingParams.lockTime, nodeParams.currentBlockHeight)
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "lock time too far in the future"))
