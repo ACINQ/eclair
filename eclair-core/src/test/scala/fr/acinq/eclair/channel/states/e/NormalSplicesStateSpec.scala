@@ -61,15 +61,18 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
-  /** If set, Alice and Bob only splice with confirmed inputs. */
-  private val RequireConfirmedSpliceInputs = "require_confirmed_splice_inputs"
+  /**
+   * If set, Alice and Bob don't require confirmed inputs for splicing, which is unsafe. We only use it to test scenarios
+   * with multiple unconfirmed splices, which can still happen with zero-conf.
+   */
+  private val DontRequireConfirmedInputsForSplicing = "dont_require_confirmed_inputs_for_splicing"
 
   override def withFixture(test: OneArgTest): Outcome = {
     val tags = test.tags + ChannelStateTestsTags.DualFunding
     val nodeParamsA = TestConstants.Alice.nodeParams
-      .modify(_.channelConf.requireConfirmedInputsForSplicing).setToIf(tags.contains(RequireConfirmedSpliceInputs))(true)
+      .modify(_.channelConf.requireConfirmedInputsForSplicing).setToIf(tags.contains(DontRequireConfirmedInputsForSplicing))(false)
     val nodeParamsB = TestConstants.Bob.nodeParams
-      .modify(_.channelConf.requireConfirmedInputsForSplicing).setToIf(tags.contains(RequireConfirmedSpliceInputs))(true)
+      .modify(_.channelConf.requireConfirmedInputsForSplicing).setToIf(tags.contains(DontRequireConfirmedInputsForSplicing))(false)
     val setup = init(nodeParamsA = nodeParamsA, nodeParamsB = nodeParamsB, tags = tags)
     import setup._
     reachNormal(setup, tags)
@@ -738,10 +741,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
   }
 
-  test("recv splice_init (unconfirmed remote inputs)", Tag(RequireConfirmedSpliceInputs)) { f =>
+  test("recv splice_init (unconfirmed remote inputs)") { f =>
     import f._
 
     // Alice splices in using unconfirmed wallet inputs: Bob rejects them.
+    aliceWallet.asInstanceOf[SingleKeyOnChainWallet].fundWithUnconfirmedInputs = true
     val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), sendTxComplete = false)
     bob2alice.expectMsgType[TxComplete]
     bob2alice.forward(alice)
@@ -758,7 +762,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(bob.commitments.active.size == 1)
   }
 
-  test("recv CMD_SPLICE (unconfirmed previous splice)", Tag(RequireConfirmedSpliceInputs)) { f =>
+  test("recv CMD_SPLICE (unconfirmed previous splice)") { f =>
     import f._
 
     val spliceTx = initiateSplice(f, spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
@@ -837,14 +841,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice2bob.expectMsgType[TxAbort].toAscii.contains("the current funding transaction is still unconfirmed"))
   }
 
-  test("recv CMD_SPLICE (unconfirmed previous tx)") { f =>
+  test("recv CMD_SPLICE (unconfirmed previous tx)", Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     // We create a first unconfirmed splice.
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx])
 
-    // We allow initiating such splice...
+    // When allowed by our configuration, we can initiate such splice...
     val probe = TestProbe()
     alice ! CMD_SPLICE(probe.ref, Some(SpliceIn(250_000 sat)), None, None, None)
     alice2bob.expectMsgType[Stfu]
@@ -1306,7 +1310,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
   }
 
-  test("splice local/remote locking", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight)) { f =>
+  test("splice local/remote locking", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight), Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     val fundingInput = alice.commitments.latest.fundingInput
@@ -1398,7 +1402,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.map(_.fundingTxId).contains(fundingTx1.txid))
   }
 
-  test("splice local/remote locking (intermingled)", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight)) { f =>
+  test("splice local/remote locking (intermingled)", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight), Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     val fundingInput = alice.commitments.latest.fundingInput
@@ -1487,7 +1491,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     crossSign(bob, alice, bob2alice, alice2bob)
   }
 
-  test("emit post-splice events", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight)) { f =>
+  test("emit post-splice events", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight), Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     // Alice and Bob asynchronously exchange HTLCs, which makes their commit indices diverge.
@@ -1917,7 +1921,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.head.localCommit.spec.htlcs.size == 1)
   }
 
-  test("recv UpdateAddHtlc while splice is being locked", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("recv UpdateAddHtlc while splice is being locked", Tag(ChannelStateTestsTags.ZeroConf), Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     val spliceTx1 = initiateSplice(f, spliceOut_opt = Some(SpliceOut(50_000 sat, defaultSpliceOutScriptPubKey)))
@@ -2518,7 +2522,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateName == NORMAL)
   }
 
-  test("disconnect (commit_sig not received, missing next nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+  test("disconnect (commit_sig not received, missing next nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaproot), Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     setupHtlcs(f)
@@ -3185,7 +3189,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("don't resend splice_locked when zero-conf channel confirms", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("don't resend splice_locked when zero-conf channel confirms", Tag(ChannelStateTestsTags.ZeroConf), Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
@@ -3284,11 +3288,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
-  test("re-send splice_locked on reconnection") { f =>
+  test("re-send splice_locked on reconnection", Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     resendSpliceLockedOnReconnection(f)
   }
 
-  test("re-send splice_locked on reconnection (taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+  test("re-send splice_locked on reconnection (taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaproot), Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     resendSpliceLockedOnReconnection(f)
   }
 
@@ -3834,7 +3838,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
-  test("force-close with multiple splices (simple)") { f =>
+  test("force-close with multiple splices (simple)", Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -4042,7 +4046,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitmentFor(commitTx2.txid).fundingTxId == rbfTx.txid)
   }
 
-  test("force-close with multiple splices (previous active remote)", Tag(ChannelStateTestsTags.OptionSimpleTaproot), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("force-close with multiple splices (previous active remote)", Tag(ChannelStateTestsTags.OptionSimpleTaproot), Tag(ChannelStateTestsTags.ZeroConf), Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -4124,7 +4128,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == fundingTx1.txid)
   }
 
-  test("force-close with multiple splices (previous active revoked)") { f =>
+  test("force-close with multiple splices (previous active revoked)", Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -4409,7 +4413,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingTxId == bobRevokedCommitTx.txid)
   }
 
-  test("force-close after channel type upgrade (latest active)", Tag(ChannelStateTestsTags.AnchorOutputsPhoenix)) { f =>
+  test("force-close after channel type upgrade (latest active)", Tag(ChannelStateTestsTags.AnchorOutputsPhoenix), Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -4709,7 +4713,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingTxId == aliceCommitTx.txid)
   }
 
-  test("put back watches after restart") { f =>
+  test("put back watches after restart", Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     val fundingTxId0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fundingTxId
@@ -4758,7 +4762,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectNoMessage(100 millis)
   }
 
-  test("put back watches after restart (inactive)", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("put back watches after restart (inactive)", Tag(ChannelStateTestsTags.ZeroConf), Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     val fundingTx0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
@@ -4885,7 +4889,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("recv multiple CMD_SPLICE (splice-in, splice-out)") { f =>
+  test("recv multiple CMD_SPLICE (splice-in, splice-out)", Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     // Add some HTLCs before splicing in and out.
@@ -4903,7 +4907,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs, spliceOutFee = spliceOutFee(f, capacity = 1_900_000.sat))
   }
 
-  test("recv CMD_BUMP_FUNDING_FEE with pre and post rbf htlcs") { f =>
+  test("recv CMD_BUMP_FUNDING_FEE with pre and post rbf htlcs", Tag(DontRequireConfirmedInputsForSplicing)) { f =>
     import f._
 
     // We create two unconfirmed splice transactions spending each other:

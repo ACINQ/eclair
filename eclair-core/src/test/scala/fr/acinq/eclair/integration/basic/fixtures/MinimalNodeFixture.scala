@@ -81,8 +81,6 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
       .modify(_.chainHash).setTo(Block.RegtestGenesisBlock.hash)
       .modify(_.routerConf.routerBroadcastInterval).setTo(1 second)
       .modify(_.peerConnectionConf.maxRebroadcastDelay).setTo(1 second)
-      // Our mock wallet's transactions are never confirmed.
-      .modify(_.channelConf.requireConfirmedInputsForSplicing).setTo(false)
       .modify(_.channelConf.maxHtlcValueInFlightPercent).setTo(100)
       .modify(_.channelConf.balanceThresholds).setTo(Nil)
   }
