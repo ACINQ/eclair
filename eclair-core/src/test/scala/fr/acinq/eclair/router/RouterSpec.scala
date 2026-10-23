@@ -93,6 +93,54 @@ class RouterSpec extends BaseRouterSpec {
     }
   }
 
+  test("reject announcements with an invalid alias or non-minimally-encoded features") { fixture =>
+    import fixture._
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
+    system.eventStream.subscribe(eventListener.ref, classOf[Rebroadcast])
+    val peerConnection = TestProbe()
+
+    // Flush the announcements that are pending rebroadcast from the fixture setup.
+    router ! Router.TickBroadcast
+    eventListener.expectMsgType[Rebroadcast]
+
+    {
+      // node_announcement with a control character in its alias: we ignore it but keep the connection open.
+      val node = makeNodeAnnouncement(randomKey(), "invalid\u0007alias", Color(1, 2, 3), Nil, Features.empty)
+      assert(!CommonCodecs.isValidUtf8(node.alias))
+      assert(Announcements.checkSig(node)) // the signature is valid: only the alias content is invalid
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node))
+      peerConnection.expectMsg(TransportHandler.ReadAck(node))
+      peerConnection.expectMsg(GossipDecision.InvalidAlias(node))
+    }
+    {
+      // node_announcement with non-minimally-encoded features: the signature is still valid because we strip the
+      // leading zero byte before verifying it, so we must explicitly reject the message.
+      val node = makeNodeAnnouncement(randomKey(), "node", Color(1, 2, 3), Nil, Features.empty)
+      val invalidNode = node.copy(features = Features(hex"00" ++ node.features.toByteVector))
+      assert(!invalidNode.features.isMinimallyEncoded)
+      assert(Announcements.checkSig(invalidNode))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, invalidNode))
+      peerConnection.expectMsg(TransportHandler.ReadAck(invalidNode))
+      peerConnection.expectMsg(GossipDecision.InvalidFeatures(invalidNode))
+    }
+    {
+      // channel_announcement with non-minimally-encoded features: we reject it without even validating the funding tx.
+      val chan = channelAnnouncement(RealShortChannelId(BlockHeight(420000), 105, 0), priv_a, priv_c, priv_funding_a, priv_funding_c)
+      val invalidChan = chan.copy(features = Features(hex"00" ++ chan.features.toByteVector))
+      assert(!invalidChan.features.isMinimallyEncoded)
+      assert(Announcements.checkSigs(invalidChan))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, invalidChan))
+      peerConnection.expectMsg(TransportHandler.ReadAck(invalidChan))
+      peerConnection.expectMsg(GossipDecision.InvalidFeatures(invalidChan))
+      watcher.expectNoMessage(100 millis)
+    }
+
+    peerConnection.expectNoMessage(100 millis)
+    router ! Router.TickBroadcast
+    eventListener.expectNoMessage(100 millis)
+  }
+
   test("properly announce valid new channels and ignore invalid ones") { fixture =>
     import fixture._
     val eventListener = TestProbe()
