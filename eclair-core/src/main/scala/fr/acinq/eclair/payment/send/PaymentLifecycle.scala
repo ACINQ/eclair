@@ -122,12 +122,17 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           val lastSecretIsRecipient = cfg.upstream match {
             case _: Upstream.Local => true
             case _: Upstream.Hot.Channel => false
-            case _: Upstream.Hot.Trampoline => false
+            // If we're relaying a trampoline payment to a non-trampoline recipient, we must unwrap the full route.
+            case _: Upstream.Hot.Trampoline => d.recipient match {
+              case r: ClearRecipient => r.nextTrampolineOnion_opt.isEmpty
+              case _: SpontaneousRecipient => true
+              case _: BlindedRecipient => true
+            }
           }
           Some(Sphinx.SuccessPacket.decrypt(f.fulfillmentPayload_opt, f.attribution_opt, d.sharedSecrets, lastSecretIsRecipient))
         case _: HtlcResult.OnChainFulfill => None
       }
-      success_opt.foreach(s => if (s.holdTimes.nonEmpty) context.system.eventStream.publish(Router.ReportedHoldTimes(s.holdTimes)))
+      success_opt.foreach(s => if (s.holdTimes.nonEmpty) context.system.eventStream.publish(Router.ReportedHoldTimes(s.holdTimes, trampolineHoldTimes = Nil)))
       myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, success_opt.flatMap(_.fulfillmentPayload_opt), success_opt.flatMap(_.remainingAttribution_opt), start)))
 
     case Event(RES_ADD_SETTLED(_, _, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
@@ -193,7 +198,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     val now = TimestampMilli.now()
     val htlcFailure = Sphinx.FailurePacket.decrypt(fail.reason, fail.attribution_opt, sharedSecrets)
     if (htlcFailure.holdTimes.nonEmpty) {
-      context.system.eventStream.publish(Router.ReportedHoldTimes(htlcFailure.holdTimes))
+      context.system.eventStream.publish(Router.ReportedHoldTimes(holdTimes = htlcFailure.holdTimes, trampolineHoldTimes = Nil))
     }
     ((htlcFailure.failure match {
       case success@Right(e) =>

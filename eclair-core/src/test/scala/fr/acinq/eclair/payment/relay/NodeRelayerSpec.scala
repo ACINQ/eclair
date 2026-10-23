@@ -330,7 +330,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd.channelId == p.add.channelId)
-    assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(TrampolineExpiryTooSoon()), Some(FailureAttributionData(p.receivedAt, Some(p.receivedAt))), commit = true))
+    assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(TrampolineFeeOrExpiryInsufficient(1_096_000 msat, 60, CltvExpiryDelta(288))), Some(FailureAttributionData(p.receivedAt, Some(p.receivedAt))), commit = true))
 
     register.expectNoMessage(100 millis)
   }
@@ -346,7 +346,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd.channelId == p.add.channelId)
-    assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(TrampolineExpiryTooSoon()), Some(FailureAttributionData(p.receivedAt, Some(p.receivedAt))), commit = true))
+    assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(TrampolineFeeOrExpiryInsufficient(1_096_000 msat, 60, CltvExpiryDelta(288))), Some(FailureAttributionData(p.receivedAt, Some(p.receivedAt))), commit = true))
 
     register.expectNoMessage(100 millis)
   }
@@ -367,7 +367,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     p.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(TrampolineExpiryTooSoon()), Some(FailureAttributionData(p.receivedAt, Some(TimestampMilli(20)))), commit = true))
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(TrampolineFeeOrExpiryInsufficient(1_096_000 msat, 60, CltvExpiryDelta(288))), Some(FailureAttributionData(p.receivedAt, Some(TimestampMilli(20)))), commit = true))
     }
 
     register.expectNoMessage(100 millis)
@@ -419,7 +419,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd.channelId == p.add.channelId)
-    assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(TrampolineFeeInsufficient()), Some(FailureAttributionData(p.receivedAt, Some(p.receivedAt))), commit = true))
+    assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(TrampolineFeeOrExpiryInsufficient(1_096_000 msat, 60, CltvExpiryDelta(288))), Some(FailureAttributionData(p.receivedAt, Some(p.receivedAt))), commit = true))
 
     register.expectNoMessage(100 millis)
   }
@@ -437,7 +437,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     p.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(TrampolineFeeInsufficient()), Some(FailureAttributionData(p.receivedAt, Some(TimestampMilli(486)))), commit = true))
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(TrampolineFeeOrExpiryInsufficient(1_096_000 msat, 60, CltvExpiryDelta(288))), Some(FailureAttributionData(p.receivedAt, Some(TimestampMilli(486)))), commit = true))
     }
 
     register.expectNoMessage(100 millis)
@@ -452,7 +452,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd.channelId == p.add.channelId)
-    assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(InvalidOnionPayload(UInt64(2), 0)), Some(FailureAttributionData(p.receivedAt, Some(p.receivedAt))), commit = true))
+    assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(InvalidOnionPayload(UInt64(2), 0)), Some(FailureAttributionData(p.receivedAt, Some(p.receivedAt))), commit = true))
 
     register.expectNoMessage(100 millis)
   }
@@ -470,7 +470,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     p.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(InvalidOnionPayload(UInt64(2), 0)), Some(FailureAttributionData(p.receivedAt, Some(TimestampMilli(9)))), commit = true))
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(InvalidOnionPayload(UInt64(2), 0)), Some(FailureAttributionData(p.receivedAt, Some(TimestampMilli(9)))), commit = true))
     }
 
     register.expectNoMessage(100 millis)
@@ -498,7 +498,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(TrampolineFeeInsufficient()), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(TrampolineFeeOrExpiryInsufficient(2_740_000 msat, 150, CltvExpiryDelta(720))), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
     }
 
     assert(listener.expectMessageType[PaymentNotRelayed].remoteNodeId == getPeerInfo.nodeId)
@@ -526,7 +526,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incoming.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(TemporaryNodeFailure()), Some(FailureAttributionData(p.receivedAt, Some(incoming.last.receivedAt))), commit = true))
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure()), Some(FailureAttributionData(p.receivedAt, Some(incoming.last.receivedAt))), commit = true))
     }
 
     register.expectNoMessage(100 millis)
@@ -552,7 +552,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(TrampolineFeeInsufficient()), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(TrampolineFeeOrExpiryInsufficient(2_740_000 msat, 150, CltvExpiryDelta(720))), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
     }
 
     register.expectNoMessage(100 millis)
@@ -571,13 +571,15 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
     router.expectMessageType[RouteRequest]
 
-    val failures = RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, 1, FinalIncorrectHtlcAmount(42 msat)), 100 unixms, 150 unixms) :: UnreadableRemoteFailure(outgoingAmount, Nil, Sphinx.CannotDecryptFailurePacket(ByteVector.empty, None), 100 unixms, 150 unixms, Nil) :: Nil
+    // Encrypted trampoline failure created by the recipient for the payer.
+    val encryptedFailure = Sphinx.CannotDecryptFailurePacket(randomBytes(292), None)
+    val failures = RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, 1, PaymentTimeout()), 100 unixms, 150 unixms) :: UnreadableRemoteFailure(outgoingAmount, Nil, encryptedFailure, 100 unixms, 150 unixms, Nil) :: Nil
     payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures, 100 unixms, 150 unixms)
 
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(FinalIncorrectHtlcAmount(42 msat)), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.EncryptedDownstreamFailure(encryptedFailure.unwrapped, encryptedFailure.attribution_opt), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
     }
 
     register.expectNoMessage(100 millis)
@@ -859,7 +861,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(TemporaryNodeFailure()), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure()), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
     }
     parent.expectMessageType[NodeRelayer.RelayComplete]
   }
@@ -1086,7 +1088,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingPayments.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(UnknownNextPeer()), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(UnknownNextPeer()), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
     }
   }
 
@@ -1156,7 +1158,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingPayments.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(UnknownNextPeer()), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(UnknownNextPeer()), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
     }
   }
 
@@ -1217,7 +1219,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingPayments.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(UnknownNextPeer()), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalTrampolineFailure(UnknownNextPeer()), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
     }
   }
 
