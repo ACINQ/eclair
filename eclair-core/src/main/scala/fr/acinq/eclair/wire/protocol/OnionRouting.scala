@@ -37,6 +37,7 @@ object OnionRoutingCodecs {
     def failureMessage: FailureMessage = InvalidOnionPayload(tag, 0)
   }
   case class MissingRequiredTlv(tag: UInt64) extends InvalidTlvPayload
+  case class InvalidTlvValue(tag: UInt64) extends InvalidTlvPayload
   case class ForbiddenTlv(tag: UInt64) extends InvalidTlvPayload
   // @formatter:on
 
