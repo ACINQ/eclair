@@ -391,7 +391,8 @@ object Router {
       heuristics = heuristics,
       mpp = mpp,
       experimentName = experimentName,
-      includeLocalChannelCost = false
+      includeLocalChannelCost = false,
+      firstHop_opt = None
     )
   }
 
@@ -640,7 +641,8 @@ object Router {
                          heuristics: HeuristicsConstants,
                          mpp: MultiPartParams,
                          experimentName: String,
-                         includeLocalChannelCost: Boolean) {
+                         includeLocalChannelCost: Boolean,
+                         firstHop_opt: Option[ShortChannelId]) {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
       // The payment fee must satisfy either the flat fee or the proportional fee, not necessarily both.
       boundaries.maxFeeFlat.max(amount * boundaries.maxFeeProportional)

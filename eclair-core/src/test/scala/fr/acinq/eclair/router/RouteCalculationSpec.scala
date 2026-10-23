@@ -297,6 +297,53 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     assert(route2Ids(route) == 1 :: 2 :: 3 :: 4 :: Nil)
   }
 
+  test("calculate route with a specific first hop") {
+    // + --- B --- +
+    // |     |     |
+    // A --- C --- E
+    // |           |
+    // + --- D --- +
+    val g = GraphWithBalanceEstimates(DirectedGraph(List(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(2L, b, e, 0 msat, 0),
+      makeEdge(3L, a, c, 5 msat, 5),
+      makeEdge(4L, c, e, 5 msat, 5),
+      makeEdge(5L, a, d, 10 msat, 10),
+      makeEdge(6L, d, e, 10 msat, 10),
+      makeEdge(7L, b, c, 0 msat, 0),
+    )), 1 day)
+
+    {
+      val Success(route :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
+      assert(route2Ids(route) == 1 :: 2 :: Nil)
+    }
+    {
+      val Success(route :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(3L))), currentBlockHeight = BlockHeight(400000))
+      assert(route2Ids(route) == 3 :: 4 :: Nil)
+    }
+    {
+      // All the k-shortest paths must use the requested first hop.
+      val Success(routes) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 3, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(1L))), currentBlockHeight = BlockHeight(400000))
+      assert(routes.map(route2Ids).toSet == Set(Seq(1L, 2L), Seq(1L, 7L, 4L)))
+    }
+    {
+      // The first hop isn't one of our channels.
+      val failure = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(2L))), currentBlockHeight = BlockHeight(400000))
+      assert(failure == Failure(RouteNotFound))
+    }
+    {
+      // The first hop doesn't exist.
+      val failure = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(42L))), currentBlockHeight = BlockHeight(400000))
+      assert(failure == Failure(RouteNotFound))
+    }
+    {
+      // The first hop is a direct channel to the target.
+      val g1 = g.addEdge(makeEdge(8L, a, e, 50 msat, 50))
+      val Success(route :: Nil) = findRoute(g1, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(8L))), currentBlockHeight = BlockHeight(400000))
+      assert(route2Ids(route) == 8 :: Nil)
+    }
+  }
+
   test("no local channels") {
     val g = GraphWithBalanceEstimates(DirectedGraph(List(
       makeEdge(2L, b, c, 0 msat, 0),
@@ -1016,6 +1063,174 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     assert(routes.forall(_.hops.length == 1), routes)
     checkIgnoredChannels(routes, 2L, 3L)
     checkRouteAmounts(routes, amount, 0 msat)
+  }
+
+  test("calculate multipart route to neighbor (specific first hop)") {
+    val g = GraphWithBalanceEstimates(DirectedGraph(List(
+      makeEdge(1L, a, b, 50 msat, 100, minHtlc = 1 msat, balance_opt = Some(15000 msat)),
+      makeEdge(2L, a, b, 15 msat, 10, minHtlc = 1 msat, balance_opt = Some(25000 msat)),
+      makeEdge(3L, a, b, 1 msat, 50, minHtlc = 1 msat, balance_opt = Some(10000 msat)),
+      makeEdge(4L, a, d, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(45000 msat)),
+      makeEdge(5L, d, b, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(45000 msat)),
+    )), 1 day)
+
+    {
+      val amount = 20000 msat
+      val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(2L))), currentBlockHeight = BlockHeight(400000))
+      assert(routes2Ids(routes) == Set(Seq(2L)), routes)
+      checkRouteAmounts(routes, amount, 0 msat)
+    }
+    {
+      // The requested channel doesn't have enough balance: we don't fall back to other channels.
+      val amount = 30000 msat
+      val failure = findMultiPartRoute(g, a, b, amount, 1 msat, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(2L))), currentBlockHeight = BlockHeight(400000))
+      assert(failure == Failure(RouteNotFound))
+    }
+    {
+      // The requested channel goes through another node.
+      val amount = 30000 msat
+      val Success(routes) = findMultiPartRoute(g, a, b, amount, 10 msat, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(4L))), currentBlockHeight = BlockHeight(400000))
+      assert(routes2Ids(routes) == Set(Seq(4L, 5L)), routes)
+      checkRouteAmounts(routes, amount, 10 msat)
+    }
+  }
+
+  test("calculate multipart route to remote node (specific first hop)") {
+    // A --- C --- E
+    // |           |
+    // + --- B --- D
+    val (amount, maxFee) = (12000 msat, 150 msat)
+    val g = GraphWithBalanceEstimates(DirectedGraph(List(
+      makeEdge(1L, a, b, 50 msat, 100, minHtlc = 1 msat, balance_opt = Some(15000 msat)),
+      makeEdge(2L, b, d, 15 msat, 0, minHtlc = 1 msat, capacity = 25 sat),
+      makeEdge(3L, d, e, 15 msat, 0, minHtlc = 0 msat, capacity = 20 sat),
+      makeEdge(4L, a, c, 1 msat, 50, minHtlc = 1 msat, balance_opt = Some(10000 msat)),
+      makeEdge(5L, a, c, 1 msat, 50, minHtlc = 1 msat, balance_opt = Some(8000 msat)),
+      makeEdge(6L, c, e, 50 msat, 30, minHtlc = 1 msat, capacity = 20 sat),
+    )), 1 day)
+
+    {
+      val Success(routes) = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(1L))), currentBlockHeight = BlockHeight(400000))
+      checkRouteAmounts(routes, amount, maxFee)
+      assert(routes2Ids(routes) == Set(Seq(1L, 2L, 3L)))
+    }
+    {
+      // The requested channel doesn't have enough balance.
+      val failure = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(4L))), currentBlockHeight = BlockHeight(400000))
+      assert(failure == Failure(RouteNotFound))
+    }
+  }
+
+  test("calculate multipart route to neighbor (specific first hop, many routes through first hop)") {
+    // + --- 1 --- +
+    // |           |
+    // A --- 2 --- B --- 6 --- +
+    // |           |           |
+    // |           4           |
+    // |           |           |
+    // + --- 3 --- D --- 5 --- F
+    val g = GraphWithBalanceEstimates(DirectedGraph(List(
+      makeEdge(1L, a, b, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(15000 msat)),
+      makeEdge(2L, a, b, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(15000 msat)),
+      makeEdge(3L, a, d, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(50000 msat)),
+      makeEdge(4L, d, b, 1 msat, 0, minHtlc = 1 msat, capacity = 15 sat),
+      makeEdge(5L, d, f, 1 msat, 0, minHtlc = 1 msat, capacity = 15 sat),
+      makeEdge(6L, f, b, 1 msat, 0, minHtlc = 1 msat, capacity = 15 sat),
+    )), 1 day)
+    val (amount, maxFee) = (25000 msat, 50 msat)
+
+    {
+      // Without restriction, we use our direct channels.
+      val Success(routes) = findMultiPartRoute(g, a, b, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
+      checkRouteAmounts(routes, amount, maxFee)
+      assert(routes2Ids(routes) == Set(Seq(1L), Seq(2L)), routes)
+    }
+    {
+      // The amount is split between the two routes going through the requested channel.
+      val Success(routes) = findMultiPartRoute(g, a, b, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(3L))), currentBlockHeight = BlockHeight(400000))
+      checkRouteAmounts(routes, amount, maxFee)
+      assert(routes2Ids(routes) == Set(Seq(3L, 4L), Seq(3L, 5L, 6L)), routes)
+    }
+    {
+      val Success(routes) = findMultiPartRoute(g, a, b, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(3L))).modify(_.mpp.splittingStrategy).setTo(MaxExpectedAmount), currentBlockHeight = BlockHeight(400000))
+      checkRouteAmounts(routes, amount, maxFee)
+      assert(routes2Ids(routes) == Set(Seq(3L, 4L), Seq(3L, 5L, 6L)), routes)
+    }
+    {
+      // A single direct channel doesn't have enough balance, and we don't use the other direct channel.
+      val failure = findMultiPartRoute(g, a, b, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(1L))), currentBlockHeight = BlockHeight(400000))
+      assert(failure == Failure(RouteNotFound))
+    }
+    {
+      // The routes going through the requested channel don't have enough capacity.
+      val failure = findMultiPartRoute(g, a, b, 35000 msat, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(3L))), currentBlockHeight = BlockHeight(400000))
+      assert(failure == Failure(RouteNotFound))
+    }
+  }
+
+  test("calculate multipart route to remote node (specific first hop, many local channels and routes)") {
+    //    +--- 1 ---+     +-- 4 -- D -- 5 --+
+    //    |         |     |                 |
+    //    A --- 2 --- B --+-- 6 -- F -- 7 --+-- E
+    //    |               |                 |
+    //    |               +------- 8 -------+
+    //    |                                 |
+    //    +--- 3 --- C --------- 9 ---------+
+    val (amount, maxFee) = (30000 msat, 50 msat)
+    val edge_ab_1 = makeEdge(1L, a, b, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(50000 msat))
+    val g = GraphWithBalanceEstimates(DirectedGraph(List(
+      edge_ab_1,
+      makeEdge(2L, a, b, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(50000 msat)),
+      makeEdge(3L, a, c, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(50000 msat)),
+      makeEdge(4L, b, d, 1 msat, 0, minHtlc = 1 msat, capacity = 15 sat),
+      makeEdge(5L, d, e, 1 msat, 0, minHtlc = 1 msat, capacity = 15 sat),
+      makeEdge(6L, b, f, 1 msat, 0, minHtlc = 1 msat, capacity = 15 sat),
+      makeEdge(7L, f, e, 1 msat, 0, minHtlc = 1 msat, capacity = 15 sat),
+      makeEdge(8L, b, e, 1 msat, 0, minHtlc = 1 msat, capacity = 12 sat),
+      makeEdge(9L, c, e, 1 msat, 0, minHtlc = 1 msat, capacity = 100 sat),
+    )), 1 day)
+
+    {
+      // Without restriction, we use the cheap route through C.
+      val Success(routes) = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
+      checkRouteAmounts(routes, amount, maxFee)
+      assert(routes.exists(r => route2Ids(r).head == 3L), routes)
+    }
+    // None of the routes going through B has enough capacity: we must split the payment between all of them.
+    for (firstHop <- Seq(1L, 2L)) {
+      val Success(routes) = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(firstHop))), currentBlockHeight = BlockHeight(400000))
+      checkRouteAmounts(routes, amount, maxFee)
+      assert(routes2Ids(routes) == Set(Seq(firstHop, 4L, 5L), Seq(firstHop, 6L, 7L), Seq(firstHop, 8L)), routes)
+    }
+
+    {
+      val Success(routes) = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true, firstHop_opt = Some(ShortChannelId(1L))).modify(_.mpp.splittingStrategy).setTo(Randomize), currentBlockHeight = BlockHeight(400000))
+      checkRouteAmounts(routes, amount, maxFee)
+      assert(routes2Ids(routes) == Set(Seq(1L, 4L, 5L), Seq(1L, 6L, 7L), Seq(1L, 8L)), routes)
+    }
+    {
+      val Success(routes) = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(1L))).modify(_.mpp.splittingStrategy).setTo(MaxExpectedAmount), currentBlockHeight = BlockHeight(400000))
+      checkRouteAmounts(routes, amount, maxFee)
+      assert(routes2Ids(routes) == Set(Seq(1L, 4L, 5L), Seq(1L, 6L, 7L), Seq(1L, 8L)), routes)
+    }
+    {
+      // The requested channel doesn't have enough balance: we don't use the parallel channel to B.
+      val g1 = g.addEdge(edge_ab_1.copy(balance_opt = Some(20000 msat)))
+      val failure = findMultiPartRoute(g1, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(1L))), currentBlockHeight = BlockHeight(400000))
+      assert(failure == Failure(RouteNotFound))
+      val Success(routes) = findMultiPartRoute(g1, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(2L))), currentBlockHeight = BlockHeight(400000))
+      checkRouteAmounts(routes, amount, maxFee)
+      assert(routes2Ids(routes) == Set(Seq(2L, 4L, 5L), Seq(2L, 6L, 7L), Seq(2L, 8L)), routes)
+    }
+    {
+      // The routes going through B don't have enough capacity, but the route through C does.
+      val amount1 = 45000 msat
+      val failure = findMultiPartRoute(g, a, e, amount1, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(1L))), currentBlockHeight = BlockHeight(400000))
+      assert(failure == Failure(RouteNotFound))
+      val Success(routes) = findMultiPartRoute(g, a, e, amount1, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(3L))), currentBlockHeight = BlockHeight(400000))
+      checkRouteAmounts(routes, amount1, maxFee)
+      assert(routes2Ids(routes) == Set(Seq(3L, 9L)), routes)
+    }
   }
 
   test("calculate multipart route to neighbor (pending htlcs ignored for local channels)") {

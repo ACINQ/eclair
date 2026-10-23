@@ -646,7 +646,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
   test("'send' method should handle payment failures") {
     val eclair = mock[Eclair]
-    eclair.send(any, any, any, any, any, any, any)(any[Timeout]) returns Future.failed(new IllegalArgumentException("invoice has expired"))
+    eclair.send(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.failed(new IllegalArgumentException("invoice has expired"))
     val mockService = new MockService(eclair)
 
     val invoice = "lnbc12580n1pw2ywztsp5mx6av0wv087hew596jz8d7egzjdt4n8auwwj8yqxl3jemj050uxqpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqq8w9xy4"
@@ -659,7 +659,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == BadRequest)
         val resp = entityAs[ErrorResponse](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
         assert(resp.error == "API call failed: check logs for more details")
-        eclair.send(None, 1258000 msat, any, any, any, any, any)(any[Timeout]).wasCalled(once)
+        eclair.send(None, 1258000 msat, any, any, any, any, any, any)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -671,7 +671,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
     val uuid = UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f")
     val paymentSent = PaymentSent(uuid, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PaymentPart(uuid, PaymentEvent.OutgoingPayment(ByteVector32.Zeroes, nextNodeId, 28 msat, TimestampMilli(1553784337711L)), 3 msat, None, TimestampMilli(1553784337650L))), None, None, TimestampMilli(1553784337120L))
-    eclair.sendBlocking(any, any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(paymentSent))
+    eclair.sendBlocking(any, any, any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(paymentSent))
     Post("/payinvoice", FormData("invoice" -> invoice, "blocking" -> "true").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.payInvoice) ~>
@@ -684,7 +684,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
 
     val paymentFailed = PaymentFailed(uuid, ByteVector32.Zeroes, failures = Seq.empty, startedAt = TimestampMilli(1553784963507L), settledAt = TimestampMilli(1553784963659L))
-    eclair.sendBlocking(any, any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(paymentFailed))
+    eclair.sendBlocking(any, any, any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(paymentFailed))
     Post("/payinvoice", FormData("invoice" -> invoice, "blocking" -> "true").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.payInvoice) ~>
@@ -701,7 +701,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val invoice = "lnbc12580n1pw2ywztsp5h2xzrq2xceh0vtx083t557vlzlxt0e72t80maqkxfm6l05pqvpxqpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqyd9qst"
 
     val eclair = mock[Eclair]
-    eclair.send(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    eclair.send(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
     val mockService = new MockService(eclair)
 
     Post("/payinvoice", FormData("invoice" -> invoice).toEntity) ~>
@@ -710,7 +710,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.send(None, 1258000 msat, any, any, any, any, any)(any[Timeout]).wasCalled(once)
+        eclair.send(None, 1258000 msat, any, any, any, any, any, any)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -718,7 +718,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val invoice = "lnbc12580n1pw2ywztsp5nyxta4fpym3q0fqx3f7l70hvlwu3murlm4y46tcyr7g8k4kz0stqpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqkj59dt"
 
     val eclair = mock[Eclair]
-    eclair.send(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    eclair.send(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
     val mockService = new MockService(eclair)
 
     Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "123", "maxFeeFlatSat" -> "112233", "maxFeePct" -> "2.34", "externalId" -> "42").toEntity) ~>
@@ -727,7 +727,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.send(Some("42"), 123 msat, any, any, Some(112233 sat), Some(2.34), any)(any[Timeout]).wasCalled(once)
+        eclair.send(Some("42"), 123 msat, any, any, Some(112233 sat), Some(2.34), any, any)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -735,7 +735,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val invoice = "lnbc12580n1pw2ywztsp5sf5ld85fm5w6s8d6eljdkzaddf3989lf2tdntj2hjc6wmskdye8qpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqdqm0m4"
 
     val eclair = mock[Eclair]
-    eclair.send(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    eclair.send(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
     val mockService = new MockService(eclair)
 
     Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "456", "maxFeeFlatSat" -> "10", "maxFeePct" -> "0.5").toEntity) ~>
@@ -744,7 +744,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.send(None, 456 msat, any, any, Some(10 sat), Some(0.5), any)(any[Timeout]).wasCalled(once)
+        eclair.send(None, 456 msat, any, any, Some(10 sat), Some(0.5), any, any)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -752,7 +752,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val invoice = "lnbc12580n1pw2ywztsp59rnute7a5aa7hpcx0tvmje805wjveknzh2c2f36tfp3xlazrmzrspp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqkacgww"
 
     val eclair = mock[Eclair]
-    eclair.send(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    eclair.send(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
     val mockService = new MockService(eclair)
 
     Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "456", "maxFeeFlatSat" -> "10", "maxFeePct" -> "0.5", "pathFindingExperimentName" -> "my-test-experiment").toEntity) ~>
@@ -761,7 +761,43 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.send(None, 456 msat, any, any, Some(10 sat), Some(0.5), Some("my-test-experiment"))(any[Timeout]).wasCalled(once)
+        eclair.send(None, 456 msat, any, any, Some(10 sat), Some(0.5), Some("my-test-experiment"), any)(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'send' method should correctly forward the first hop parameter to EclairImpl") {
+    val invoice = "lnbc12580n1pw2ywztsp59rnute7a5aa7hpcx0tvmje805wjveknzh2c2f36tfp3xlazrmzrspp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqkacgww"
+
+    val eclair = mock[Eclair]
+    eclair.send(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    eclair.sendBlocking(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.failed(new IllegalArgumentException("no route"))
+    val mockService = new MockService(eclair)
+
+    Post("/payinvoice", FormData("invoice" -> invoice, "firstHop" -> "42000x7x1").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.send(None, 1258000 msat, any, any, any, any, any, Some(ShortChannelId.fromCoordinates("42000x7x1").get))(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "456", "blocking" -> "true", "firstHop" -> "42000x7x2").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == BadRequest)
+        eclair.sendBlocking(None, 456 msat, any, any, any, any, any, Some(ShortChannelId.fromCoordinates("42000x7x2").get))(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/payinvoice", FormData("invoice" -> invoice, "firstHop" -> "not-a-scid").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.payInvoice) ~>
+      check {
+        assert(handled)
+        assert(status == BadRequest)
+        eclair.send(any, any, any, any, any, any, any, any)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -793,7 +829,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
   test("'sendtonode' 3") {
     val eclair = mock[Eclair]
-    eclair.sendWithPreimage(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    eclair.sendWithPreimage(any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
     val mockService = new MockService(eclair)
     val remoteNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
@@ -803,13 +839,13 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.sendWithPreimage(None, remoteNodeId, 123 msat, any, None, None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.sendWithPreimage(None, remoteNodeId, 123 msat, any, None, None, None, None, any)(any[Timeout]).wasCalled(once)
       }
   }
 
   test("'sendtonode' 4") {
     val eclair = mock[Eclair]
-    eclair.sendWithPreimage(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    eclair.sendWithPreimage(any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
     val mockService = new MockService(eclair)
     val remoteNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
@@ -819,13 +855,13 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.sendWithPreimage(Some("42"), remoteNodeId, 123 msat, any, any, Some(10000 sat), Some(2.5), None)(any[Timeout]).wasCalled(once)
+        eclair.sendWithPreimage(Some("42"), remoteNodeId, 123 msat, any, any, Some(10000 sat), Some(2.5), None, any)(any[Timeout]).wasCalled(once)
       }
   }
 
   test("'sendtonode' 5") {
     val eclair = mock[Eclair]
-    eclair.sendWithPreimage(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    eclair.sendWithPreimage(any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
     val mockService = new MockService(eclair)
     val remoteNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
@@ -835,7 +871,57 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.sendWithPreimage(None, remoteNodeId, 123 msat, any, None, None, None, Some("my-test-experiment"))(any[Timeout]).wasCalled(once)
+        eclair.sendWithPreimage(None, remoteNodeId, 123 msat, any, None, None, None, Some("my-test-experiment"), any)(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'sendtonode' 6") {
+    val eclair = mock[Eclair]
+    eclair.sendWithPreimage(any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    val mockService = new MockService(eclair)
+    val remoteNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+
+    Post("/sendtonode", FormData("amountMsat" -> "123", "nodeId" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87", "firstHop" -> "42000x7x1").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.sendToNode) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.sendWithPreimage(None, remoteNodeId, 123 msat, any, None, None, None, None, Some(ShortChannelId.fromCoordinates("42000x7x1").get))(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'payoffer'") {
+    val offer = "lno1zcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupe"
+    val eclair = mock[Eclair]
+    eclair.payOffer(any, any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    eclair.payOfferBlocking(any, any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.failed(new RuntimeException("no route"))
+    val mockService = new MockService(eclair)
+
+    Post("/payoffer", FormData("offer" -> offer, "amountMsat" -> "123").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.payOffer) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.payOffer(any, 123 msat, 1L, None, None, None, None, None, connectDirectly = false, None)(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/payoffer", FormData("offer" -> offer, "amountMsat" -> "456", "firstHop" -> "42000x7x1").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.payOffer) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.payOffer(any, 456 msat, 1L, None, None, None, None, None, connectDirectly = false, Some(ShortChannelId.fromCoordinates("42000x7x1").get))(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/payoffer", FormData("offer" -> offer, "amountMsat" -> "789", "blocking" -> "true", "firstHop" -> "42000x7x2").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.payOffer) ~>
+      check {
+        assert(handled)
+        eclair.payOfferBlocking(any, 789 msat, 1L, None, None, None, None, None, connectDirectly = false, Some(ShortChannelId.fromCoordinates("42000x7x2").get))(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -1049,7 +1135,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
-    eclair.findRoute(any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(Router.RouteResponse(Seq(Router.Route(456.msat, mockHops, None))))
+    eclair.findRoute(any, any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(Router.RouteResponse(Seq(Router.Route(456.msat, mockHops, None))))
 
     // invalid format
     Post("/findroute", FormData("format" -> "invalid-output-format", "invoice" -> serializedInvoice, "amountMsat" -> "456")) ~>
@@ -1059,7 +1145,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == BadRequest)
-        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any)(any[Timeout]).wasNever(called)
+        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any, any)(any[Timeout]).wasNever(called)
       }
 
     // default format
@@ -1072,7 +1158,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         val response = entityAs[String]
         matchTestJson("findroute-nodeid", response)
-        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any)(any[Timeout]).wasCalled(once)
+        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any, any)(any[Timeout]).wasCalled(once)
       }
 
     Post("/findroute", FormData("format" -> "nodeId", "invoice" -> serializedInvoice, "amountMsat" -> "456")) ~>
@@ -1084,7 +1170,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         val response = entityAs[String]
         matchTestJson("findroute-nodeid", response)
-        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any)(any[Timeout]).wasCalled(twice)
+        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any, any)(any[Timeout]).wasCalled(twice)
       }
 
     Post("/findroute", FormData("format" -> "shortChannelId", "invoice" -> serializedInvoice, "amountMsat" -> "456")) ~>
@@ -1096,7 +1182,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         val response = entityAs[String]
         matchTestJson("findroute-scid", response)
-        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any)(any[Timeout]).wasCalled(threeTimes)
+        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any, any)(any[Timeout]).wasCalled(threeTimes)
       }
 
     Post("/findroute", FormData("format" -> "full", "invoice" -> serializedInvoice, "amountMsat" -> "456")) ~>
@@ -1108,7 +1194,42 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         val response = entityAs[String]
         matchTestJson("findroute-full", response)
-        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any)(any[Timeout]).wasCalled(fourTimes)
+        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any, any)(any[Timeout]).wasCalled(fourTimes)
+      }
+  }
+
+  test("'findroute' with a specific first hop") {
+    val invoice = "lnbc12580n1pw2ywztsp59rnute7a5aa7hpcx0tvmje805wjveknzh2c2f36tfp3xlazrmzrspp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqkacgww"
+    val (nodeId1, nodeId2) = (randomKey().publicKey, randomKey().publicKey)
+    val scid = ShortChannelId.fromCoordinates("42000x7x1").get
+
+    val eclair = mock[Eclair]
+    val mockService = new MockService(eclair)
+    eclair.findRoute(any, any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.failed(fr.acinq.eclair.router.RouteNotFound)
+    eclair.findRouteBetween(any, any, any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.failed(fr.acinq.eclair.router.RouteNotFound)
+
+    Post("/findroute", FormData("invoice" -> invoice, "firstHop" -> "42000x7x1")) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.findRoute) ~>
+      check {
+        assert(handled)
+        eclair.findRoute(any, 1258000 msat, any, any, any, any, any, any, any, Some(scid))(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/findroutetonode", FormData("nodeId" -> nodeId1.toHex, "amountMsat" -> "456", "firstHop" -> "42000x7x1")) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.findRouteToNode) ~>
+      check {
+        assert(handled)
+        eclair.findRoute(nodeId1, 456 msat, any, any, any, any, any, any, any, Some(scid))(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/findroutebetweennodes", FormData("sourceNodeId" -> nodeId1.toHex, "targetNodeId" -> nodeId2.toHex, "amountMsat" -> "789", "firstHop" -> "42000x7x1")) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.findRouteBetweenNodes) ~>
+      check {
+        assert(handled)
+        eclair.findRouteBetween(nodeId1, nodeId2, 789 msat, any, any, any, any, any, any, any, Some(scid))(any[Timeout]).wasCalled(once)
       }
   }
 
