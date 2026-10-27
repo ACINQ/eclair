@@ -786,6 +786,9 @@ class Peer(val nodeParams: NodeParams,
       // instead of fulfilled, but that's overkill: if our peer fails one of those payment, they're likely malicious
       // and will fail anyway, even if we try to be clever with fees splitting.
       var remainingFees = feesOwed.max(0 msat)
+      // Set when this payment's fees are already accounted for: either we've been paid (fee credit), or a previous
+      // signature of this purchase recorded them as owed (funded).
+      var feesAccountedFor = false
       pendingOnTheFlyFunding
         .filter { case (paymentHash, _) => paymentHashes.contains(paymentHash) }
         .values.toSeq
@@ -813,13 +816,30 @@ class Peer(val nodeParams: NodeParams,
               // when on-the-fly funding is used, and it's not possible to request a splice while one is already in
               // progress.
               feeCredit = Some(nodeParams.db.liquidity.removeFeeCredit(remoteNodeId, payment.amountOut))
+              feesAccountedFor = true
             case status: OnTheFlyFunding.Status.Funded =>
               log.warning("liquidity purchase was already signed for payment_hash={} (previousTxId={}, currentTxId={})", payment.paymentHash, status.txId, e.txId)
+              feesAccountedFor = true
           }
         })
+      e.purchase.paymentDetails match {
+        case _: LiquidityAds.PaymentDetails.FromFutureHtlc if remainingFees > 0.msat && !feesAccountedFor =>
+          // Our peer withdrew some of the payments that should pay for this liquidity purchase after we validated it,
+          // by failing them, letting them time out or disconnecting. We've signed anyway, so we won't be paid those fees.
+          // They're likely malicious (but not always, they may have simply disconnected while signing): as we do when
+          // they fail funded HTLCs, we disable funding from future HTLCs to limit our exposure to fee siphoning.
+          // We track this purchase separately from payments: fulfilling the remaining payments doesn't pay those fees.
+          log.warning("liquidity purchase signed for txId={} but {} of fees won't be paid: our peer may be malicious", e.txId, remainingFees)
+          nodeParams.onTheFlyFundingConfig.liquidityPurchaseUnderpaid(e.txId, remoteNodeId)
+        case _ => ()
+      }
       stay()
 
-    case Event(e: LiquidityPurchaseAborted, _: ConnectedData) =>
+    case Event(e: LiquidityPurchaseAborted, _) =>
+      // This event is sent by the channel, so it may reach us after we've been disconnected: we must handle it in every
+      // state, otherwise we would keep waiting for a funding transaction that will never be published.
+      // If we had flagged this purchase as underpaid, we didn't lose anything since it was aborted.
+      nodeParams.onTheFlyFundingConfig.liquidityPurchaseAborted(e.txId)
       pendingOnTheFlyFunding.foreach {
         case (paymentHash, pending) => pending.status match {
           case status: OnTheFlyFunding.Status.Funded if status.channelId == e.channelId && status.txId == e.txId && status.fundingTxIndex == e.fundingTxIndex =>

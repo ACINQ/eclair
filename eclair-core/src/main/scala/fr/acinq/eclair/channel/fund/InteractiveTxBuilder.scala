@@ -456,6 +456,9 @@ object InteractiveTxBuilder {
 
   // We restrict the number of inputs / outputs that our peer can send us to ensure the protocol eventually ends.
   val MAX_INPUTS_OUTPUTS_RECEIVED = 4096
+  // Maximum number of inputs and outputs that our peer can add to a splice transaction: this limits the size
+  // of the splice transaction, which we may need to pay for with CPFP if we force-close before it confirms.
+  val MAX_REMOTE_SPLICE_INPUTS_OUTPUTS = 10
 
   // Our peer may have seen a few more blocks than us, but a later lock time would let them prevent us from publishing
   // the transaction (and thus the commitments that spend it) for as long as they want.
@@ -821,6 +824,14 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     if (session.localInputs.length + session.remoteInputs.length > 252 || session.localOutputs.length + session.remoteOutputs.length > 252) {
       log.warn("invalid interactive tx ({} local inputs, {} remote inputs, {} local outputs and {} remote outputs)", session.localInputs.length, session.remoteInputs.length, session.localOutputs.length, session.remoteOutputs.length)
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "too many inputs or outputs"))
+    }
+    if (fundingParams.sharedInput_opt.nonEmpty) {
+      val remoteInputsCount = session.remoteInputs.count(_.isInstanceOf[Input.Remote])
+      val remoteOutputsCount = session.remoteOutputs.count(_.isInstanceOf[Output.Remote])
+      if (remoteInputsCount > MAX_REMOTE_SPLICE_INPUTS_OUTPUTS || remoteOutputsCount > MAX_REMOTE_SPLICE_INPUTS_OUTPUTS) {
+        log.warn("invalid splice tx: too many remote inputs or outputs ({} remote inputs, {} remote outputs)", remoteInputsCount, remoteOutputsCount)
+        return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "too many remote inputs or outputs"))
+      }
     }
     if (fundingParams.lockTime > nodeParams.currentBlockHeight.toLong + MAX_LOCKTIME_AHEAD_BLOCKS) {
       log.warn("invalid interactive tx: lock time is too far in the future (lockTime={}, currentBlockHeight={})", fundingParams.lockTime, nodeParams.currentBlockHeight)

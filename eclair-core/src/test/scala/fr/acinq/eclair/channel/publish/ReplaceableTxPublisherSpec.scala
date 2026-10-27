@@ -578,6 +578,36 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+  test("commit tx feerate too low, spending anchor output (unconfirmed funding tx)") {
+    // NB: the funding tx spends one of our utxos: we need another confirmed utxo to fund our anchor tx.
+    withFixture(Seq(500 millibtc, 200 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), zeroConf = true) { f =>
+      import f._
+
+      // The funding transaction is unconfirmed (it could also be an unconfirmed splice transaction).
+      val fundingTxId = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fundingTxId
+      assert(isInMempool(fundingTxId))
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
+      wallet.publishTransaction(commitTx.tx).pipeTo(probe.ref)
+      probe.expectMsg(commitTx.tx.txid)
+      assert(getMempool().length == 2)
+
+      // Our target feerate is higher than the feerate of the funding transaction: our anchor tx must also pay for it.
+      val targetFeerate = FeeratePerKw(14_000 sat)
+      assert(TestConstants.feeratePerKw < targetFeerate)
+      setFeerate(targetFeerate, blockTarget = 12)
+      publisher ! Publish(probe.ref, anchorTx)
+
+      // The funding tx, commit tx and anchor tx are in the mempool, and the package reaches our target feerate.
+      val mempoolTxs = getMempoolTxs(3)
+      assert(mempoolTxs.map(_.txid).toSet.contains(fundingTxId))
+      assert(mempoolTxs.map(_.txid).toSet.contains(commitTx.tx.txid))
+      val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
+      val actualFee = mempoolTxs.map(_.fees).sum
+      // NB: if we ignored the funding tx, we would be short by its weight multiplied by the feerate difference (~10%).
+      assert(targetFee * 0.97 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+    }
+  }
+
   test("commit tx feerate too low, spending anchor output (local commit, zero-fee-commitments)") {
     withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f =>
       import f._

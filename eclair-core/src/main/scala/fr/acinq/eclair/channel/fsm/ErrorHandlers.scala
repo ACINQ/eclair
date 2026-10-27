@@ -27,13 +27,14 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Helpers.Closing.RemoteClose
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.fsm.Channel.UnhandledExceptionStrategy
+import fr.acinq.eclair.channel.fsm.Channel.{PublishableCommitmentFound, UnhandledExceptionStrategy}
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReestablish, Error, OpenChannel, Warning}
 import scodec.bits.ByteVector
 
 import java.sql.SQLException
+import scala.concurrent.Future
 
 /**
  * Created by t-bast on 28/03/2022.
@@ -217,7 +218,11 @@ trait ErrorHandlers extends CommonHandlers {
     }
   }
 
-  def spendLocalCurrent(d: ChannelDataWithCommitments, maxClosingFeerateOverride_opt: Option[FeeratePerKw], remoteFuturePerCommitmentPoint_opt: Option[PublicKey] = None): FSM.State[ChannelState, ChannelData] = {
+  /**
+   * @param commitment_opt commitment to use, when we know that our bitcoind cannot publish the commit tx of the latest
+   *                       commitment that we're able to publish (see [[checkLocalCommitFundingTx]]).
+   */
+  def spendLocalCurrent(d: ChannelDataWithCommitments, maxClosingFeerateOverride_opt: Option[FeeratePerKw], remoteFuturePerCommitmentPoint_opt: Option[PublicKey] = None, commitment_opt: Option[FullCommitment] = None): FSM.State[ChannelState, ChannelData] = {
     val outdatedCommitment = d match {
       case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.isDefined => true
@@ -230,8 +235,8 @@ trait ErrorHandlers extends CommonHandlers {
       val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
       // If our peer hasn't sent their tx_signatures for our latest splice transaction(s), we cannot publish them and
       // the corresponding commit txs cannot confirm: we force-close using the latest commitment that can confirm.
-      val commitment = d.commitments.latestPublishable
-      if (commitment.fundingTxIndex < d.commitments.latest.fundingTxIndex) {
+      val commitment = commitment_opt.getOrElse(d.commitments.latestPublishable)
+      if (commitment_opt.isEmpty && commitment.fundingTxIndex < d.commitments.latest.fundingTxIndex) {
         log.warning("our peer hasn't sent their tx_signatures for fundingTxIndex={}, using fundingTxIndex={} instead", d.commitments.latest.fundingTxIndex, commitment.fundingTxIndex)
       }
       log.error(s"force-closing with fundingIndex=${commitment.fundingTxIndex}")
@@ -245,7 +250,36 @@ trait ErrorHandlers extends CommonHandlers {
         case negotiating: DATA_NEGOTIATING_SIMPLE => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = negotiating.proposedClosingTxs.flatMap(_.all), mutualClosePublished = negotiating.publishedClosingTxs, localCommitPublished = Some(localCommitPublished))
         case _ => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished), maxClosingFeerate_opt = maxClosingFeerateOverride_opt, remoteFuturePerCommitmentPoint_opt = remoteFuturePerCommitmentPoint_opt)
       }
-      goto(CLOSING) using nextData storing() calling doPublish(localCommitPublished, closingTxs, commitment)
+      goto(CLOSING) using nextData storing() calling doPublish(localCommitPublished, closingTxs, commitment) calling checkLocalCommitFundingTx(nextData)
+    }
+  }
+
+  /**
+   * When we force-close using a commitment whose funding tx is unconfirmed (a splice transaction), our commit tx can only
+   * confirm if that funding tx confirms. Without zero-conf, our peer may prevent that, for example by double-spending one
+   * of its inputs, while it can still publish its commit tx for the previous funding output whenever it wants. Our peer
+   * may also publish a splice transaction for which it didn't send us its tx_signatures, after we force-closed using the
+   * previous commitment, in which case we need to use the splice commitment to be able to CPFP it.
+   *
+   * We thus use the most recent commitment whose funding tx is known by our bitcoind (in our mempool or confirmed), or
+   * the most recent confirmed commitment otherwise. This must be checked again whenever our mempool may have changed.
+   */
+  def checkLocalCommitFundingTx(d: DATA_CLOSING): Unit = {
+    d.localCommitPublished.filterNot(_.isConfirmed) match {
+      case Some(lcp) if !d.commitments.channelParams.zeroConf =>
+        val current = d.commitmentFor(lcp.commitTx.txid)
+        // Active commitments are ordered from the most recent one: confirmed commitments are the oldest ones.
+        val (unconfirmed, confirmed) = d.commitments.active.span(c => !c.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
+        if (unconfirmed.nonEmpty) {
+          // If we cannot reach our bitcoind, we keep the commitment we've already published.
+          Future.sequence(unconfirmed.map(c => wallet.getTxConfirmations(c.fundingTxId).map(_.nonEmpty))).foreach { known =>
+            unconfirmed.zip(known).collectFirst { case (c, true) => c }.orElse(confirmed.headOption) match {
+              case Some(c) if c.fundingTxId != current.fundingTxId => self ! PublishableCommitmentFound(lcp.commitTx.txid, c.fundingTxId)
+              case _ => ()
+            }
+          }
+        }
+      case _ => ()
     }
   }
 
@@ -332,6 +366,19 @@ trait ErrorHandlers extends CommonHandlers {
       case _ => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, nextRemoteCommitPublished = Some(remoteCommitPublished))
     }
     goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, closingTxs, commitment)
+  }
+
+  /**
+   * Our peer published its (current or next) commit tx for a previous commitment, which double-spends our more recent
+   * splice transactions. It isn't deeply confirmed yet, so we don't forget our other commitments, but we claim its outputs
+   * immediately: our peer may claim our outgoing HTLCs with htlc-success transactions one block after it confirms.
+   */
+  def claimPreviousRemoteCommitOutputs(commitTx: Transaction, d: DATA_CLOSING, commitment: FullCommitment, remoteCommit: RemoteCommit, isNextRemoteCommit: Boolean): FSM.State[ChannelState, ChannelData] = {
+    log.warning("claiming outputs of remote commit txid={} for fundingTxIndex={} before it is deeply confirmed", commitTx.txid, commitment.fundingTxIndex)
+    val closingFeerate = nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, d.maxClosingFeerate_opt)
+    val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, commitTx, closingFeerate, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
+    val d1 = if (isNextRemoteCommit) d.copy(nextRemoteCommitPublished = Some(remoteCommitPublished)) else d.copy(remoteCommitPublished = Some(remoteCommitPublished))
+    stay() using d1 storing() calling doPublish(remoteCommitPublished, closingTxs, commitment)
   }
 
   /** Publish 2nd-stage transactions for the remote commitment (no need for 3rd-stage transactions in that case). */
