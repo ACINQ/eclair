@@ -43,7 +43,7 @@ import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.offer.{OfferCreator, OfferManager}
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
-import fr.acinq.eclair.payment.relay.Relayer.{ChannelBalance, GetOutgoingChannels, OutgoingChannels, RelayFees}
+import fr.acinq.eclair.payment.relay.Relayer.{ChannelBalance, GetOutgoingChannels, InboundFees, OutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.{ClearRecipient, OfferPayment, PaymentIdentifier}
 import fr.acinq.eclair.profit.PeerScorer
@@ -113,6 +113,8 @@ trait Eclair {
   def bumpForceCloseFee(channels: List[ApiTypes.ChannelIdentifier], confirmationTarget: ConfirmationTarget)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]]]]
 
   def updateRelayFee(nodes: List[PublicKey], feeBase: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]]
+
+  def updateRelayFee(nodes: List[PublicKey], feeBase: MilliSatoshi, feeProportionalMillionths: Long, inboundFeeBase_opt: Option[MilliSatoshi], inboundFeeProportional_opt: Option[Long], unsetInboundFees: Boolean)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]]
 
   def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]]
 
@@ -311,11 +313,29 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     sendToChannelsTyped(channels, cmdBuilder = CMD_BUMP_FORCE_CLOSE_FEE(_, confirmationTarget))
   }
 
-  override def updateRelayFee(nodes: List[PublicKey], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] = {
-    for (nodeId <- nodes) {
-      appKit.nodeParams.db.peers.addOrUpdateRelayFees(nodeId, RelayFees(feeBaseMsat, feeProportionalMillionths))
+  override def updateRelayFee(nodes: List[PublicKey], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] =
+    updateRelayFee(nodes, feeBaseMsat, feeProportionalMillionths, None, None, unsetInboundFees = false)
+
+  override def updateRelayFee(nodes: List[PublicKey], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, inboundFeeBase_opt: Option[MilliSatoshi], inboundFeeProportional_opt: Option[Long], unsetInboundFees: Boolean)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] = {
+    if ((inboundFeeBase_opt.isDefined || inboundFeeProportional_opt.isDefined) && !appKit.nodeParams.routerConf.blip18.enableInboundFees) {
+      Future.failed(new IllegalArgumentException("Cannot specify inbound fees when bLIP-18 support is disabled"))
+    } else if (!inboundFeeBase_opt.forall(value => value.toLong >= Int.MinValue && value.toLong <= 0)) {
+      Future.failed(new IllegalArgumentException(s"Inbound fee base must be in the range from ${Int.MinValue} to 0"))
+    } else if (!inboundFeeProportional_opt.forall(value => value >= -1_000_000 && value <= 0)) {
+      // A proportional discount below -100% has no additional effect (total fees are floored at 0), and larger
+      // magnitudes could overflow the fee computation (amount * proportional) for large payment amounts.
+      Future.failed(new IllegalArgumentException("Inbound fee proportional millionths must be in the range from -1000000 to 0"))
+    } else {
+      val inboundFees_opt = InboundFees.fromOptions(inboundFeeBase_opt, inboundFeeProportional_opt)
+      for (nodeId <- nodes) {
+        appKit.nodeParams.db.peers.addOrUpdateRelayFees(nodeId, RelayFees(feeBaseMsat, feeProportionalMillionths))
+        inboundFees_opt match {
+          case Some(inboundFees) => appKit.nodeParams.db.inboundFees.addOrUpdateInboundFees(nodeId, inboundFees)
+          case _ => if (unsetInboundFees) appKit.nodeParams.db.inboundFees.unsetInboundFees(nodeId)
+        }
+      }
+      sendToNodes(nodes, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, feeBaseMsat, feeProportionalMillionths, inboundFeeBase_opt, inboundFeeProportional_opt, if (inboundFees_opt.isDefined) false else unsetInboundFees))
     }
-    sendToNodes(nodes, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, feeBaseMsat, feeProportionalMillionths))
   }
 
   override def peers()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = for {

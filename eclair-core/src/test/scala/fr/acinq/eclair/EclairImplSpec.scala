@@ -33,7 +33,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, RelayFees}
+import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, InboundFees, RelayFees}
 import fr.acinq.eclair.payment.send.PaymentIdentifier
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice, PaymentFailed}
@@ -76,7 +76,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val defaultOfferHandler = TestProbe()
     val peerScorer = TestProbe()
     val kit = Kit(
-      TestConstants.Alice.nodeParams,
+      TestConstants.Alice.nodeParams.copy(routerConf = TestConstants.Alice.nodeParams.routerConf.copy(blip18 = Router.Blip18Params(enableInboundFees = true, excludePositiveInboundFees = false))),
       system,
       watcher.ref,
       paymentHandler.ref,
@@ -660,9 +660,11 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     import f._
 
     val peersDb = mock[PeersDb]
+    val inboundFeesDb = mock[InboundFeesDb]
 
     val databases = mock[Databases]
     databases.peers returns peersDb
+    databases.inboundFees returns inboundFeesDb
 
     val kitWithMockDb = kit.copy(nodeParams = kit.nodeParams.copy(db = databases))
     val eclair = new EclairImpl(kitWithMockDb)
@@ -674,7 +676,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val b1 = randomBytes32()
     val map = Map(a1 -> a, a2 -> a, b1 -> b)
 
-    eclair.updateRelayFee(List(a, b), 999 msat, 1234).pipeTo(sender.ref)
+    eclair.updateRelayFee(List(a, b), 999 msat, 1234, Some(-1 msat), Some(-2), false).pipeTo(sender.ref)
 
     register.expectMsg(Register.GetChannelsTo)
     register.reply(map)
@@ -688,13 +690,36 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     register.expectNoMessage()
 
     assert(sender.expectMsgType[Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] == Map(
-      Left(a1) -> Right(RES_SUCCESS(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234), a1)),
-      Left(a2) -> Right(RES_FAILURE(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234), CommandUnavailableInThisState(a2, "CMD_UPDATE_RELAY_FEE", channel.CLOSING))),
+      Left(a1) -> Right(RES_SUCCESS(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234, Some(-1 msat), Some(-2)), a1)),
+      Left(a2) -> Right(RES_FAILURE(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234, Some(-1 msat), Some(-2)), CommandUnavailableInThisState(a2, "CMD_UPDATE_RELAY_FEE", channel.CLOSING))),
       Left(b1) -> Left(ChannelNotFound(Left(b1)))
     ))
 
     peersDb.addOrUpdateRelayFees(a, RelayFees(999 msat, 1234)).wasCalled(once)
     peersDb.addOrUpdateRelayFees(b, RelayFees(999 msat, 1234)).wasCalled(once)
+
+    inboundFeesDb.addOrUpdateInboundFees(a, InboundFees(-1 msat, -2)).wasCalled(once)
+    inboundFeesDb.addOrUpdateInboundFees(b, InboundFees(-1 msat, -2)).wasCalled(once)
+  }
+
+  test("reject out-of-range inbound fees") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+    val remoteNodeId = randomKey().publicKey
+
+    // Positive inbound fees are rejected: only discounts can be advertised.
+    assertThrows[IllegalArgumentException](Await.result(eclair.updateRelayFee(List(remoteNodeId), 999 msat, 1234, Some(1 msat), None, unsetInboundFees = false), 50 millis))
+    assertThrows[IllegalArgumentException](Await.result(eclair.updateRelayFee(List(remoteNodeId), 999 msat, 1234, None, Some(1), unsetInboundFees = false), 50 millis))
+    // A proportional discount below -100% has no additional effect (total fees are floored at 0) and could overflow
+    // the fee computation for large payment amounts.
+    assertThrows[IllegalArgumentException](Await.result(eclair.updateRelayFee(List(remoteNodeId), 999 msat, 1234, None, Some(-1_000_001), unsetInboundFees = false), 50 millis))
+    // The base discount is bounded by the int32 wire encoding.
+    assertThrows[IllegalArgumentException](Await.result(eclair.updateRelayFee(List(remoteNodeId), 999 msat, 1234, Some(MilliSatoshi(Int.MinValue.toLong - 1)), None, unsetInboundFees = false), 50 millis))
+
+    // A -100% proportional discount is the deepest accepted value: validation passes and the update is forwarded.
+    eclair.updateRelayFee(List(remoteNodeId), 999 msat, 1234, Some(-1 msat), Some(-1_000_000), unsetInboundFees = false).pipeTo(sender.ref)
+    register.expectMsg(Register.GetChannelsTo)
   }
 
   test("channelBalances asks for all channels, usableBalances only for enabled ones") { f =>

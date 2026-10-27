@@ -29,11 +29,17 @@ trait Fees {
 
   val updateRelayFee: Route = postRequest("updaterelayfee") { implicit t =>
     withNodesIdentifier { nodes =>
-      formFields("feeBaseMsat".as[MilliSatoshi], "feeProportionalMillionths".as[Long]) { (feeBase, feeProportional) =>
+      formFields("feeBaseMsat".as[MilliSatoshi], "feeProportionalMillionths".as[Long], "inboundFeeBaseMsat".as[MilliSatoshi]?, "inboundFeeProportionalMillionths".as[Long]?, "unsetInboundFees".as[Boolean]?) { (feeBase, feeProportional, inboundFeeBase_opt, inboundFeeProportional_opt, unsetInboundFees_opt) =>
         if (feeBase.toLong < 0 || feeProportional < 0) {
           reject(ValidationRejection("Fees must be nonnegative"))
+        } else if (inboundFeeBase_opt.isEmpty && inboundFeeProportional_opt.isDefined) {
+          reject(ValidationRejection("Inbound fee base is required"))
+        } else if (inboundFeeBase_opt.isDefined && inboundFeeProportional_opt.isEmpty) {
+          reject(ValidationRejection("Inbound fee proportional millionths is required"))
+        } else if (unsetInboundFees_opt.contains(true) && (inboundFeeBase_opt.isDefined || inboundFeeProportional_opt.isDefined)) {
+          reject(ValidationRejection("--unsetInboundFees cannot be used with --inboundFeeBaseMsat and --inboundFeeProportionalMillionths"))
         } else {
-          complete(eclairApi.updateRelayFee(nodes, feeBase, feeProportional))
+          complete(eclairApi.updateRelayFee(nodes, feeBase, feeProportional, inboundFeeBase_opt, inboundFeeProportional_opt, unsetInboundFees_opt.getOrElse(false)))
         }
       }
     }

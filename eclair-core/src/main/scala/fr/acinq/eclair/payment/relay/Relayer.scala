@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler
 import fr.acinq.eclair.reputation.{Reputation, ReputationRecorder}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams, RealShortChannelId, TimestampMilli}
+import fr.acinq.eclair._
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Promise
@@ -138,6 +138,22 @@ object Relayer extends Logging {
 
   object RelayFees {
     val zero: RelayFees = RelayFees(MilliSatoshi(0), 0)
+  }
+
+  case class InboundFees(feeBase: MilliSatoshi, feeProportionalMillionths: Long)
+
+  object InboundFees {
+    def apply(feeBaseInt32: Int, feeProportionalMillionthsInt32: Int): InboundFees = {
+      InboundFees(MilliSatoshi(feeBaseInt32), feeProportionalMillionthsInt32)
+    }
+
+    def fromOptions(inboundFeeBase_opt: Option[MilliSatoshi], inboundFeeProportionalMillionths_opt: Option[Long]): Option[InboundFees] = {
+      if (inboundFeeBase_opt.isEmpty && inboundFeeProportionalMillionths_opt.isEmpty) {
+        None
+      } else {
+        Some(InboundFees(inboundFeeBase_opt.getOrElse(0.msat), inboundFeeProportionalMillionths_opt.getOrElse(0L)))
+      }
+    }
   }
 
   case class AsyncPaymentsParams(holdTimeoutBlocks: Int, cancelSafetyBeforeTimeout: CltvExpiryDelta)
