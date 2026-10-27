@@ -9,7 +9,7 @@ Many thanks to @erickcestari for his responsible disclosures.
 
 #### Add `require-confirmed-inputs-for-splicing` configuration parameter (enabled by default)
 
-splices only spend confirmed transactions, and we limit the number of inputs and outputs our peer can add. 
+By default splices only spend confirmed transactions, and we limit the number of inputs and outputs our peer can add. 
 Note that `require-confirmed-inputs-for-dual-funding` doesn't apply to splices anymore.
 
 ```conf
