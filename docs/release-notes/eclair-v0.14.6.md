@@ -1,23 +1,31 @@
-# Eclair vnext
+# Eclair v0.14.6
 
-<insert here a high-level description of the release>
+This is a patch release that contains security hardening fixes.
+We highly recommend upgrading, as some of these issues can be exploited by malicious nodes.
 
-## Major changes
-
-<insert changes>
+Many thanks to @erickcestari for his responsible disclosures.
 
 ### Configuration changes
 
-<insert changes>
+#### Add `require-confirmed-inputs-for-splicing` configuration parameter (enabled by default)
 
-### API changes
+By default splices only spend confirmed transactions, and we limit the number of inputs and outputs our peer can add. 
+Note that `require-confirmed-inputs-for-dual-funding` doesn't apply to splices anymore.
 
-<insert changes>
+```conf
+    // If true, splices only spend confirmed transactions: our peer's inputs must be confirmed, and we don't splice on top
+    // of an unconfirmed splice transaction. Setting this to false is unsafe: our peer may then double-spend an unconfirmed
+    // parent after signing, which makes the splice transaction invalid and can put our HTLCs at risk if we force-close
+    // using it.
+    require-confirmed-inputs-for-splicing = true
+```
+
+If your channel opens and splices don't confirm because the mempool is more congested than that, you can RBF them
+with the `rbfopen` and `rbfsplice` API commands, or increase this value and restart your node.
 
 ### Miscellaneous improvements and bug fixes
 
-<insert changes>
-
+A warning has been added against using `zero_fee_commitments` when splicing with untrusted peers (this feature was already disabled by default).
 ## Verifying signatures
 
 You will need `gpg` and our release signing key E04E48E72C205463. Note that you can get it:
