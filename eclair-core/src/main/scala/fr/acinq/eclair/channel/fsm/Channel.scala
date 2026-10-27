@@ -2246,6 +2246,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       } else if (d.localCommitPublished.exists(_.commitTx.txid == tx.txid)) {
         // this is because WatchSpent watches never expire and we are notified multiple times
         stay()
+      } else if (d.commitments.all.exists(_.localCommit.txId == tx.txid)) {
+        // This is one of our local commit txs that we published before switching to a different commitment (see
+        // checkLocalCommitFundingTx): it may still confirm, so we must track it and claim its outputs.
+        val commitment = d.commitments.all.find(_.localCommit.txId == tx.txid).get
+        log.warning("our local commit tx {} for fundingTxIndex={} was published, using it instead of {}", tx.txid, commitment.fundingTxIndex, d.localCommitPublished.map(_.commitTx.txid))
+        spendLocalCurrent(d, d.maxClosingFeerate_opt, commitment_opt = Some(FullCommitment(d.commitments.channelParams, d.commitments.changes, commitment)))
       } else if (d.remoteCommitPublished.exists(_.commitTx.txid == tx.txid)) {
         // this is because WatchSpent watches never expire and we are notified multiple times
         stay()

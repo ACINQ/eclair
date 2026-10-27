@@ -3994,6 +3994,46 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(bob.stateData.asInstanceOf[DATA_CLOSING].commitmentFor(commitTx2.txid).fundingTxIndex == fundingTxIndex)
   }
 
+  test("force-close with fully signed splice that confirms after we switched commitments") { f =>
+    import f._
+
+    setupHtlcs(f)
+    val fundingInput = bob.commitments.latest.fundingInput
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    alice2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    bob2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    val bobWallet1 = bobWallet.asInstanceOf[SingleKeyOnChainWallet]
+    awaitCond(bobWallet1.published.contains(spliceTx.txid))
+
+    // Bob force-closes while the splice transaction is in his mempool.
+    bob ! CMD_FORCECLOSE(ActorRef.noSender)
+    bob2alice.expectMsgType[Error]
+    val commitTx1 = bob2blockchain.expectFinalTxPublished("commit-tx").tx
+    assert(commitTx1.txIn.map(_.outPoint.txid) == Seq(spliceTx.txid))
+
+    // The splice transaction is evicted from Bob's mempool: he switches to the previous commitment.
+    bobWallet1.published.remove(spliceTx.txid)
+    bob ! ProcessCurrentBlockHeight(CurrentBlockHeight(BlockHeight(400_001)))
+    val commitTx2 = bob2blockchain.fishForMessage() {
+      case p: PublishFinalTx => p.desc == "commit-tx" && p.tx.txIn.map(_.outPoint) == Seq(fundingInput)
+      case _ => false
+    }.asInstanceOf[PublishFinalTx].tx
+    awaitCond(bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.map(_.commitTx.txid).contains(commitTx2.txid))
+
+    // Miners still had the splice transaction and Bob's first commit tx: they are both included in a block.
+    bobWallet1.published.put(spliceTx.txid, spliceTx)
+    bob ! WatchFundingSpentTriggered(commitTx1)
+    bob ! WatchFundingSpentTriggered(spliceTx)
+    // Bob recognizes his own commit tx and claims its outputs, instead of treating it as a remote commit.
+    bob2blockchain.fishForMessage() {
+      case p: PublishFinalTx => p.desc == "commit-tx" && p.tx.txid == commitTx1.txid
+      case _ => false
+    }
+    awaitCond(bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.map(_.commitTx.txid).contains(commitTx1.txid))
+    assert(bob.stateName == CLOSING)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.isEmpty)
+  }
+
   test("force-close with unsigned splice published by our peer") { f =>
     import f._
 
