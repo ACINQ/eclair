@@ -638,6 +638,7 @@ object NodeParams extends Logging {
         unhandledExceptionStrategy = unhandledExceptionStrategy,
         revocationTimeout = FiniteDuration(config.getDuration("channel.revocation-timeout").getSeconds, TimeUnit.SECONDS),
         requireConfirmedInputsForDualFunding = config.getBoolean("channel.require-confirmed-inputs-for-dual-funding"),
+        requireConfirmedInputsForSplicing = config.getBoolean("channel.require-confirmed-inputs-for-splicing"),
         channelOpenerWhitelist = channelOpenerWhitelist,
         maxPendingChannelsPerPeer = maxPendingChannelsPerPeer,
         maxTotalPendingChannelsPrivateNodes = maxTotalPendingChannelsPrivateNodes,

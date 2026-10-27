@@ -119,6 +119,8 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainAddressCache {
   var rolledback = Seq.empty[Transaction]
   var doubleSpent = Set.empty[TxId]
   var abandoned = Set.empty[TxId]
+  // By default, the inputs we use to fund transactions are confirmed: this can be disabled to test unconfirmed inputs.
+  var fundWithUnconfirmedInputs = false
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
@@ -138,6 +140,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainAddressCache {
     val dummyP2trWitness = Script.witnessKeyPathPay2tr(ByteVector64.Zeroes)
     val inputTx = Transaction(2, Seq(TxIn(OutPoint(randomTxId(), 1), Nil, 0)), Seq(TxOut(inputAmount, script)), 0)
     inputs = inputs :+ inputTx
+    if (!fundWithUnconfirmedInputs) SingleKeyOnChainWallet.confirmedInputTxs.put(inputTx.txid, ())
     val dummySignedTx = tx.copy(
       txIn = tx.txIn.filterNot(i => externalInputsWeight.contains(i.outPoint)).appended(TxIn(OutPoint(inputTx, 0), ByteVector.empty, 0, ScriptWitness.empty)).map(txIn => {
         val isP2tr = inputs.find(_.txid == txIn.outPoint.txid).map(_.txOut(txIn.outPoint.index.toInt).publicKeyScript).map(Script.parse).exists(Script.isPay2tr)
@@ -216,7 +219,12 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainAddressCache {
     }
   }
 
-  override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(None)
+  override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = {
+    val confirmedInput_opt = Some(6).filter(_ => SingleKeyOnChainWallet.confirmedInputTxs.contains(txid))
+    // Transactions that we have published are in our mempool, unless they have been confirmed.
+    val published_opt = published.get(txid).map(_ => 0)
+    Future.successful(confirmedInput_opt.orElse(published_opt))
+  }
 
   override def isTransactionOutputSpendable(txid: TxId, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 
@@ -239,6 +247,12 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainAddressCache {
     else if (Right(address) == addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, p2trScript)) true
     else false
   }
+}
+
+object SingleKeyOnChainWallet {
+  // Parent transactions of the inputs that our test wallets use to fund transactions: they are shared between all test
+  // wallets, so that a node can verify that its peer's inputs are confirmed.
+  private val confirmedInputTxs = scala.collection.concurrent.TrieMap.empty[TxId, Unit]
 }
 
 /** A wallet that blocks when called to fund transactions (useful to test events happening while funding). */

@@ -103,6 +103,7 @@ object Channel {
                          unhandledExceptionStrategy: UnhandledExceptionStrategy,
                          revocationTimeout: FiniteDuration,
                          requireConfirmedInputsForDualFunding: Boolean,
+                         requireConfirmedInputsForSplicing: Boolean,
                          channelOpenerWhitelist: Set[PublicKey],
                          maxPendingChannelsPerPeer: Int,
                          maxTotalPendingChannelsPrivateNodes: Int,
@@ -199,6 +200,8 @@ object Channel {
   private[channel] case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
   private[channel] case object BITCOIN_FUNDING_TIMEOUT extends BitcoinEvent
   private[channel] case class BITCOIN_FUNDING_DOUBLE_SPENT(fundingTxIds: Set[TxId]) extends BitcoinEvent
+  /** Our local commit tx should spend a different funding tx, which our bitcoind knows (see checkLocalCommitFundingTx). */
+  private[channel] case class PublishableCommitmentFound(commitTxId: TxId, fundingTxId: TxId) extends BitcoinEvent
   // @formatter:on
 
   case object TickChannelOpenTimeout
@@ -1041,6 +1044,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         log.warning("cannot initiate splice, the previous splice has unconfirmed rbf attempts")
         cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceWithUnconfirmedTx(d.channelId, d.commitments.latest.fundingTxId))
         stay()
+      } else if (requireConfirmedSpliceParent(d) && d.commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx]) {
+        log.warning("cannot initiate splice, the previous funding transaction is unconfirmed")
+        cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceWithUnconfirmedTx(d.channelId, d.commitments.latest.fundingTxId))
+        stay()
       } else {
         d.spliceStatus match {
           case SpliceStatus.NoSplice =>
@@ -1201,7 +1208,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   fundingContribution = willFund_opt.map(_.purchase.amount).getOrElse(0 sat),
                   fundingPubKey = localFundingPubKey,
                   pushAmount = 0.msat,
-                  requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
+                  requireConfirmedInputs = requireConfirmedRemoteSpliceInputs(d),
                   willFund_opt = willFund_opt.map(_.willFund),
                   feeCreditUsed_opt = msg.useFeeCredit_opt,
                   channelType_opt = msg.channelType_opt
@@ -2212,9 +2219,22 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case Left(_) => stay()
       }
 
+    case Event(ProcessCurrentBlockHeight(_), d: DATA_CLOSING) =>
+      checkLocalCommitFundingTx(d)
+      stay()
+
+    case Event(e: PublishableCommitmentFound, d: DATA_CLOSING) =>
+      (d.localCommitPublished.filter(lcp => lcp.commitTx.txid == e.commitTxId && !lcp.isConfirmed), d.commitments.active.find(_.fundingTxId == e.fundingTxId)) match {
+        case (Some(lcp), Some(commitment)) =>
+          log.warning("force-closing again using fundingTxIndex={} fundingTxId={}: the funding tx of our local commit tx {} is unknown or a more recent one was published", commitment.fundingTxIndex, commitment.fundingTxId, lcp.commitTx.txid)
+          spendLocalCurrent(d, d.maxClosingFeerate_opt, commitment_opt = Some(FullCommitment(d.commitments.channelParams, d.commitments.changes, commitment)))
+        case _ => stay()
+      }
+
     case Event(WatchFundingSpentTriggered(tx), d: DATA_CLOSING) =>
       if (d.commitments.all.map(_.fundingTxId).contains(tx.txid)) {
-        // if the spending tx is itself a funding tx, this is a splice and there is nothing to do
+        // If the spending tx is itself a funding tx, this is a splice: we may need to use the corresponding commitment.
+        checkLocalCommitFundingTx(d)
         stay()
       } else if (d.mutualClosePublished.exists(_.tx.txid == tx.txid)) {
         // we already know about this tx, probably because we have published it ourselves after successful negotiation
@@ -2226,6 +2246,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       } else if (d.localCommitPublished.exists(_.commitTx.txid == tx.txid)) {
         // this is because WatchSpent watches never expire and we are notified multiple times
         stay()
+      } else if (d.commitments.all.exists(_.localCommit.txId == tx.txid)) {
+        // This is one of our local commit txs that we published before switching to a different commitment (see
+        // checkLocalCommitFundingTx): it may still confirm, so we must track it and claim its outputs.
+        val commitment = d.commitments.all.find(_.localCommit.txId == tx.txid).get
+        log.warning("our local commit tx {} for fundingTxIndex={} was published, using it instead of {}", tx.txid, commitment.fundingTxIndex, d.localCommitPublished.map(_.commitTx.txid))
+        spendLocalCurrent(d, d.maxClosingFeerate_opt, commitment_opt = Some(FullCommitment(d.commitments.channelParams, d.commitments.changes, commitment)))
       } else if (d.remoteCommitPublished.exists(_.commitTx.txid == tx.txid)) {
         // this is because WatchSpent watches never expire and we are notified multiple times
         stay()
@@ -2248,13 +2274,26 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         d.commitments.resolveCommitment(tx) match {
           case Some(commitment) =>
             log.warning("a commit tx for an older commitment has been published fundingTxId={} fundingTxIndex={}", tx.txid, commitment.fundingTxIndex)
-            blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepth)
+            // We react as soon as it confirms (see WatchAlternativeCommitTxConfirmedTriggered).
+            blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, minDepth = 1)
             stay()
           case None =>
             // This must be a former funding tx that has already been pruned, because watches are unordered.
             log.warning(s"ignoring unrecognized tx=${tx.txid}")
             stay()
         }
+      }
+
+    case Event(WatchAlternativeCommitTxConfirmedTriggered(blockHeight, _, tx), d: DATA_CLOSING) if nodeParams.currentBlockHeight - blockHeight + 1 < nodeParams.channelConf.minDepth =>
+      // A commit tx for a previous commitment confirmed, but it may still be reorged out: we wait until it is deeply
+      // confirmed to forget our other commitments, but if this is our peer's commit tx, we claim its outputs right now.
+      blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepth)
+      d.commitments.resolveCommitment(tx).map(c => FullCommitment(d.commitments.channelParams, d.commitments.changes, c)) match {
+        case Some(commitment) if commitment.remoteCommit.txId == tx.txid && commitment.remoteCommit.index == d.commitments.remoteCommitIndex =>
+          claimPreviousRemoteCommitOutputs(tx, d, commitment, commitment.remoteCommit, isNextRemoteCommit = false)
+        case Some(commitment) if commitment.nextRemoteCommit_opt.exists(_.txId == tx.txid) && commitment.remoteCommit.index == d.commitments.remoteCommitIndex && d.commitments.remoteNextCommitInfo.isLeft =>
+          claimPreviousRemoteCommitOutputs(tx, d, commitment, commitment.nextRemoteCommit_opt.get, isNextRemoteCommit = true)
+        case _ => stay()
       }
 
     case Event(WatchAlternativeCommitTxConfirmedTriggered(_, _, tx), d: DATA_CLOSING) =>
@@ -3303,7 +3342,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           case Some(commitment) =>
             log.warning("a commit tx for an older commitment has been published fundingTxId={} fundingTxIndex={}", tx.txid, commitment.fundingTxIndex)
             // We watch the commitment tx, in the meantime we force close using the latest commitment.
-            blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepth)
+            // We react as soon as it confirms (see WatchAlternativeCommitTxConfirmedTriggered).
+            blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, minDepth = 1)
             spendLocalCurrent(d, maxClosingFeerateOverride_opt = None)
           case None =>
             // This must be a former funding tx that has already been pruned, because watches are unordered.
@@ -3863,7 +3903,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         feerate = targetFeerate,
         fundingPubKey = channelKeys.fundingKey(parentCommitment.fundingTxIndex + 1).publicKey,
         pushAmount = cmd.pushAmount,
-        requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
+        requireConfirmedInputs = requireConfirmedRemoteSpliceInputs(d),
         requestFunding_opt = cmd.requestFunding_opt,
         channelType_opt = cmd.channelType_opt
       )
@@ -3889,6 +3929,16 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
     })
   }
+
+  /**
+   * Splices must only spend confirmed transactions (see require-confirmed-inputs-for-splicing): otherwise our peer may
+   * make the splice transaction invalid after signing by double-spending one of its unconfirmed parents. Our own wallet
+   * inputs are safe, since bitcoind never selects unconfirmed outputs of transactions that have inputs we don't own.
+   */
+  private def requireConfirmedRemoteSpliceInputs(d: DATA_NORMAL): Boolean = nodeParams.channelConf.requireConfirmedInputsForSplicing
+
+  /** We don't splice on top of an unconfirmed splice transaction (see require-confirmed-inputs-for-splicing). */
+  private def requireConfirmedSpliceParent(d: DATA_NORMAL): Boolean = nodeParams.channelConf.requireConfirmedInputsForSplicing
 
   private def getSpliceRbfContext(cmd_opt: Option[CMD_BUMP_FUNDING_FEE], d: DATA_NORMAL): Either[ChannelException, InteractiveTxBuilder.SpliceTxRbf] = {
     d.commitments.latest.localFundingStatus match {
