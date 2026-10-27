@@ -753,14 +753,17 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
     alice2bob.expectMsgType[TxComplete]
     alice2bob.forward(bob)
+    // Alice has no remote inputs to validate, so she signs before receiving Bob's tx_abort.
+    alice2bob.expectMsgType[CommitSig]
+    sender.expectMsgType[RES_SPLICE]
     val txAbortBob = bob2alice.expectMsgType[TxAbort]
     assert(txAbortBob.toAscii == UnconfirmedInteractiveTxInputs(bob.stateData.asInstanceOf[DATA_NORMAL].channelId).getMessage)
     bob2alice.forward(alice, txAbortBob)
     val txAbortAlice = alice2bob.expectMsgType[TxAbort]
     alice2bob.forward(bob, txAbortAlice)
-    sender.expectMsgType[RES_FAILURE[_, _]]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    assert(alice.commitments.active.size == 1)
     assert(bob.commitments.active.size == 1)
   }
 
