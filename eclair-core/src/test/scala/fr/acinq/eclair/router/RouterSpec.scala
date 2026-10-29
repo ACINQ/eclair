@@ -570,6 +570,40 @@ class RouterSpec extends BaseRouterSpec {
     assert(res1.routes.head.finalHop_opt.isEmpty)
   }
 
+  test("route found (specific first hop)") { fixture =>
+    import fixture._
+    val sender = TypedProbe[PaymentRouteResponse]()(system.toTyped)
+    // public channel
+    router ! RouteRequest(sender.ref, a, SpontaneousRecipient(d, DEFAULT_AMOUNT_MSAT, DEFAULT_EXPIRY, ByteVector32.One), DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(scid_ab)))
+    val res1 = sender.expectMessageType[RouteResponse]
+    assert(res1.routes.nonEmpty)
+    assert(res1.routes.forall(_.hops.head.shortChannelId == scid_ab))
+    assert(route2NodeIds(res1.routes.head) == Seq(a, b, c, d))
+    // private channel, using our local alias
+    router ! RouteRequest(sender.ref, a, SpontaneousRecipient(h, DEFAULT_AMOUNT_MSAT, DEFAULT_EXPIRY, ByteVector32.One), DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(alias_ag_private)))
+    val res2 = sender.expectMessageType[RouteResponse]
+    assert(res2.routes.nonEmpty)
+    assert(res2.routes.forall(_.hops.head.shortChannelId == alias_ag_private))
+    assert(route2NodeIds(res2.routes.head) == Seq(a, g, h))
+    // the target cannot be reached through the requested channel
+    router ! RouteRequest(sender.ref, a, SpontaneousRecipient(h, DEFAULT_AMOUNT_MSAT, DEFAULT_EXPIRY, ByteVector32.One), DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(scid_ab)))
+    sender.expectMessage(PaymentRouteNotFound(RouteNotFound))
+    router ! RouteRequest(sender.ref, a, SpontaneousRecipient(d, DEFAULT_AMOUNT_MSAT, DEFAULT_EXPIRY, ByteVector32.One), DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(alias_ag_private)))
+    sender.expectMessage(PaymentRouteNotFound(RouteNotFound))
+    // unknown channel
+    router ! RouteRequest(sender.ref, a, SpontaneousRecipient(d, DEFAULT_AMOUNT_MSAT, DEFAULT_EXPIRY, ByteVector32.One), DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(ShortChannelId(42))))
+    sender.expectMessage(PaymentRouteNotFound(RouteNotFound))
+    // the channel is going to be announced: its real scid is known but it's still a private channel in the graph
+    val probe = TestProbe()
+    val ann_ag = channelAnnouncement(scid_ag_private, priv_a, priv_g, priv_funding_a, priv_funding_g)
+    probe.send(router, ShortChannelIdAssigned(probe.ref, channelId_ag_private, announcement_opt = Some(ann_ag), scids_ag_private, g))
+    router ! RouteRequest(sender.ref, a, SpontaneousRecipient(h, DEFAULT_AMOUNT_MSAT, DEFAULT_EXPIRY, ByteVector32.One), DEFAULT_ROUTE_PARAMS.copy(firstHop_opt = Some(scid_ag_private)))
+    val res3 = sender.expectMessageType[RouteResponse]
+    assert(res3.routes.nonEmpty)
+    assert(res3.routes.forall(_.hops.head.shortChannelId == alias_ag_private))
+    assert(route2NodeIds(res3.routes.head) == Seq(a, g, h))
+  }
+
   test("route found (with extra routing info)") { fixture =>
     import fixture._
     val sender = TypedProbe[PaymentRouteResponse]()(system.toTyped)

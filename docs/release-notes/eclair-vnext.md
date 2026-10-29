@@ -12,7 +12,7 @@
 
 ### API changes
 
-<insert changes>
+- `findroute*`, `pay*` and `sendtonode` now take optional `--firstHop` parameter (a short channel id). When it is set, path-finding only returns routes whose first hop is that local channel (#3407)
 
 ### Miscellaneous improvements and bug fixes
 

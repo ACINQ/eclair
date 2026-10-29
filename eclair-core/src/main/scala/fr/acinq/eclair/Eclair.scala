@@ -140,11 +140,11 @@ trait Eclair {
 
   def receivedPayments(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[IncomingPayment]]
 
-  def send(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[UUID]
+  def send(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, firstHop_opt: Option[ShortChannelId] = None)(implicit timeout: Timeout): Future[UUID]
 
-  def sendBlocking(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[PaymentEvent]
+  def sendBlocking(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, firstHop_opt: Option[ShortChannelId] = None)(implicit timeout: Timeout): Future[PaymentEvent]
 
-  def sendWithPreimage(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentPreimage: ByteVector32 = randomBytes32(), maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[UUID]
+  def sendWithPreimage(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentPreimage: ByteVector32 = randomBytes32(), maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, firstHop_opt: Option[ShortChannelId] = None)(implicit timeout: Timeout): Future[UUID]
 
   def sentInfo(id: PaymentIdentifier)(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
 
@@ -152,9 +152,9 @@ trait Eclair {
 
   def cpfpBumpFees(targetFeeratePerByte: FeeratePerByte, outpoints: Set[OutPoint]): Future[TxId]
 
-  def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None, maxCltvExpiryDelta_opt: Option[CltvExpiryDelta] = None)(implicit timeout: Timeout): Future[RouteResponse]
+  def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None, maxCltvExpiryDelta_opt: Option[CltvExpiryDelta] = None, firstHop_opt: Option[ShortChannelId] = None)(implicit timeout: Timeout): Future[RouteResponse]
 
-  def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None, maxCltvExpiryDelta_opt: Option[CltvExpiryDelta] = None)(implicit timeout: Timeout): Future[RouteResponse]
+  def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None, maxCltvExpiryDelta_opt: Option[CltvExpiryDelta] = None, firstHop_opt: Option[ShortChannelId] = None)(implicit timeout: Timeout): Future[RouteResponse]
 
   def sendToRoute(recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: Bolt11Invoice, route: PredefinedRoute)(implicit timeout: Timeout): Future[SendPaymentToRouteResponse]
 
@@ -196,9 +196,9 @@ trait Eclair {
 
   def sendOnionMessage(intermediateNodes_opt: Option[Seq[PublicKey]], destination: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute], expectsReply: Boolean, userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse]
 
-  def payOffer(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, connectDirectly: Boolean = false)(implicit timeout: Timeout): Future[UUID]
+  def payOffer(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, connectDirectly: Boolean = false, firstHop_opt: Option[ShortChannelId] = None)(implicit timeout: Timeout): Future[UUID]
 
-  def payOfferBlocking(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, connectDirectly: Boolean = false)(implicit timeout: Timeout): Future[PaymentEvent]
+  def payOfferBlocking(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, connectDirectly: Boolean = false, firstHop_opt: Option[ShortChannelId] = None)(implicit timeout: Timeout): Future[PaymentEvent]
 
   def payOfferTrampoline(offer: Offer, amount: MilliSatoshi, quantity: Long, trampolineNodeId: PublicKey, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, connectDirectly: Boolean = false)(implicit timeout: Timeout): Future[PaymentEvent]
 
@@ -462,8 +462,8 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     }
   }
 
-  override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None, maxCltvExpiryDelta_opt: Option[CltvExpiryDelta] = None)(implicit timeout: Timeout): Future[RouteResponse] =
-    findRouteBetween(appKit.nodeParams.nodeId, targetNodeId, amount, pathFindingExperimentName_opt, extraEdges, includeLocalChannelCost, ignoreNodeIds, ignoreShortChannelIds, maxFee_opt, maxCltvExpiryDelta_opt)
+  override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None, maxCltvExpiryDelta_opt: Option[CltvExpiryDelta] = None, firstHop_opt: Option[ShortChannelId] = None)(implicit timeout: Timeout): Future[RouteResponse] =
+    findRouteBetween(appKit.nodeParams.nodeId, targetNodeId, amount, pathFindingExperimentName_opt, extraEdges, includeLocalChannelCost, ignoreNodeIds, ignoreShortChannelIds, maxFee_opt, maxCltvExpiryDelta_opt, firstHop_opt)
 
   private def getRouteParams(pathFindingExperimentName_opt: Option[String]): Either[IllegalArgumentException, RouteParams] = {
     pathFindingExperimentName_opt match {
@@ -475,12 +475,13 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     }
   }
 
-  override def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None, maxCltvExpiryDelta_opt: Option[CltvExpiryDelta] = None)(implicit timeout: Timeout): Future[RouteResponse] = {
+  override def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None, maxCltvExpiryDelta_opt: Option[CltvExpiryDelta] = None, firstHop_opt: Option[ShortChannelId] = None)(implicit timeout: Timeout): Future[RouteResponse] = {
     getRouteParams(pathFindingExperimentName_opt) match {
       case Right(routeParams) =>
         val target = ClearRecipient(targetNodeId, Features.empty, amount, CltvExpiry(appKit.nodeParams.currentBlockHeight), ByteVector32.Zeroes, upgradeAccountability = true, extraEdges)
         val routeParams1 = routeParams.copy(
           includeLocalChannelCost = includeLocalChannelCost,
+          firstHop_opt = firstHop_opt,
           boundaries = routeParams.boundaries.copy(
             maxFeeFlat = maxFee_opt.getOrElse(routeParams.boundaries.maxFeeFlat),
             maxFeeProportional = maxFee_opt.map(_ => 0.0).getOrElse(routeParams.boundaries.maxFeeProportional),
@@ -513,14 +514,14 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     }
   }
 
-  private def createSendPaymentRequest(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String]): Either[IllegalArgumentException, SendPaymentToNode] = {
+  private def createSendPaymentRequest(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String], firstHop_opt: Option[ShortChannelId]): Either[IllegalArgumentException, SendPaymentToNode] = {
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
     getRouteParams(pathFindingExperimentName_opt) match {
       case Right(defaultRouteParams) =>
         val routeParams = defaultRouteParams.copy(boundaries = defaultRouteParams.boundaries.copy(
           maxFeeProportional = maxFeePct_opt.map(_ / 100).getOrElse(defaultRouteParams.boundaries.maxFeeProportional),
           maxFeeFlat = maxFeeFlat_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.boundaries.maxFeeFlat)
-        ))
+        ), firstHop_opt = firstHop_opt)
         externalId_opt match {
           case Some(externalId) if externalId.length > externalIdMaxLength => Left(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
           case _ if invoice.isExpired() => Left(new IllegalArgumentException("invoice has expired"))
@@ -530,28 +531,28 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     }
   }
 
-  override def send(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String])(implicit timeout: Timeout): Future[UUID] = {
-    createSendPaymentRequest(externalId_opt, amount, invoice, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt) match {
+  override def send(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String], firstHop_opt: Option[ShortChannelId])(implicit timeout: Timeout): Future[UUID] = {
+    createSendPaymentRequest(externalId_opt, amount, invoice, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, firstHop_opt) match {
       case Left(ex) => Future.failed(ex)
       case Right(req) => (appKit.paymentInitiator ? req).mapTo[UUID]
     }
   }
 
-  override def sendBlocking(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String])(implicit timeout: Timeout): Future[PaymentEvent] = {
-    createSendPaymentRequest(externalId_opt, amount, invoice, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt) match {
+  override def sendBlocking(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String], firstHop_opt: Option[ShortChannelId])(implicit timeout: Timeout): Future[PaymentEvent] = {
+    createSendPaymentRequest(externalId_opt, amount, invoice, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, firstHop_opt) match {
       case Left(ex) => Future.failed(ex)
       case Right(req) => (appKit.paymentInitiator ? req.copy(blockUntilComplete = true)).mapTo[PaymentEvent]
     }
   }
 
-  override def sendWithPreimage(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentPreimage: ByteVector32, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String])(implicit timeout: Timeout): Future[UUID] = {
+  override def sendWithPreimage(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentPreimage: ByteVector32, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String], firstHop_opt: Option[ShortChannelId])(implicit timeout: Timeout): Future[UUID] = {
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
     getRouteParams(pathFindingExperimentName_opt) match {
       case Right(defaultRouteParams) =>
         val routeParams = defaultRouteParams.copy(boundaries = defaultRouteParams.boundaries.copy(
           maxFeeProportional = maxFeePct_opt.map(_ / 100).getOrElse(defaultRouteParams.boundaries.maxFeeProportional),
           maxFeeFlat = maxFeeFlat_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.boundaries.maxFeeFlat)
-        ))
+        ), firstHop_opt = firstHop_opt)
         val sendPayment = SendSpontaneousPayment(amount, recipientNodeId, paymentPreimage, maxAttempts, externalId_opt, routeParams)
         (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
       case Left(t) => Future.failed(t)
@@ -778,6 +779,7 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
                                maxFeePct_opt: Option[Double],
                                pathFindingExperimentName_opt: Option[String],
                                connectDirectly: Boolean,
+                               firstHop_opt: Option[ShortChannelId],
                                blocking: Boolean)(implicit timeout: Timeout): Future[Any] = {
     if (externalId_opt.exists(_.length > externalIdMaxLength)) {
       return Future.failed(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
@@ -787,7 +789,7 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
         defaultRouteParams.copy(boundaries = defaultRouteParams.boundaries.copy(
           maxFeeProportional = maxFeePct_opt.map(_ / 100).getOrElse(defaultRouteParams.boundaries.maxFeeProportional),
           maxFeeFlat = maxFeeFlat_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.boundaries.maxFeeFlat)
-        ))
+        ), firstHop_opt = firstHop_opt)
       case Left(t) => return Future.failed(t)
     }
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(externalId_opt, connectDirectly, maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts), routeParams, blocking, trampolineNodeId_opt)
@@ -806,8 +808,9 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
                         maxFeeFlat_opt: Option[Satoshi],
                         maxFeePct_opt: Option[Double],
                         pathFindingExperimentName_opt: Option[String],
-                        connectDirectly: Boolean)(implicit timeout: Timeout): Future[UUID] = {
-    payOfferInternal(offer, amount, quantity, None, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = false).mapTo[UUID]
+                        connectDirectly: Boolean,
+                        firstHop_opt: Option[ShortChannelId])(implicit timeout: Timeout): Future[UUID] = {
+    payOfferInternal(offer, amount, quantity, None, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, firstHop_opt, blocking = false).mapTo[UUID]
   }
 
   override def payOfferBlocking(offer: Offer,
@@ -818,8 +821,9 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
                                 maxFeeFlat_opt: Option[Satoshi],
                                 maxFeePct_opt: Option[Double],
                                 pathFindingExperimentName_opt: Option[String],
-                                connectDirectly: Boolean)(implicit timeout: Timeout): Future[PaymentEvent] = {
-    payOfferInternal(offer, amount, quantity, None, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = true).mapTo[PaymentEvent]
+                                connectDirectly: Boolean,
+                                firstHop_opt: Option[ShortChannelId])(implicit timeout: Timeout): Future[PaymentEvent] = {
+    payOfferInternal(offer, amount, quantity, None, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, firstHop_opt, blocking = true).mapTo[PaymentEvent]
   }
 
   override def payOfferTrampoline(offer: Offer,
@@ -832,7 +836,7 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
                                   maxFeePct_opt: Option[Double],
                                   pathFindingExperimentName_opt: Option[String],
                                   connectDirectly: Boolean)(implicit timeout: Timeout): Future[PaymentEvent] = {
-    payOfferInternal(offer, amount, quantity, Some(trampolineNodeId), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = true).mapTo[PaymentEvent]
+    payOfferInternal(offer, amount, quantity, Some(trampolineNodeId), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, firstHop_opt = None, blocking = true).mapTo[PaymentEvent]
   }
 
   override def getDescriptors(account: Long): Descriptors = appKit.nodeParams.onChainKeyManager_opt match {
