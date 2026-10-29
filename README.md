@@ -71,6 +71,7 @@ server=1
 rpcuser=foo
 rpcpassword=bar
 txindex=1
+txospenderindex=1
 addresstype=bech32m
 changetype=bech32m
 zmqpubhashblock=tcp://127.0.0.1:29000
@@ -303,6 +304,7 @@ so you can easily run your Bitcoin node on both mainnet and testnet. For example
 ```conf
 server=1
 txindex=1
+txospenderindex=1
 
 addresstype=bech32
 changetype=bech32
