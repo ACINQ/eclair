@@ -1530,7 +1530,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   test("fund transaction with previous inputs (with new inputs)") {
     val targetFeerate = FeeratePerKw(11_000 sat)
     val fundingA = 100_000 sat
-    val utxosA = Seq(55_000 sat, 55_000 sat, 55_000 sat)
+    // Two inputs are enough to fund the channel, but they don't leave enough room for a change output: at the target
+    // feerate, a transaction with two p2tr inputs and the funding output costs ~7_436 sat, while adding a change output
+    // would cost ~9_328 sat, which is more than the 8_000 sat remaining. This makes the first attempt changeless
+    // regardless of Bitcoin Core's internal change-discard rules, which depend on its fee estimators.
+    val utxosA = Seq(54_000 sat, 54_000 sat, 54_000 sat)
     withFixture(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), fundingA, utxosA, 0 sat, Nil, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
