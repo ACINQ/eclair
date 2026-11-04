@@ -484,31 +484,34 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
     // next block, otherwise we would never detect that spend.
     def inconclusive(): Unit = context.self ! SetWatchHint(w, RetryCheckSpent)
 
-    // First let's see if the parent tx was published or not before checking whether it has been spent.
-    client.getTxConfirmations(w.txId).flatMap {
-      case None =>
-        // The parent tx hasn't been published, so this output cannot have been spent yet.
+    // Note that we don't use getrawtransaction to check whether the parent tx was published: it relies on the txindex,
+    // which may be lagging behind the tip (just like the txospenderindex), in which case we would wrongly conclude
+    // that the output cannot have been spent yet.
+    client.isTransactionOutputSpendable(w.outPoint, includeMempool = true).flatMap {
+      case true =>
+        // The output exists and hasn't been spent.
         conclusive()
         Future.successful(())
-      case Some(_) =>
-        // The parent tx was published, we need to make sure this particular output has not been spent.
-        client.isTransactionOutputSpendable(w.outPoint, includeMempool = true).flatMap {
-          case true =>
+      case false =>
+        // The output has been spent, or its parent tx hasn't been published: let's look for a spending tx in the
+        // mempool and in the txospenderindex. We check whether the txospenderindex is synced *before* looking for the
+        // spending tx: if it was synced before we looked, a negative answer is definitive.
+        for {
+          currentHeight <- client.getBlockHeight()
+          indexInfos <- client.getIndexInfo()
+          indexSynced = indexInfos.get("txospenderindex").exists(_.bestBlockHeight >= currentHeight.toInt)
+          spendingTx_opt <- client.findSpendingTx(w.outPoint)
+        } yield spendingTx_opt match {
+          case Some((spendingTx, _)) =>
+            log.info("found tx spending {}: txid={}", w.outPoint, spendingTx.txid)
+            context.self ! ProcessNewTransaction(spendingTx)
             conclusive()
-            Future.successful(())
-          case false =>
-            // The output has been spent, let's find the spending tx in the txospenderindex.
-            log.info("{} has already been spent, looking for the spending tx", w.outPoint)
-            client.findSpendingTx(w.outPoint).map {
-              case Some((spendingTx, _)) =>
-                log.info("found tx spending {}: txid={}", w.outPoint, spendingTx.txid)
-                context.self ! ProcessNewTransaction(spendingTx)
-                conclusive()
-              case None =>
-                // This shouldn't happen when the txospenderindex is synced, but it may be lagging behind the tip.
-                log.warn("could not find the spending tx of {}, funds are at risk: retrying at the next block", w.outPoint)
-                inconclusive()
-            }
+          case None if indexSynced =>
+            // The parent tx hasn't been published, so this output cannot have been spent yet.
+            conclusive()
+          case None =>
+            log.warn("could not find the spending tx of {} and the txospenderindex is lagging behind the tip (funds may be at risk): retrying at the next block", w.outPoint)
+            inconclusive()
         }
     }.recover {
       case error =>

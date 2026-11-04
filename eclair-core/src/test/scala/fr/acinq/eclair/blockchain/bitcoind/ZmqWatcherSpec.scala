@@ -322,10 +322,18 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
   }
 
   test("retry looking for the spending tx") {
-    // The txospenderindex may be lagging behind the tip when we set the watch: we simulate that by failing the first
-    // two attempts to find the spending tx.
+    // The txospenderindex may be lagging behind the tip when we set the watch: we simulate that by reporting a lagging
+    // index and failing to find the spending tx for the first two attempts.
     val findSpendingTxAttempts = new AtomicInteger(0)
     val flakyClient = new BitcoinCoreClient(bitcoinrpcclient) {
+      override def getIndexInfo()(implicit ec: ExecutionContext): Future[Map[String, BitcoinCoreClient.IndexInfo]] = {
+        if (findSpendingTxAttempts.get() < 2) {
+          Future.successful(Map("txospenderindex" -> BitcoinCoreClient.IndexInfo(synced = false, bestBlockHeight = 0)))
+        } else {
+          super.getIndexInfo()(ec)
+        }
+      }
+
       override def findSpendingTx(outPoint: OutPoint)(implicit ec: ExecutionContext): Future[Option[(Transaction, Option[BlockId])]] = {
         if (findSpendingTxAttempts.incrementAndGet() <= 2) {
           Future.successful(None)
@@ -385,6 +393,62 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       probe.expectNoMessage(100 millis)
       assert(findSpendingTxAttempts.get() == 3)
     }, bitcoinClient_opt = Some(flakyClient))
+  }
+
+  test("find unconfirmed spending tx when txindex is lagging") {
+    // The txindex may be lagging behind the tip when we set the watch: getrawtransaction then fails for a parent tx that
+    // was just confirmed, which must not be mistaken for an unpublished parent tx.
+    val laggingClient = new BitcoinCoreClient(bitcoinrpcclient) {
+      override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(None)
+    }
+    // We confirm the parent tx and publish the spending tx *before* starting the watcher: the watcher won't see the
+    // spending tx in the mempool, its only way of finding it is to look it up.
+    val sender = TestProbe()
+    val txListener = TestProbe()
+    system.eventStream.subscribe(txListener.ref, classOf[NewTransaction])
+    val (priv, address) = createExternalAddress()
+    val tx = sendToAddress(address, Btc(1), sender)
+    val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))
+    generateBlocks(1)
+    val spendingTx = createSpendP2WPKH(tx, priv, priv.publicKey, 500 sat, 0, 0)
+    laggingClient.publishTransaction(spendingTx).pipeTo(sender.ref)
+    sender.expectMsg(spendingTx.txid)
+    txListener.fishForMessage() { case NewTransaction(t) => t.txid == spendingTx.txid }
+    system.eventStream.unsubscribe(txListener.ref)
+
+    withWatcher(f => {
+      import f._
+
+      watcher ! WatchFundingSpent(probe.ref, tx.txid, outputIndex)
+      assert(probe.expectMsgType[WatchFundingSpentTriggered].spendingTx.txid == spendingTx.txid)
+    }, bitcoinClient_opt = Some(laggingClient))
+  }
+
+  test("don't retry looking for the spending tx when parent tx is unpublished") {
+    val findSpendingTxAttempts = new AtomicInteger(0)
+    val countingClient = new BitcoinCoreClient(bitcoinrpcclient) {
+      override def findSpendingTx(outPoint: OutPoint)(implicit ec: ExecutionContext): Future[Option[(Transaction, Option[BlockId])]] = {
+        findSpendingTxAttempts.incrementAndGet()
+        super.findSpendingTx(outPoint)(ec)
+      }
+    }
+
+    withWatcher(f => {
+      import f._
+
+      val initialHeight = listener.expectMsgType[CurrentBlockHeight].blockHeight
+
+      // The parent tx doesn't exist: the txospenderindex is synced, so we know this output cannot have been spent yet.
+      watcher ! WatchFundingSpent(probe.ref, randomTxId(), 0)
+      awaitCond(findSpendingTxAttempts.get() == 1)
+      probe.expectNoMessage(100 millis)
+
+      // We don't check again at the next block.
+      generateBlocks(1)
+      listener.fishForMessage() { case c: CurrentBlockHeight => c.blockHeight > initialHeight }
+      probe.expectNoMessage(100 millis)
+      assert(findSpendingTxAttempts.get() == 1)
+    }, bitcoinClient_opt = Some(countingClient))
   }
 
   test("unwatch external channel") {
