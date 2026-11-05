@@ -44,9 +44,8 @@ trait CommonFundingHandlers extends CommonHandlers {
   /**
    * @param delay_opt optional delay to reduce herd effect at startup.
    */
-  def watchFundingSpent(commitment: Commitment, additionalKnownSpendingTxs: Set[TxId], delay_opt: Option[FiniteDuration]): Unit = {
-    val knownSpendingTxs = commitment.commitTxIds.txIds ++ additionalKnownSpendingTxs
-    val watch = WatchFundingSpent(self, commitment.fundingInput.txid, commitment.fundingInput.index.toInt, knownSpendingTxs)
+  def watchFundingSpent(commitment: Commitment, delay_opt: Option[FiniteDuration]): Unit = {
+    val watch = WatchFundingSpent(self, commitment.fundingInput.txid, commitment.fundingInput.index.toInt)
     delay_opt match {
       case Some(delay) => context.system.scheduler.scheduleOnce(delay, blockchain.toClassic, watch)
       case None => blockchain ! watch
@@ -99,9 +98,7 @@ trait CommonFundingHandlers extends CommonHandlers {
         d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, lastAnnouncedFundingTxId_opt).map {
           case (commitments1, commitment) =>
             // First of all, we watch the funding tx that is now confirmed.
-            // Children splice transactions may already spend that confirmed funding transaction.
-            val spliceSpendingTxs = commitments1.all.collect { case c if c.fundingTxIndex == commitment.fundingTxIndex + 1 => c.fundingTxId }
-            watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet, None)
+            watchFundingSpent(commitment, None)
             // We notify listeners that this funding transaction is now confirmed.
             context.system.eventStream.publish(ChannelFundingConfirmed(self, d.channelId, remoteNodeId, w.tx.txid, c.fundingTxIndex, w.blockHeight, commitments1, d.commitments))
             // We can unwatch the previous funding transaction(s), which have been spent by this splice transaction.

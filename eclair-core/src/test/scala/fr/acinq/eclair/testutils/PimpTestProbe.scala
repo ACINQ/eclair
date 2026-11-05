@@ -48,10 +48,9 @@ case class PimpTestProbe(probe: TestProbe) extends Assertions {
     expectForceCloseTx(p.txInfo)(t)
   }
 
-  def expectWatchFundingSpent(txid: TxId, hints_opt: Option[Set[TxId]] = None): WatchFundingSpent =
+  def expectWatchFundingSpent(txid: TxId): WatchFundingSpent =
     expectMsgTypeHaving[WatchFundingSpent](w => {
       assert(w.txId == txid, "txid")
-      hints_opt.foreach(hints => assert(hints == w.hints))
     })
 
   def expectWatchFundingConfirmed(txid: TxId): WatchFundingConfirmed =
