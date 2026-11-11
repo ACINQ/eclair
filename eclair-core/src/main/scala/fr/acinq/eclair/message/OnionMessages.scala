@@ -41,7 +41,8 @@ object OnionMessages {
   case class OnionMessageConfig(relayPolicy: RelayPolicy,
                                 minIntermediateHops: Int,
                                 timeout: FiniteDuration,
-                                maxAttempts: Int)
+                                maxAttempts: Int,
+                                maxConcurrentRelayConnections: Int = 32)
 
   case class IntermediateNode(publicKey: PublicKey, encodedNodeId: EncodedNodeId, outgoingChannel_opt: Option[ShortChannelId] = None, padding: Option[ByteVector] = None, customTlvs: Set[GenericTlv] = Set.empty) {
     def toTlvStream(nextNodeId: EncodedNodeId, nextPathKey_opt: Option[PublicKey] = None): TlvStream[RouteBlindingEncryptedDataTlv] =
@@ -160,6 +161,7 @@ object OnionMessages {
   case class CannotDecryptBlindedPayload(message: String) extends DropReason { override def toString = s"can't decrypt blinded payload: $message" }
   case class CannotDecodeBlindedPayload(message: String) extends DropReason { override def toString = s"can't decode blinded payload: $message" }
   case class TooManyDummyHops(max: Int) extends DropReason { override def toString = s"onion message contains too many dummy hops (max=$max)" }
+  case object TooManyRelayConnections extends DropReason { override def toString = "too many concurrent relay connections" }
   // @formatter:on
 
   case class DecodedOnionPacket(payload: TlvStream[OnionMessagePayloadTlv], next_opt: Option[OnionRoutingPacket])

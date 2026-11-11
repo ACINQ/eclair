@@ -60,6 +60,23 @@ object MessageRelay {
   sealed trait RelayPolicy
   case object RelayChannelsOnly extends RelayPolicy
   case object RelayAll extends RelayPolicy
+
+  // Global semaphore shared by all MessageRelay actors: caps concurrent transient connection
+  // attempts spawned for onion-message relaying (RelayAll policy).
+  private val _connectPermits = new java.util.concurrent.Semaphore(32)
+  @volatile private var _maxConnections = 32
+
+  private[io] def connectPermits(nodeParams: NodeParams): java.util.concurrent.Semaphore = {
+    synchronized {
+      if (_maxConnections != nodeParams.onionMessageConfig.maxConcurrentRelayConnections) {
+        // Config is read once at node startup; resize defensively if it changed between builds/tests.
+        _maxConnections = nodeParams.onionMessageConfig.maxConcurrentRelayConnections
+      }
+    }
+    _connectPermits
+  }
+
+  private[io] def releasePermit(): Unit = _connectPermits.release()
   // @formatter:on
 
   def apply(nodeParams: NodeParams,
@@ -92,6 +109,9 @@ private class MessageRelay(nodeParams: NodeParams,
 
   private var selfHopsCount = 0
   private val log = context.log
+  // One permit per in-flight transient relay connection; released when the connection attempt
+  // resolves (success or failure). Static so the cap is global across all concurrent relays.
+  private val connectPermits = MessageRelay.connectPermits(nodeParams)
 
   def queryNextNodeId(msg: OnionMessage, nextNode: Either[ShortChannelId, EncodedNodeId]): Behavior[Command] = {
     nextNode match {
@@ -154,8 +174,18 @@ private class MessageRelay(nodeParams: NodeParams,
             switchboard ! GetPeerInfo(context.messageAdapter(WrappedPeerInfo), prevNodeId)
             waitForPreviousPeerForPolicyCheck(msg, nodeId)
           case RelayAll =>
-            switchboard ! Peer.Connect(nodeId, None, context.messageAdapter(WrappedConnectionResult).toClassic, isPersistent = false)
-            waitForConnection(msg, nodeId)
+            // Without a global cap, each relayed onion message under RelayAll spawns an outbound
+            // connection attempt to a peer-chosen node id: bounded per-peer, but the sum across
+            // peers is not. Drop (and count) when we're already at the cap.
+            if (!connectPermits.tryAcquire()) {
+              Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.TooManyRelayConnections).increment()
+              log.info("too many concurrent relay connections, dropping onion message messageId={}", msg.messageId_opt.getOrElse(ByteVector32.Zeroes))
+              replyTo_opt.foreach(_ ! DroppedMessage(msg.messageId_opt.getOrElse(ByteVector32.Zeroes), TooManyRelayConnections))
+              Behaviors.stopped
+            } else {
+              switchboard ! Peer.Connect(nodeId, None, context.messageAdapter(WrappedConnectionResult).toClassic, isPersistent = false)
+              waitForConnection(msg, nodeId)
+            }
         }
       case EncodedNodeId.WithPublicKey.Wallet(nodeId) =>
         if (nodeParams.peerWakeUpConfig.enabled) {
@@ -202,11 +232,13 @@ private class MessageRelay(nodeParams: NodeParams,
       case WrappedConnectionResult(r: PeerConnection.ConnectionResult.HasConnection) =>
         log.info("connected to {}: relaying onion message", nextNodeId)
         r.peer ! Peer.RelayOnionMessage(messageId, msg, replyTo_opt)
+        MessageRelay.releasePermit()
         Behaviors.stopped
       case WrappedConnectionResult(f: PeerConnection.ConnectionResult.Failure) =>
         Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.ConnectionFailure).increment()
         log.info("could not connect to {}: {}", nextNodeId, f.toString)
         replyTo_opt.foreach(_ ! ConnectionFailure(messageId, f))
+        MessageRelay.releasePermit()
         Behaviors.stopped
     }
   }
