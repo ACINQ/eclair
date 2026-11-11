@@ -72,6 +72,7 @@ object Monitoring {
       val NoChannelWithPreviousPeer = "NoChannelWithPreviousPeer"
       val NoChannelWithNextPeer = "NoChannelWithNextPeer"
       val ConnectionFailure = "ConnectionFailure"
+      val TooManyRelayConnections = "TooManyRelayConnections"
     }
 
     val OnTheFlyFundingState = "state"

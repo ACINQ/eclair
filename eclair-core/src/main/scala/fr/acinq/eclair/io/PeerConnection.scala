@@ -512,10 +512,18 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
               case _ => "unknown"
             }
             log.error(s"peer sent us a routing message with invalid sig: r=$r bin=$bin")
-            // for now we just send a warning, maybe ban the peer in the future?
-            // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
             d.transport ! Warning(s"invalid announcement sig (bin=$bin)")
-            d.behavior
+            // A flood of invalid signatures pins the router's CPU on ECDSA verification: ignore
+            // network announcements from this peer once the count crosses the threshold, using the
+            // same mechanism (and timer) as the funding-tx-already-spent case above.
+            val invalidSigCount1 = d.behavior.invalidSignatureCount + 1
+            if (d.behavior.ignoreNetworkAnnouncement || invalidSigCount1 < MAX_INVALID_SIGNATURES) {
+              d.behavior.copy(invalidSignatureCount = invalidSigCount1)
+            } else {
+              log.warning(s"peer sent us $invalidSigCount1 routing messages with invalid sigs, ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
+              startSingleTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD)
+              d.behavior.copy(invalidSignatureCount = invalidSigCount1, ignoreNetworkAnnouncement = true)
+            }
           case GossipDecision.InvalidAnnouncement(c) =>
             // they seem to be sending us fake announcements?
             log.error(s"couldn't find funding tx with valid scripts for shortChannelId=${c.shortChannelId}")
@@ -564,7 +572,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
       case Event(ResumeAnnouncements, d: ConnectedData) =>
         log.info(s"resuming processing of network announcements for peer")
-        stay() using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
+        stay() using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false, invalidSignatureCount = 0))
 
       case Event(KillIdle, d: ConnectedData) =>
         if (!d.isPersistent) {
@@ -694,6 +702,7 @@ object PeerConnection {
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD: FiniteDuration = 5 minutes
   val MAX_FUNDING_TX_ALREADY_SPENT = 250
+  val MAX_INVALID_SIGNATURES = 100
 
   def props(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef): Props =
     Props(new PeerConnection(keyPair, conf, switchboard, router))
@@ -789,7 +798,7 @@ object PeerConnection {
 
   case class DelayedRebroadcast(rebroadcast: Rebroadcast)
 
-  case class Behavior(fundingTxAlreadySpentCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
+  case class Behavior(fundingTxAlreadySpentCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false, invalidSignatureCount: Int = 0)
 
   /**
    * Kill the actor and the underlying connection. We can't use a [[PoisonPill]] because it would be dropped when using

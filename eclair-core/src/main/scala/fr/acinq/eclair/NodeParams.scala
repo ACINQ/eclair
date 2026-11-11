@@ -749,6 +749,7 @@ object NodeParams extends Logging {
         minIntermediateHops = config.getInt("onion-messages.min-intermediate-hops"),
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
         maxAttempts = config.getInt("onion-messages.max-attempts"),
+        maxConcurrentRelayConnections = config.getInt("onion-messages.max-concurrent-relay-connections"),
       ),
       purgeInvoicesInterval = purgeInvoicesInterval,
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(

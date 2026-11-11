@@ -31,6 +31,7 @@ import kamon.tag.TagSet
 
 import scala.annotation.tailrec
 import scala.collection.mutable
+import scala.util.Try
 import scala.util.{Failure, Random, Success, Try}
 
 object RouteCalculation {
@@ -236,11 +237,23 @@ object RouteCalculation {
         weight.length <= ROUTE_MAX_LENGTH &&
         weight.cltv <= r.routeParams.boundaries.maxCltv
     }
-    val routes = Graph.routeBlindingPaths(d.graphWithBalances, r.source, r.target, r.amount, r.ignore.channels, r.ignore.nodes, r.pathsToFind, r.routeParams.heuristics, currentBlockHeight, boundaries)
-    if (routes.isEmpty) {
-      r.replyTo ! PaymentRouteNotFound(RouteNotFound)
-    } else {
-      r.replyTo ! RouteResponse(routes.map(route => Route(r.amount, route.path.map(graphEdgeToHop), None)))
+    // A malformed graph can yield NegativeProbability; without this Try the exception escalates
+    // and the BlindedRouteRequest is silently dropped (Resume supervision), leaving the offer
+    // handler waiting until its reply-timeout. Mirrors handleRouteRequest above.
+    Try(Graph.routeBlindingPaths(d.graphWithBalances, r.source, r.target, r.amount, r.ignore.channels, r.ignore.nodes, r.pathsToFind, r.routeParams.heuristics, currentBlockHeight, boundaries)) match {
+      case Success(routes) =>
+        if (routes.isEmpty) {
+          r.replyTo ! PaymentRouteNotFound(RouteNotFound)
+        } else {
+          r.replyTo ! RouteResponse(routes.map(route => Route(r.amount, route.path.map(graphEdgeToHop), None)))
+        }
+      case Failure(failure: NegativeProbability) =>
+        log.error(s"computed negative probability (blinded): edge=${failure.edge}, weight=${failure.weight}")
+        Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "NegativeProbability")).increment()
+        r.replyTo ! PaymentRouteNotFound(failure)
+      case Failure(t) =>
+        Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, t.getClass.getSimpleName)).increment()
+        r.replyTo ! PaymentRouteNotFound(t)
     }
     d
   }
