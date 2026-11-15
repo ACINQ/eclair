@@ -496,7 +496,9 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
           updated <- utxoUpdatePsbt(psbt)
           filled <- processPsbt(updated, sign = false) // just fill input and output HD paths
           _ = checkUnsignedTx(psbt, filled.psbt)
-          signed <- keyManager.sign(filled.psbt, ourInputs, ourOutputs) match {
+          deploymentInfo <- rpcClient.invoke("getdeploymentinfo")
+          unifiedSighash = (deploymentInfo \ "blake2b" \ "height").extractOpt[Long].isDefined
+          signed <- keyManager.sign(filled.psbt, ourInputs, ourOutputs, unifiedSighash) match {
             case Success(signedPsbt) => Future.successful(ProcessPsbtResponse(signedPsbt, signedPsbt.extract().isRight))
             case Failure(error) => Future.failed(error)
           }

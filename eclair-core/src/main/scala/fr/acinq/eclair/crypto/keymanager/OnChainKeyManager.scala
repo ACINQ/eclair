@@ -52,7 +52,8 @@ trait OnChainKeyManager {
    * @param psbt       input psbt
    * @param ourInputs  index of inputs that belong to our on-chain wallet and need to be signed
    * @param ourOutputs index of outputs that belong to our on-chain wallet
+   * @param unifiedSighash whether the selected XBT profile has BLAKE2b scheduled
    * @return a signed psbt, where all our inputs are signed
    */
-  def sign(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int]): Try[Psbt]
+  def sign(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int], unifiedSighash: Boolean = false): Try[Psbt]
 }

@@ -177,7 +177,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     Descriptors(wallet_name = walletName, descriptors = descriptorsBIP84 ++ descriptorsBIP86)
   }
 
-  override def sign(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int]): Try[Psbt] = {
+  override def sign(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int], unifiedSighash: Boolean): Try[Psbt] = {
     for {
       spent <- spentAmount(psbt, ourInputs)
       change <- changeAmount(psbt, ourOutputs)
@@ -187,7 +187,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
       }
       signed <- ourInputs.foldLeft(Try(psbt)) {
         case (Failure(psbt), _) => Failure(psbt)
-        case (Success(psbt), i) => signPsbtInput(psbt, i)
+        case (Success(psbt), i) => signPsbtInput(psbt, i, unifiedSighash)
       }
     } yield signed
   }
@@ -262,13 +262,13 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     }
   }
 
-  private def signPsbtInput(psbt: Psbt, pos: Int): Try[Psbt] = Try {
+  private def signPsbtInput(psbt: Psbt, pos: Int, unifiedSighash: Boolean): Try[Psbt] = Try {
     val input = psbt.getInput(pos)
     require(input != null, s"input $pos is missing from psbt: bitcoin core may be malicious")
-    if (input.getTaprootInternalKey != null) signPsbtInput86(psbt, pos) else signPsbtInput84(psbt, pos)
+    if (input.getTaprootInternalKey != null) signPsbtInput86(psbt, pos, unifiedSighash) else signPsbtInput84(psbt, pos, unifiedSighash)
   }
 
-  private def signPsbtInput84(psbt: Psbt, pos: Int): Psbt = {
+  private def signPsbtInput84(psbt: Psbt, pos: Int, unifiedSighash: Boolean): Psbt = {
     import com.ashbornelabs.bitcoin.xbt.scalacompat.KotlinUtils._
     import com.ashbornelabs.bitcoin.xbt.{Script, SigHash}
 
@@ -284,9 +284,11 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     require(input.getNonWitnessUtxo.getTxid == psbt.global.tx.txIn.get(pos).outPoint.txid, "utxo txid mismatch: bitcoin core may be malicious")
     require(input.getNonWitnessUtxo.txOut.get(psbt.global.tx.txIn.get(pos).outPoint.index.toInt) == input.getWitnessUtxo, "utxo mismatch: bitcoin core may be malicious")
 
-    // We must use SIGHASH_ALL, otherwise we would be vulnerable to "signature reuse" attacks.
-    // When unspecified, the sighash used will be SIGHASH_ALL.
-    require(Option(input.getSighashType).forall(_ == SigHash.SIGHASH_ALL), s"input sighash must be SIGHASH_ALL (got=${input.getSighashType}): bitcoin core may be malicious")
+    // Match Bitcoin Knots: opt into unified sighash whenever BLAKE2b is scheduled for this XBT network.
+    // An unspecified input sighash defaults to SIGHASH_ALL before the fork.
+    val sighashType = if (unifiedSighash) SigHash.SIGHASH_ALL | SigHash.SIGHASH_UNIFIED else SigHash.SIGHASH_ALL
+    val acceptedSighashTypes = if (unifiedSighash) Seq(SigHash.SIGHASH_ALL, sighashType) else Seq(sighashType)
+    require(Option(input.getSighashType).forall(acceptedSighashTypes.contains), s"input sighash must be SIGHASH_ALL${if (unifiedSighash) "|UNIFIED" else ""} (got=${input.getSighashType}): bitcoin core may be malicious")
 
     // Check that we're signing a p2wpkh input and that the keypath is provided and correct.
     require(input.getDerivationPaths.size() == 1, "bip32 derivation path is missing: bitcoin core may be malicious")
@@ -303,14 +305,14 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
         input.getWitnessUtxo,
         null,
         Script.pay2pkh(pub),
-        SigHash.SIGHASH_ALL,
+        sighashType,
         input.getDerivationPaths,
         null,
         null,
         java.util.Map.of())
       .flatMap(_.sign(priv, pos))
       .flatMap(s => {
-        require(s.getSig.last.toInt == SigHash.SIGHASH_ALL, "signature must end with SIGHASH_ALL")
+        require(s.getSig.last.toInt == sighashType, s"signature must end with sighash type $sighashType")
         s.getPsbt.finalizeWitnessInput(pos, Script.witnessPay2wpkh(pub, s.getSig))
       }) match {
       case Right(psbt) => psbt
@@ -318,13 +320,15 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     }
   }
 
-  private def signPsbtInput86(psbt: Psbt, pos: Int): Psbt = {
+  private def signPsbtInput86(psbt: Psbt, pos: Int, unifiedSighash: Boolean): Psbt = {
     import com.ashbornelabs.bitcoin.xbt.SigHash
     import com.ashbornelabs.bitcoin.xbt.scalacompat.KotlinUtils._
 
     val input = psbt.getInput(pos)
     require(input != null, s"input $pos is missing from psbt: bitcoin core may be malicious")
-    require(Option(input.getSighashType).forall(_ == SigHash.SIGHASH_DEFAULT), s"input sighash must be SIGHASH_DEFAULT (got=${input.getSighashType}): bitcoin core may be malicious")
+    val sighashType = if (unifiedSighash) SigHash.SIGHASH_ALL | SigHash.SIGHASH_UNIFIED else SigHash.SIGHASH_DEFAULT
+    val acceptedSighashTypes = if (unifiedSighash) Seq(SigHash.SIGHASH_DEFAULT, sighashType) else Seq(sighashType)
+    require(Option(input.getSighashType).forall(acceptedSighashTypes.contains), s"input sighash must be ${if (unifiedSighash) "SIGHASH_DEFAULT or SIGHASH_ALL|UNIFIED" else "SIGHASH_DEFAULT"} (got=${input.getSighashType}): bitcoin core may be malicious")
 
     // Check that we're signing a p2tr input and that the keypath is provided and correct.
     require(input.getTaprootDerivationPaths.size() == 1, "bip32 derivation path is missing: bitcoin core may be malicious")
@@ -335,10 +339,20 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     val expectedScript = Script.write(Script.pay2tr(pub, KeyPathTweak))
     require(kmp2scala(input.getWitnessUtxo.publicKeyScript) == expectedScript, s"script mismatch (expected=$expectedScript, actual=${input.getWitnessUtxo.publicKeyScript}): bitcoin core may be malicious")
 
-    // No need to update the input, we can directly sign and finalize.
+    // Set the explicit XBT sighash when the fork is scheduled; the PSBT library requires spent outputs for this digest.
     psbt
-      .sign(priv, pos)
-      .flatMap(s => s.getPsbt.finalizeWitnessInput(pos, Script.witnessKeyPathPay2tr(ByteVector64(s.getSig), SigHash.SIGHASH_DEFAULT))) match {
+      .updateWitnessInput(
+        psbt.global.tx.txIn.get(pos).outPoint,
+        input.getWitnessUtxo,
+        null,
+        null,
+        sighashType,
+        input.getDerivationPaths,
+        null,
+        input.getTaprootInternalKey,
+        input.getTaprootDerivationPaths)
+      .flatMap(_.sign(priv, pos))
+      .flatMap(s => s.getPsbt.finalizeWitnessInput(pos, Script.witnessKeyPathPay2tr(ByteVector64(s.getSig), sighashType))) match {
       case Right(psbt) => psbt
       case Left(failure) => throw new RuntimeException(s"cannot sign psbt input at position $pos, error = $failure")
     }
