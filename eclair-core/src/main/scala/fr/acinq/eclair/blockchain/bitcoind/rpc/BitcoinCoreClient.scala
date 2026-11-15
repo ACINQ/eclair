@@ -306,6 +306,12 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
       case Some(sighash) if sighash == (SigHash.SIGHASH_ALL | SigHash.SIGHASH_ANYONECANPAY) => Some("ALL|ANYONECANPAY")
       case Some(sighash) if sighash == (SigHash.SIGHASH_NONE | SigHash.SIGHASH_ANYONECANPAY) => Some("NONE|ANYONECANPAY")
       case Some(sighash) if sighash == (SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY) => Some("SINGLE|ANYONECANPAY")
+      case Some(sighash) if sighash == (SigHash.SIGHASH_ALL | SigHash.SIGHASH_UNIFIED) => Some("ALL|UNIFIED")
+      case Some(sighash) if sighash == (SigHash.SIGHASH_ALL | SigHash.SIGHASH_ANYONECANPAY | SigHash.SIGHASH_UNIFIED) => Some("ALL|ANYONECANPAY|UNIFIED")
+      case Some(sighash) if sighash == (SigHash.SIGHASH_NONE | SigHash.SIGHASH_UNIFIED) => Some("NONE|UNIFIED")
+      case Some(sighash) if sighash == (SigHash.SIGHASH_NONE | SigHash.SIGHASH_ANYONECANPAY | SigHash.SIGHASH_UNIFIED) => Some("NONE|ANYONECANPAY|UNIFIED")
+      case Some(sighash) if sighash == (SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_UNIFIED) => Some("SINGLE|UNIFIED")
+      case Some(sighash) if sighash == (SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY | SigHash.SIGHASH_UNIFIED) => Some("SINGLE|ANYONECANPAY|UNIFIED")
       case _ => return Future.failed(new IllegalArgumentException(s"invalid sighash flag $sighashType"))
     }
     val encoded = Base64.getEncoder.encodeToString(Psbt.write(psbt).toByteArray)
