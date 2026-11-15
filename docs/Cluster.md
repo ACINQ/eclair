@@ -38,7 +38,7 @@ The goal is to offload your node from connection and routing table management:
 
 ### Prerequisite
 
-You already have a lightning node up and running in a standalone setup (with Bitcoin Core properly configured, etc.).
+You already have an XBT Lightning node running in a standalone setup with XBT Knots configured.
 
 You know what your `node id` is.
 
@@ -159,7 +159,7 @@ If you intend to use it in production, you need to enable encryption with your o
 2. We recommend forking the project and building your own bundle:
 
 ```shell
-$ git clone git@github.com:ACINQ/eclair.git
+$ git clone git@github.com:ashbornelabs/eclair-xbt.git
 $ vi eclair-core/src/main/reference.conf # set akka.remote.artery.transport = "tls-tcp"
 $ cp akka-cluster-tls.jks eclair-front/modules/awseb/ # copy the file you generated
 $ vi eclair-front/modules/awseb.xml # uncomment the relevant parts

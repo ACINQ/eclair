@@ -1,7 +1,8 @@
-# Contributing to Eclair
+# Contributing to XBT Eclair
 
 Eclair welcomes contributions in the form of peer review, testing and patches.
 This document explains the practical process and guidelines for contributing.
+This fork supports the XBT chain through XBT Knots; contributions must preserve that operating boundary.
 
 While developing a Lightning implementation is an exciting project that spans many domains
 (cryptography, peer-to-peer networking, databases, etc), contributors must keep in mind that this
@@ -9,20 +10,20 @@ represents real money and introducing bugs or security vulnerabilities can have 
 consequences than in typical projects. In the world of cryptocurrencies, even the smallest bug in
 the wrong area can cost users a significant amount of money.
 
-If you're looking for somewhere to start contributing, check out the [good first issue](https://github.com/acinq/eclair/issues?q=is%3Aopen+is%3Aissue+label%3A"good+first+issue") list.
+If you're looking for somewhere to start contributing, check the [open issues](https://github.com/ashbornelabs/eclair-xbt/issues).
 
 Another way to start contributing is by adding tests or improving them.
 This will help you understand the different parts of the codebase and how they work together.
 
 ## Communicating
 
-We recommend using the [developers channel](https://github.com/ACINQ/eclair/discussions/categories/developers).
+We recommend using [this fork's Discussions](https://github.com/ashbornelabs/eclair-xbt/discussions).
 Introducing yourself and explaining what you'd like to work on is always a good idea: you will get
 some pointers and feedback from experienced contributors. It will also ensure that you're not
 duplicating work that someone else is doing.
 
 We use Github issues only for, well, issues (mostly bugs that need to be investigated).
-You can also use Github issues for [feature requests](https://github.com/acinq/eclair/issues?q=is%3Aissue+label%3A"feature+request").
+You can also use this repository's issues for feature requests and bug reports.
 
 ## Recommended Reading
 

@@ -57,24 +57,25 @@ name                         | description                                      
  eclair.api.port             | API HTTP port                                                        | 8080
  eclair.api.enabled          | Enables the JSON API                                                 | false
  eclair.api.password         | Password protecting the API (BASIC auth)                             | _no default_
- eclair.bitcoind.auth        | Bitcoin Core RPC authentication method: *password* or *safecookie*   | password
- eclair.bitcoind.rpcuser     | Bitcoin Core RPC user                                                | foo
- eclair.bitcoind.rpcpassword | Bitcoin Core RPC password                                            | bar
- eclair.bitcoind.cookie      | Bitcoin Core RPC cookie path                                         | ${user.home}"/.bitcoin/.cookie"
- eclair.bitcoind.zmqblock    | Bitcoin Core ZMQ block address                                       | "tcp://127.0.0.1:29000"
- eclair.bitcoind.zmqtx       | Bitcoin Core ZMQ tx address                                          | "tcp://127.0.0.1:29000"
- eclair.bitcoind.wallet      | Bitcoin Core wallet name                                             | ""
+ eclair.bitcoind.auth        | XBT Knots RPC authentication method: *password* or *safecookie*      | password
+ eclair.bitcoind.rpcuser     | XBT Knots RPC user                                                   | foo
+ eclair.bitcoind.rpcpassword | XBT Knots RPC password                                               | bar
+ eclair.bitcoind.cookie      | XBT Knots RPC cookie path                                            | ${user.home}"/.bitcoin/.cookie"
+ eclair.bitcoind.zmqblock    | XBT Knots ZMQ block address                                          | "tcp://127.0.0.1:29000"
+ eclair.bitcoind.zmqtx       | XBT Knots ZMQ transaction address                                    | "tcp://127.0.0.1:29000"
+ eclair.bitcoind.wallet      | XBT Knots wallet name                                                | ""
  eclair.server.public-ips    | List of node public ip                                               | _no default_
 
-&rarr; see [`reference.conf`](https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf) for full reference. There are many more options!
+&rarr; see [`reference.conf`](../eclair-core/src/main/resources/reference.conf) for the full reference.
 
 ### Network identity
 
-Eclair keeps the Bitcoin and Lightning network identities separate through a
+Eclair keeps the XBT chain and Lightning network identities separate through a
 network profile:
 
-* `bitcoinGenesisHash` identifies the Bitcoin chain returned by Bitcoin Core's
-  `getblockhash 0` and is used for Bitcoin Core validation and address decoding.
+* `bitcoinGenesisHash` identifies the XBT chain genesis hash returned by the
+  selected XBT Knots node's `getblockhash 0`; Eclair uses it for node validation
+  and address decoding.
 * `lightningChainHash` identifies the Lightning network used in protocol
   messages, channel state, gossip, invoices, and offers.
 
@@ -103,8 +104,8 @@ Eclair also invokes these required startup RPC methods:
 * `listunspent`
 
 Compatibility is determined by the selected XBT profile, reported consensus
-schedule, genesis identity, Knots software marker, and required RPC behavior; it
-does not depend on a Bitcoin Core release-number threshold. Regtest keeps the
+schedule, genesis identity, Knots software marker, and required RPC behavior.
+Regtest keeps the
 BLAKE2b fork and reduced-data deployment unscheduled by default, matching Knots.
 The current `getdeploymentinfo` RPC does not expose the BLAKE2b target shift, so
 Eclair uses the target shift pinned in its selected XBT profile and cannot
@@ -113,7 +114,7 @@ compare that value with the running node through startup RPC.
 ## Customize features
 
 Eclair ships with a set of features that are activated by default, and some experimental or optional features that can be activated by users.
-The list of supported features can be found in the [reference configuration](https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf).
+The list of supported features can be found in the [reference configuration](../eclair-core/src/main/resources/reference.conf).
 
 To enable a non-default feature, you simply need to add the following to your `eclair.conf`:
 
@@ -195,7 +196,7 @@ option_channel_type = mandatory
 
 ## Customize feerate tolerance
 
-In order to secure your channels' funds against attacks, your eclair node keeps an up-to-date estimate of on-chain feerates (based on your Bitcoin node's estimations).
+To protect your channel funds, Eclair keeps an up-to-date estimate of on-chain fees based on the configured XBT Knots node or fee provider.
 When that estimate deviates from what your peers estimate, eclair may automatically close channels that are at risk to guarantee the safety of your funds.
 
 Since predicting the future is hard and imperfect, eclair has a tolerance for deviations, governed by the following parameters:
@@ -259,7 +260,7 @@ eclair.api.port=8080
 
 ### Regtest mode
 
-To run with Bitcoin's `regtest` mode, you need to set the `chain` reference:
+To run with XBT Knots' `regtest` mode, set the `chain` option:
 
 ```conf
 eclair.chain = "regtest"
@@ -277,20 +278,18 @@ eclair.server.public-ips=[x.x.x.x]
 
 You'll also have to make sure the node is accessible from the outside world (port forwarding, firewall,...).
 
-### Bitcoin Core cookie authentication
+### XBT Knots cookie authentication
 
-If you run Eclair and Bitcoin on the same computer an alternative way to handle the Bitcoin Core RPC authentication.
-is to use the safecookie. To use safecookie authentication, you need to remove `rpcpassword=***` and `rpcuser=***` from your `bitcoin.conf` and add the following to `eclair.conf`:
+If Eclair and XBT Knots run on the same computer, you can use cookie authentication. Remove `rpcpassword=***` and `rpcuser=***` from XBT Knots' `bitcoin.conf` and add the following to `eclair.conf`:
 
 ```conf
 eclair.bitcoind.auth = "safecookie"
 eclair.bitcoind.cookie = "PATH TO THE COOKIE FILE"
 ```
 
-Setting `eclair.bitcoind.cookie` might not be necessary if Bitcoin is running on mainnet and using the default datadir.
+Setting `eclair.bitcoind.cookie` may not be necessary when XBT Knots uses its default datadir.
 
-Eclair will need read access to Bitcoin Core's cookie file.
-You can either run Eclair and Bitcoin Core with the same user, or grant read permissions to the Eclair user.
+Eclair needs read access to XBT Knots' cookie file. Run both processes as the same user or grant the Eclair user read access.
 
 ### AB-testing for path-finding
 

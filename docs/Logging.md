@@ -16,7 +16,7 @@ If you want parts of the application to log at the `DEBUG` logging level, you wi
 eclair-node.sh -Dakka.loglevel=DEBUG -Dlogback.configurationFile=/path/to/logback-custom.xml
 ```
 
-You can find the default `logback.xml` file [here](https://github.com/ACINQ/eclair/blob/master/eclair-node/src/main/resources/logback.xml). It logs everything more serious than `INFO` to a rolling file.
+You can find the default `logback.xml` file [here](../eclair-node/src/main/resources/logback.xml). It logs everything more serious than `INFO` to a rolling file.
 
 If you want to debug an issue, you can change the root logger's log level to `DEBUG`:
 
@@ -46,7 +46,7 @@ On the contrary, if you want a component to emit less logs, you can set its log 
 </root>
 ```
 
-To figure out the `name` you should use for the `logger` element, you need to look at the hierarchy of the source code in Eclair's [Github repository](https://github.com/ACINQ/eclair). You can even configure loggers for each specific class you're interested in:
+To figure out the `name` you should use for the `logger` element, look at the source hierarchy in [this repository](https://github.com/ashbornelabs/eclair-xbt). You can configure loggers for specific classes as well:
 
 ```xml
 <logger name="fr.acinq.eclair.router" level="WARN"/>

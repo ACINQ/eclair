@@ -206,7 +206,7 @@ Let's describe some channel operations and see which actors are involved.
 When we open a channel:
 
 - we exchange messages with our peer
-- we use funds from our on-chain bitcoin wallet
+- we use funds from our XBT Knots wallet
 - we start watching on-chain transactions to ensure our peer doesn't cheat us
 
 ```ascii

@@ -1,10 +1,8 @@
-# Using Eclair to manage your Bitcoin Core wallet's private keys
+# Using Eclair to manage XBT Knots wallet keys
 
-You can configure Eclair to control (and never expose) the private keys of your Bitcoin Core wallet. This feature was designed to take advantage of deployment where your Eclair node runs in a
-"trusted" runtime environment, but is also very useful if your Bitcoin and Eclair nodes run on different machines for example, with a setup for the Bitcoin host that
-is less secure than for Eclair (because it is shared among several services for example).
+You can configure Eclair to control (and never expose) the private keys for your XBT Knots wallet. This feature is useful when Eclair and XBT Knots run on separate machines or in different security environments.
 
-## Configuring Eclair and Bitcoin Core to use a new Eclair-backed bitcoin wallet
+## Configuring Eclair and XBT Knots to use an Eclair-backed wallet
 
 Follow these steps to delegate on-chain key management to eclair:
 
@@ -21,7 +19,7 @@ A signer configuration file uses the HOCON format that we already use for `eclai
  eclair.signer.wallet     | wallet name                                                                                                                                                                                                                              
  eclair.signer.mnemonics  | BIP39 mnemonic words                                                                                                                                                                                                                     
  eclair.signer.passphrase | passphrase                                                                                                                                                                                                                               
- eclair.signer.timestamp  | wallet creation UNIX timestamp. Bitcoin core will rescan the blockchain from this UNIX timestamp. Set it to the wallet creation timestamp for simplicity, or a later date if you only have recent UTXOs and you know what you are doing. 
+ eclair.signer.timestamp  | wallet creation UNIX timestamp. XBT Knots rescans from this time. Use the wallet creation time, or a later time only if you know older UTXOs are not needed.
 
 This is an example of `eclair-signer.conf` configuration file:
 
@@ -38,11 +36,11 @@ This is an example of `eclair-signer.conf` configuration file:
 }
 ```
 
-### 3. Use Eclair to generate descriptors and import them into a new bitcoin wallet
+### 3. Use Eclair to generate descriptors and import them into a new XBT Knots wallet
 
-Restart eclair, without changing `eclair.bitcoind.wallet` (so it uses the default wallet or the previously used bitcoin wallet for existing nodes).
+Restart Eclair without changing `eclair.bitcoind.wallet`, so it continues using the default wallet or the wallet already associated with your channels.
 
-Create a new empty, descriptor-enabled wallet on your new Bitcoin Core node.
+Create a new empty, descriptor-enabled wallet on your XBT Knots node.
 
 :warning: The name must match the one that you set in `eclair-signer.conf` (here we use "eclair")
 
@@ -50,24 +48,22 @@ Create a new empty, descriptor-enabled wallet on your new Bitcoin Core node.
 $ bitcoin-cli -named createwallet wallet_name=eclair disable_private_keys=true blank=true descriptors=true load_on_startup=true
 ```
 
-Generate the descriptors with your Eclair node and import them into a Bitcoin node with the following commands:
+Generate the descriptors with Eclair and import them into the XBT Knots wallet with the following commands. The Knots command-line client is named `bitcoin-cli`:
 
 ```shell
 $ eclair-cli getdescriptors | jq --raw-output -c > descriptors.json
 $ cat descriptors.json | xargs -0 bitcoin-cli -rpcwallet=eclair importdescriptors
 ```
 
-Bitcoin core will import descriptors and rescan the blockchain from the time set in `eclair-signer.conf`.
-This can take a long time (if you're moving an old existing node to a new setup for example) and your Bitcoin Core node will not be usable until it's done.
+XBT Knots imports the descriptors and rescans the XBT chain from the time set in `eclair-signer.conf`. This can take a long time, and the wallet is not usable until the rescan completes.
 
 ### 4. Configure Eclair to use the wallet you created and restart Eclair
 
 In your `eclair.conf`, set `eclair.bitcoind.wallet` to the name of the wallet in `eclair-signer.conf`, and restart Eclair.
 
-You now have a Bitcoin Core watch-only wallet for which only your Eclair node can sign transactions. This Bitcoin Core wallet can
-safely be copied to another Bitcoin Core node to monitor your on-chain funds.
+You now have an XBT Knots watch-only wallet for which only Eclair can sign transactions. Back up the wallet and Eclair signer data according to your recovery plan.
 
-:warning: this means that your Bitcoin Core wallet cannot send funds on its own (since it cannot access private keys to sign transactions).
+:warning: the XBT Knots watch-only wallet cannot send funds by itself because it does not have private signing keys.
 To send funds on-chain you must use `eclair-cli sendonchain`.
 
 :warning: to backup the private keys of this wallet you must either backup your mnemonic code and passphrase, or backup the `eclair-signer.conf` file in your eclair
@@ -76,5 +72,4 @@ directory (default is `~/.eclair`) along with your channels and node seed files.
 :warning: You can also initialize a backup on-chain wallet with the same mnemonic code and passphrase (on a hardware wallet for example), but be warned that using them may interfere with your node's operations (for example you may end up
 double-spending funding transactions generated by your node).
 
-You can also use `eclair-cli getmasterxpub` to get a BIP32 extended public key that you can import into any compatible Bitcoin wallet
-to create a watch-only wallet (Electrum for example) that you can use to monitor your Bitcoin Core balance.
+You can also use `eclair-cli getmasterxpub` to obtain a BIP32 extended public key for a compatible XBT watch-only wallet.

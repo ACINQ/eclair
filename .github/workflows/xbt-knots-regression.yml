@@ -1,4 +1,4 @@
-name: Latest Bitcoin Core
+name: XBT Knots regression tests
 
 on:
   workflow_dispatch: # Build can be triggered manually from github.com
@@ -15,13 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - name: Checkout bitcoind master
+      - name: Checkout pinned XBT Knots release
         uses: actions/checkout@v3
         with:
-          repository: bitcoin/bitcoin
+          repository: bitcoinknots/bitcoin
+          ref: v29.4.3.knots20260508
           path: bitcoin
 
-      - name: Install bitcoind dependencies
+      - name: Install XBT Knots build dependencies
         run: sudo apt-get install build-essential cmake pkg-config bsdmainutils python3 libevent-dev libboost-dev libminiupnpc-dev libnatpmp-dev libzmq3-dev libsqlite3-dev systemtap-sdt-dev
         working-directory: ./bitcoin
 
@@ -29,7 +30,7 @@ jobs:
         run: cmake -B build -DWITH_ZMQ=ON -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTS=OFF -DBUILD_BENCH=OFF -DENABLE_IPC=OFF
         working-directory: ./bitcoin
 
-      - name: Build bitcoind
+      - name: Build XBT Knots
         run: cmake --build build "-j $(($(nproc)))"
         working-directory: ./bitcoin
 
@@ -44,9 +45,33 @@ jobs:
           java-version: 21
           distribution: 'adopt'
 
+      - name: Checkout bitcoin-kmp
+        uses: actions/checkout@v3
+        with:
+          repository: ashbornelabs/bitcoin-kmp
+          ref: a527df51cfc242134f627912d14836856e8c4026
+          path: bitcoin-kmp
+          persist-credentials: false
+
+      - name: Publish bitcoin-kmp to the local Maven repository
+        run: ./gradlew publishToMavenLocal
+        working-directory: ./bitcoin-kmp
+
+      - name: Checkout bitcoin-xbt-lib
+        uses: actions/checkout@v3
+        with:
+          repository: ashbornelabs/bitcoin-xbt-lib
+          ref: eaec7b4e3b6e663f18865f81f29d782557bfaa34
+          path: bitcoin-xbt-lib
+          persist-credentials: false
+
+      - name: Install bitcoin-xbt-lib to the local Maven repository
+        run: ./mvnw install -DskipTests
+        working-directory: ./bitcoin-xbt-lib
+
       - name: Configure OS settings
         run: echo "fs.file-max = 1024000" | sudo tee -a /etc/sysctl.conf
 
-      - name: Run eclair tests
+      - name: Run Eclair tests with XBT Knots
         run: BITCOIND_DIR=$GITHUB_WORKSPACE/bitcoin/build/bin ./mvnw test
         working-directory: ./eclair

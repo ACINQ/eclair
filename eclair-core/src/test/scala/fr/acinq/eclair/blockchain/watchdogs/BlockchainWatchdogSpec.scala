@@ -28,6 +28,11 @@ import scala.concurrent.duration.DurationInt
 
 class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
 
+  test("external watchdog sources are disabled by default") {
+    val sources = ConfigFactory.load("application").getStringList("eclair.blockchain-watchdog.sources")
+    assert(sources.isEmpty)
+  }
+
   test("ignore Bitcoin-only watchdog sources in the XBT runtime") {
     val nodeParams = TestConstants.Alice.nodeParams.copy(
       chainHash = Block.LivenetGenesisBlock.hash,

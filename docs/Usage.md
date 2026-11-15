@@ -13,7 +13,7 @@ Then you'll have to install jq:
 
 ## eclair-cli installation
 
-- Download the eclair-cli file from [our sources](https://github.com/ACINQ/eclair/blob/master/eclair-core/eclair-cli)
+- Download `eclair-cli` from [this XBT Eclair repository](https://github.com/ashbornelabs/eclair-xbt/blob/master/eclair-core/eclair-cli)
 - (optional) Move the file to `~/bin`
 - Enable the [JSON API](./API.md) in your `eclair.conf` settings.
 
@@ -33,47 +33,45 @@ sudo apt-get install jq
 
 ## Example 1: open a channel with eclair-cli
 
-Your node listens on 8081. You want to open a 140 mBTC channel with `endurance.acinq.co` on Testnet.
+Your node listens on 8081. To open a channel, use a peer URI and node ID from a peer on the same XBT Lightning network as your Eclair node.
 
-First connect to the endurance node:
-
-```shell
-eclair-cli connect --uri=03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134@endurance.acinq.co:9735
-```
-
-Then open a channel with endurance:
+Connect to the XBT peer:
 
 ```shell
-eclair-cli open --nodeId=03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134 --fundingSatoshis=14000000
+eclair-cli connect --uri=NODE_ID@XBT_PEER_HOST:9735
 ```
 
-This will broadcast a funding transaction to the bitcoin blockchain.
+Then open a channel with that peer:
+
+```shell
+eclair-cli open --nodeId=NODE_ID --fundingSatoshis=14000000
+```
+
+This broadcasts a funding transaction to the XBT chain.
 Once that transaction is confirmed, your lightning channel will be ready for off-chain payments.
 
 :warning: You should NEVER use RBF to bump the fees of that funding transaction, otherwise you won't be able to recover your funds unless your peer cooperates. If the transaction doesn't confirm, you should use CPFP to bump the fees.
 
 ## Example 2: pay an invoice with eclair-cli
 
+Use an invoice created by a peer on the configured XBT Lightning network:
+
 ```shell
-eclair-cli payinvoice --invoice=lntb17u1pdthhsdpp5z5am8.......
+eclair-cli payinvoice --invoice=INVOICE_FROM_XBT_PEER
 ```
 
-## Example 3: generate a payment request for 1 mBTC
+## Example 3: generate a payment request for 1 mXBT
 
 ```shell
-eclair-cli createinvoice --amountMsat=100000000 --description="my first invoice" | jq .serialized
+eclair-cli createinvoice --amountMsat=100000000 --description="my first XBT invoice" | jq .serialized
 ```
 
-This command will return a lightning payment request, such as:
+This command returns a payment request for the configured XBT Lightning network. Do not use Bitcoin-chain invoices.
+
+You can inspect the returned request with `parseinvoice`:
 
 ```shell
-lntb1m1pdthhh0pp5063r8hu6f6hk7tpauhgvl3nnf4ur3xntcnhujcz5w82yq7nhjuysdq6d4ujqenfwfehggrfdemx76trv5xqrrss6uxhewtmjkumpr7w6prkgttku76azfq7l8cx9v74pcv85hzyvs9n23dhu9u354xcqpnzey45ua3g2m4dywuw7udrt2sdsvjf3rawdqcpas9mah
-```
-
-You can check this invoice with the `parseinvoice` command:
-
-```shell
-eclair-cli parseinvoice --invoice=lntb1m1pdthhh0pp5063r8hu6f6hk7tpauhgvl3nnf4ur3xntcnhujcz5w82yq7nhjuysdq6d4ujqenfwfehggrfdemx76trv5xqrrss6uxhewtmjkumpr7w6prkgttku76azfq7l8cx9v74pcv85hzyvs9n23dhu9u354xcqpnzey45ua3g2m4dywuw7udrt2sdsvjf3rawdqcpas9mah
+eclair-cli parseinvoice --invoice=INVOICE_FROM_XBT_PEER
 ```
 
 Which will breakdown the invoice in human readable data.

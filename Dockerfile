@@ -1,5 +1,18 @@
 FROM eclipse-temurin:21-jdk-noble as BUILD
 
+# Build the pinned XBT Bitcoin dependencies into this image's local Maven repository.
+ARG BITCOIN_KMP_COMMIT=a527df51cfc242134f627912d14836856e8c4026
+ARG BITCOIN_XBT_LIB_COMMIT=eaec7b4e3b6e663f18865f81f29d782557bfaa34
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+WORKDIR /usr/src/dependencies
+RUN git clone https://github.com/ashbornelabs/bitcoin-kmp.git && \
+    cd bitcoin-kmp && git checkout "$BITCOIN_KMP_COMMIT" && \
+    ./gradlew publishToMavenLocal
+RUN git clone https://github.com/ashbornelabs/bitcoin-xbt-lib.git && \
+    cd bitcoin-xbt-lib && git checkout "$BITCOIN_XBT_LIB_COMMIT" && \
+    ./mvnw install -DskipTests
+WORKDIR /usr/src
+
 # Let's fetch eclair dependencies, so that Docker can cache them
 # This way we won't have to fetch dependencies again if only the source code changes
 # The easiest way to reliably get dependencies is to build the project with no sources

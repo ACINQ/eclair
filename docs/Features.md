@@ -1,7 +1,7 @@
 # Customize Features
 
 Eclair ships with a set of features that are activated by default, and some experimental or optional features that can be activated by users.
-The list of supported features can be found in the [reference configuration](https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf).
+The list of supported features can be found in the [reference configuration](../eclair-core/src/main/resources/reference.conf).
 
 To enable a non-default feature, you simply need to add the following to your `eclair.conf`:
 

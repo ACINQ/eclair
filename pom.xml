@@ -29,22 +29,22 @@
         <module>eclair-node</module>
     </modules>
 
-    <description>A scala implementation of the Lightning Network</description>
-    <url>https://github.com/ACINQ/eclair</url>
+    <description>An XBT-only Eclair implementation of the Lightning Network</description>
+    <url>https://github.com/ashbornelabs/eclair-xbt</url>
     <name>${project.artifactId}</name>
 
     <licenses>
         <license>
-            <url>https://raw.githubusercontent.com/ACINQ/eclair/master/LICENSE</url>
+            <url>https://raw.githubusercontent.com/ashbornelabs/eclair-xbt/master/LICENSE</url>
             <name>Apache License</name>
             <distribution>repo</distribution>
         </license>
     </licenses>
 
     <scm>
-        <connection>scm:git:git@github.com:ACINQ/eclair.git</connection>
-        <developerConnection>scm:git:git@github.com:ACINQ/eclair.git</developerConnection>
-        <url>git@github.com:ACINQ/eclair.git</url>
+        <connection>scm:git:git@github.com:ashbornelabs/eclair-xbt.git</connection>
+        <developerConnection>scm:git:git@github.com:ashbornelabs/eclair-xbt.git</developerConnection>
+        <url>git@github.com:ashbornelabs/eclair-xbt.git</url>
     </scm>
 
     <developers>

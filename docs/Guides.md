@@ -4,7 +4,7 @@ This section contains how-to guides for more advanced scenarios:
 
 * [Customize Logging](./Logging.md)
 * [Customize Features](./Features.md)
-* [Manage Bitcoin Core's private keys](./ManagingBitcoinCoreKeys.md)
+* [Manage XBT Knots wallet keys](./ManagingXbtKnotsKeys.md)
 * [Use Tor with Eclair](./Tor.md)
 * [Multipart Payments](./MultipartPayments.md)
 * [Monitoring Eclair](./Monitoring.md)

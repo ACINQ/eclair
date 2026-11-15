@@ -37,17 +37,17 @@
                 <version>1.6.8</version>
                 <executions>
                     <execution>
-                        <id>download-bitcoind</id>
+                        <id>download-xbt-knots</id>
                         <phase>generate-test-resources</phase>
                         <goals>
                             <goal>wget</goal>
                         </goals>
                         <configuration>
                             <skip>${maven.test.skip}</skip>
-                            <url>${bitcoind.url}</url>
+                            <url>${xbtknots.url}</url>
                             <unpack>true</unpack>
                             <outputDirectory>${project.build.directory}</outputDirectory>
-                            <sha256>${bitcoind.sha256}</sha256>
+                            <sha256>${xbtknots.sha256}</sha256>
                         </configuration>
                     </execution>
                 </executions>
@@ -85,8 +85,8 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-31.1/bitcoin-31.1-x86_64-linux-gnu.tar.gz</bitcoind.url>
-                <bitcoind.sha256>b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e</bitcoind.sha256>
+                <xbtknots.url>https://github.com/bitcoinknots/bitcoin/releases/download/v29.4.3.knots20260508/bitcoin-29.4.3.knots20260508-x86_64-linux-gnu.tar.gz</xbtknots.url>
+                <xbtknots.sha256>4c67f1139b668fc3b98e339dd16112c636b2c0f42c2294b98fb92d1d27943e24</xbtknots.sha256>
             </properties>
         </profile>
         <profile>
@@ -97,8 +97,8 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-31.1/bitcoin-31.1-x86_64-apple-darwin.tar.gz</bitcoind.url>
-                <bitcoind.sha256>bc506958d0f387c1ea770bdc7c7192a505fa645ff62cabcc7761fa7eb89e867e</bitcoind.sha256>
+                <xbtknots.url>https://github.com/bitcoinknots/bitcoin/releases/download/v29.4.3.knots20260508/bitcoin-29.4.3.knots20260508-x86_64-apple-darwin.tar.gz</xbtknots.url>
+                <xbtknots.sha256>43fc171bba9b54944b69790ea77bb81b4214ec1f8b54862dd927a380fbcb9d57</xbtknots.sha256>
             </properties>
         </profile>
         <profile>
@@ -109,8 +109,8 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-31.1/bitcoin-31.1-win64.zip</bitcoind.url>
-                <bitcoind.sha256>c99ef173471c58e6766d9eebd12e6c35349082eeed3939bc99eed58ef57db587</bitcoind.sha256>
+                <xbtknots.url>https://github.com/bitcoinknots/bitcoin/releases/download/v29.4.3.knots20260508/bitcoin-29.4.3.knots20260508-win64-pgpverifiable.zip</xbtknots.url>
+                <xbtknots.sha256>3035ee70d108f6ff7fa76b99df9e261181da34a471b30946cf5a1e5e504ec709</xbtknots.sha256>
             </properties>
         </profile>
     </profiles>

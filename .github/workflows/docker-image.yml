@@ -1,4 +1,4 @@
-name: Docker Image CI
+name: Build XBT Eclair Docker image
 
 on:
   push:
@@ -11,15 +11,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - name: docker login
-      uses: docker/login-action@v2
-      with:
-        username: ${{ secrets.DOCKER_USER }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-    
-    - name: build the Docker image
-      run: docker build -t acinq/eclair .
-      
-    - name: docker push
-      run: docker push acinq/eclair 
+    - uses: actions/checkout@v4
+    - name: Build the XBT Eclair image
+      run: docker build -t eclair-xbt:ci .

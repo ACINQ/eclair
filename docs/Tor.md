@@ -147,7 +147,7 @@ eclair.socks5.randomize-credentials = true
 :warning: Tor hidden service and SOCKS5 are independent options. You can use just one of them, but if you want to get most privacy
 features from using Tor, use both.
 
-Note, that bitcoind should be configured to use Tor as well (https://en.bitcoin.it/wiki/Setting_up_a_Tor_hidden_service).
+If XBT Knots is remote, protect RPC and ZMQ connections with an authenticated, encrypted tunnel. Tor settings for Eclair do not make Bitcoin-only chain services compatible with XBT.
 
 ### Blockchain watchdogs
 

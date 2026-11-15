@@ -20,21 +20,41 @@ jobs:
       with:
         java-version: 21
         distribution: 'adopt'
-      
+
     - name: Cache Maven dependencies
       uses: actions/cache@v3
       with:
         path: ~/.m2
         key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
         restore-keys: ${{ runner.os }}-m2
+
+    - name: Checkout bitcoin-kmp
+      uses: actions/checkout@v4
+      with:
+        repository: ashbornelabs/bitcoin-kmp
+        ref: a527df51cfc242134f627912d14836856e8c4026
+        path: bitcoin-kmp
+        persist-credentials: false
+
+    - name: Publish bitcoin-kmp to the local Maven repository
+      run: ./gradlew publishToMavenLocal
+      working-directory: bitcoin-kmp
+
+    - name: Checkout bitcoin-xbt-lib
+      uses: actions/checkout@v4
+      with:
+        repository: ashbornelabs/bitcoin-xbt-lib
+        ref: eaec7b4e3b6e663f18865f81f29d782557bfaa34
+        path: bitcoin-xbt-lib
+        persist-credentials: false
+
+    - name: Install bitcoin-xbt-lib to the local Maven repository
+      run: ./mvnw install -DskipTests
+      working-directory: bitcoin-xbt-lib
         
     - name: Configure OS settings
       run: echo "fs.file-max = 1024000" | sudo tee -a /etc/sysctl.conf
 
-    # NB: we exclude external API tests from the CI, because we don't want our build to fail because a dependency is failing.
-    # This means we won't automatically catch changes in external APIs, but developers should regularly run the test suite locally so in practice it shouldn't be a problem.
+    # This PR check validates compilation and packaging. The XBT Knots regression workflow runs the test suite.
     - name: Build with Maven
-      run: ./mvnw package -DskipTests && ./mvnw scoverage:report -DtagsToExclude=external-api -Daether.artifactResolver.postProcessor.trustedChecksums=false
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+      run: ./mvnw package -DskipTests

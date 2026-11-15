@@ -99,5 +99,5 @@ metrics are just a small sample of all the metrics we provide:
 * Number of local channels, grouped by their current state (offline, normal, closing, etc)
 * Relayed payments and fees collected
 * Number of connected peers
-* Bitcoin wallet balance
+* XBT Knots wallet balance
 * Various metrics about the public graph (nodes, channels, updates, etc)
