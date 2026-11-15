@@ -352,7 +352,18 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
         input.getTaprootInternalKey,
         input.getTaprootDerivationPaths)
       .flatMap(_.sign(priv, pos))
-      .flatMap(s => s.getPsbt.finalizeWitnessInput(pos, Script.witnessKeyPathPay2tr(ByteVector64(s.getSig), sighashType))) match {
+      .flatMap { s =>
+        // PSBT signing returns the serialized Taproot signature (64-byte Schnorr signature plus the explicit sighash
+        // byte when non-default), while witnessKeyPathPay2tr expects the 64-byte Schnorr signature and appends that byte.
+        val sig = s.getSig
+        val schnorrSig = if (sighashType == SigHash.SIGHASH_DEFAULT) {
+          sig
+        } else {
+          require(sig.size() == 65 && sig.get(64).toInt == sighashType, s"taproot signature has an invalid sighash byte: $sig")
+          sig.take(64)
+        }
+        s.getPsbt.finalizeWitnessInput(pos, Script.witnessKeyPathPay2tr(ByteVector64(schnorrSig), sighashType))
+      } match {
       case Right(psbt) => psbt
       case Left(failure) => throw new RuntimeException(s"cannot sign psbt input at position $pos, error = $failure")
     }
