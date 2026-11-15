@@ -2041,6 +2041,12 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
   override def useEclairSigner = true
 
+  override def beforeAll(): Unit = {
+    // Knots opts external signers into unified sighash once the deployment is scheduled, even before activation.
+    startBitcoind(defaultAddressType_opt = defaultAddressType_opt, changeAddressType_opt = None, mempoolSize_opt = Some(5), mempoolMinFeerate_opt = Some(FeeratePerByte(2 sat)), startupFlags = "-testactivationheight=blake2b@1")
+    waitForBitcoindReady()
+  }
+
   private def createWallet(seed: ByteVector): (BitcoinCoreClient, LocalOnChainKeyManager) = {
     val name = s"eclair_${seed.toHex.take(16)}"
     val onChainKeyManager = new LocalOnChainKeyManager(name, seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
@@ -2172,6 +2178,9 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     wallet.signPsbt(psbt, tx.txIn.indices, tx.txOut.indices).pipeTo(sender.ref)
     val ProcessPsbtResponse(signedPsbt, true) = sender.expectMsgType[ProcessPsbtResponse]
     val signedTx: Transaction = signedPsbt.extract().getRight
+    if (useEclairSigner) {
+      assert(signedTx.txIn.forall(_.witness.stack.head.last.toInt == (SigHash.SIGHASH_ALL | SigHash.SIGHASH_UNIFIED)))
+    }
     wallet.publishTransaction(signedTx).pipeTo(sender.ref)
     sender.expectMsg(signedTx.txid)
   }

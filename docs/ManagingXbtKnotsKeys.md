@@ -63,6 +63,12 @@ In your `eclair.conf`, set `eclair.bitcoind.wallet` to the name of the wallet in
 
 You now have an XBT Knots watch-only wallet for which only Eclair can sign transactions. Back up the wallet and Eclair signer data according to your recovery plan.
 
+### XBT unified sighash behavior
+
+When the XBT Knots node reports a scheduled `blake2b` deployment in `getdeploymentinfo`, Eclair signs its wallet inputs with `SIGHASH_ALL|UNIFIED` (`0x21`). This applies to both BIP84 (P2WPKH) and BIP86 (Taproot key-path) inputs. The PSBT must include the spent output for every transaction input, including inputs that Eclair does not sign; otherwise Eclair refuses to sign because unified sighash commits to all spent outputs.
+
+When `blake2b` is not scheduled, Eclair keeps the existing signing behavior: `SIGHASH_ALL` for BIP84 and `SIGHASH_DEFAULT` for BIP86. Knots exposes the deployment schedule through `getdeploymentinfo`; Eclair uses that schedule to avoid creating legacy signatures for transactions that may be mined after activation.
+
 :warning: the XBT Knots watch-only wallet cannot send funds by itself because it does not have private signing keys.
 To send funds on-chain you must use `eclair-cli sendonchain`.
 

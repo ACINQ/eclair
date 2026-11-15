@@ -75,6 +75,14 @@ class LocalOnChainKeyManagerSpec extends AnyFunSuite {
       Transaction.correctlySpends(signedTx, utxos, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     {
+      // XBT signatures commit to all spent outputs and carry the unified sighash bit.
+      val Success(psbt1) = onChainKeyManager.sign(psbt, Seq(0, 1, 2), Seq(0), unifiedSighash = true)
+      val signedTx = psbt1.extract().getRight
+      val sig = psbt1.getInput(0).getScriptWitness.stack.get(0)
+      assert(sig.get(sig.size() - 1).toInt == (SigHash.SIGHASH_ALL | SigHash.SIGHASH_UNIFIED))
+      Transaction.correctlySpends(signedTx, utxos, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
+    {
       // sign the first 2 inputs only
       val Success(psbt1) = onChainKeyManager.sign(psbt, Seq(0, 1), Seq(0))
       // extracting the final tx fails because no all inputs as signed
@@ -117,6 +125,16 @@ class LocalOnChainKeyManagerSpec extends AnyFunSuite {
       val updated = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)), SigHash.SIGHASH_SINGLE, java.util.Map.of(getPublicKey(0), bip32paths(0)), null, null, java.util.Map.of()).getRight
       val Failure(error) = onChainKeyManager.sign(updated, Seq(0, 1, 2), Seq(0))
       assert(error.getMessage.contains("input sighash must be SIGHASH_ALL"))
+    }
+    {
+      // Unified signatures cannot be created if any transaction input's spent output is unknown.
+      val Right(psbtWithoutAllPrevouts) = for {
+        p0 <- new Psbt(tx).updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)), null, java.util.Map.of(getPublicKey(0), bip32paths(0)), null, null, java.util.Map.of())
+        p1 <- p0.updateNonWitnessInput(utxos(0), 0, null, null, java.util.Map.of())
+        p2 <- p1.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(0)), null, java.util.Map.of())
+      } yield p2
+      val Failure(error) = onChainKeyManager.sign(psbtWithoutAllPrevouts, Seq(0), Seq(0), unifiedSighash = true)
+      assert(error.getMessage.contains("SIGHASH_UNIFIED requires the utxos spent by every input"))
     }
   }
 
@@ -193,6 +211,14 @@ class LocalOnChainKeyManagerSpec extends AnyFunSuite {
       // sign all inputs and outputs
       val Success(psbt1) = onChainKeyManager.sign(psbt, Seq(0, 1, 2), Seq(0))
       val signedTx = psbt1.extract().getRight
+      Transaction.correctlySpends(signedTx, utxos, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
+    {
+      // XBT Taproot signatures use explicit SIGHASH_ALL|UNIFIED when the deployment is scheduled.
+      val Success(psbt1) = onChainKeyManager.sign(psbt, Seq(0, 1, 2), Seq(0), unifiedSighash = true)
+      val signedTx = psbt1.extract().getRight
+      val sig = psbt1.getInput(0).getScriptWitness.stack.get(0)
+      assert(sig.get(sig.size() - 1).toInt == (SigHash.SIGHASH_ALL | SigHash.SIGHASH_UNIFIED))
       Transaction.correctlySpends(signedTx, utxos, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     {
