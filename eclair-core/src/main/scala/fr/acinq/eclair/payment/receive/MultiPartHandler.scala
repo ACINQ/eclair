@@ -33,6 +33,7 @@ import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.offer.OfferManager
+import fr.acinq.eclair.payment.receive.MultiPartHandler.CreateInvoiceActor.Bolt11InvoiceResponse
 import fr.acinq.eclair.router.BlindedRouteCreation.createBlindedRouteFromHops
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv}
@@ -40,6 +41,8 @@ import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Bolt11Feature, CltvExpiryDelta, FeatureSupport, Features, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, randomBytes32}
 import scodec.bits.{ByteVector, HexStringSyntax}
+
+import scala.util.{Failure, Success, Try}
 
 /**
  * Simple payment handler that generates invoices and fulfills incoming htlcs.
@@ -270,7 +273,7 @@ object MultiPartHandler {
    * @param fallbackAddress_opt fallback Bitcoin address.
    * @param paymentPreimage_opt payment preimage.
    */
-  case class ReceiveStandardPayment(replyTo: typed.ActorRef[Bolt11Invoice],
+  case class ReceiveStandardPayment(replyTo: typed.ActorRef[Bolt11InvoiceResponse],
                                     amount_opt: Option[MilliSatoshi],
                                     description: Either[String, ByteVector32],
                                     expirySeconds_opt: Option[Long] = None,
@@ -313,6 +316,9 @@ object MultiPartHandler {
     sealed trait Command
     case class CreateBolt11Invoice(receivePayment: ReceiveStandardPayment) extends Command
     case class CreateBolt12Invoice(receivePayment: ReceiveOfferPayment) extends Command
+    sealed trait Bolt11InvoiceResponse
+    case class Bolt11InvoiceSuccess(invoice: Bolt11Invoice) extends Bolt11InvoiceResponse
+    case class Bolt11InvoiceFailure(paymentHash: ByteVector32, error: Throwable) extends Bolt11InvoiceResponse
     // @formatter:on
 
     def apply(nodeParams: NodeParams): Behavior[Command] = {
@@ -328,22 +334,28 @@ object MultiPartHandler {
             } else {
               nodeParams.features.bolt11Features()
             }
-            val invoice = Bolt11Invoice(
-              nodeParams.chainHash,
-              r.amount_opt,
-              paymentHash,
-              nodeParams.privateKey,
-              r.description,
-              nodeParams.channelConf.minFinalExpiryDelta,
-              r.fallbackAddress_opt,
-              expirySeconds = Some(expirySeconds),
-              extraHops = r.extraHops,
-              paymentMetadata = Some(paymentMetadata),
-              features = featuresTrampolineOpt
-            )
-            context.log.debug("generated invoice={} from amount={}", invoice.toString, r.amount_opt)
-            nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, r.paymentType)
-            r.replyTo ! invoice
+            if (nodeParams.db.payments.getIncomingPayment(paymentHash).nonEmpty) {
+              r.replyTo ! Bolt11InvoiceFailure(paymentHash, new IllegalArgumentException("an invoice with this payment hash already exists"))
+            } else {
+              val invoice = Bolt11Invoice(
+                nodeParams.chainHash,
+                r.amount_opt,
+                paymentHash,
+                nodeParams.privateKey,
+                r.description,
+                nodeParams.channelConf.minFinalExpiryDelta,
+                r.fallbackAddress_opt,
+                expirySeconds = Some(expirySeconds),
+                extraHops = r.extraHops,
+                paymentMetadata = Some(paymentMetadata),
+                features = featuresTrampolineOpt
+              )
+              context.log.debug("generated invoice={} from amount={}", invoice.toString, r.amount_opt)
+              Try(nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, r.paymentType)) match {
+                case Success(_) => r.replyTo ! Bolt11InvoiceSuccess(invoice)
+                case Failure(t) => r.replyTo ! Bolt11InvoiceFailure(paymentHash, t)
+              }
+            }
             Behaviors.stopped
           case CreateBolt12Invoice(r) =>
             val paths = r.routes.map(route => {

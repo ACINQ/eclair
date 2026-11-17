@@ -28,6 +28,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendTrampolinePayment
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.receive.MultiPartHandler.CreateInvoiceActor.Bolt11InvoiceSuccess
 import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, nodeFee}
 import org.scalatest.concurrent.IntegrationPatience
@@ -108,7 +109,7 @@ class TrampolinePaymentSpec extends FixtureSpec with IntegrationPatience {
       getRouterData(dave).privateChannels.values.head.toIncomingExtraHop.get
     }.copy(feeBase = carolHintFees.feeBase, feeProportionalMillionths = carolHintFees.feeProportionalMillionths)
     sender.send(dave.paymentHandler, ReceiveStandardPayment(sender.ref.toTyped, Some(amount), Left("trampoline to a wallet"), extraHops = List(List(hint))))
-    sender.expectMsgType[Bolt11Invoice]
+    sender.expectMsgType[Bolt11InvoiceSuccess].invoice
   }
 
   private def sendTrampolinePayment(f: FixtureParam, invoice: Bolt11Invoice): Either[PaymentFailed, PaymentSent] = {

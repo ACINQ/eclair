@@ -42,6 +42,7 @@ import fr.acinq.eclair.io._
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.offer.{OfferCreator, OfferManager}
+import fr.acinq.eclair.payment.receive.MultiPartHandler.CreateInvoiceActor.{Bolt11InvoiceFailure, Bolt11InvoiceResponse, Bolt11InvoiceSuccess}
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.relay.Relayer.{ChannelBalance, GetOutgoingChannels, OutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.PaymentInitiator._
@@ -383,7 +384,11 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     }
     for {
       routingHints <- getInvoiceRoutingHints(privateChannelIds_opt)
-      invoice <- appKit.paymentHandler.toTyped.ask[Bolt11Invoice](ref => ReceiveStandardPayment(ref, amount_opt, description, expire_opt, routingHints, fallbackAddress_opt, paymentPreimage_opt))
+      response <- appKit.paymentHandler.toTyped.ask[Bolt11InvoiceResponse](ref => ReceiveStandardPayment(ref, amount_opt, description, expire_opt, routingHints, fallbackAddress_opt, paymentPreimage_opt))
+      invoice <- response match {
+        case Bolt11InvoiceSuccess(invoice) => Future.successful(invoice)
+        case Bolt11InvoiceFailure(_, error) => Future.failed(error)
+      }
     } yield invoice
   }
 

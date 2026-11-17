@@ -25,6 +25,7 @@ import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.offer.{DefaultOfferHandler, OfferManager}
+import fr.acinq.eclair.payment.receive.MultiPartHandler.CreateInvoiceActor.Bolt11InvoiceSuccess
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.{ChannelRelayer, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
@@ -340,7 +341,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
   def sendPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: List[List[ExtraHop]] = List.empty)(implicit system: ActorSystem): Either[PaymentFailed, PaymentSent] = {
     val sender = TestProbe("sender")
     sender.send(node2.paymentHandler, MultiPartHandler.ReceiveStandardPayment(sender.ref.toTyped, Some(amount), Left("test payment"), extraHops = hints))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
 
     sendPayment(node1, amount, invoice)
   }
