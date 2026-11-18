@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.Musig2.{IndividualNonce, LocalNonce}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair.ValidateOutgoingHtlcPlugin.OutgoingHtlcInfo
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain._
@@ -583,7 +584,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       handleAddHtlcCommandError(c, error, Some(d.channelUpdate))
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
-      d.commitments.sendAdd(c, nodeParams.currentBlockHeight, nodeParams.channelConf, nodeParams.onChainFeeConf) match {
+      d.commitments.sendAdd(c, nodeParams.currentBlockHeight, nodeParams.channelConf, nodeParams.onChainFeeConf).flatMap {
+        case (commitments1, add) => validateOutgoingHtlcWithPlugins(c, commitments1).map(_ => (commitments1, add))
+      } match {
         case Right((commitments1, add)) =>
           if (c.commit) self ! CMD_SIGN()
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
@@ -3538,6 +3541,55 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     }
     replyTo_opt.foreach(_ ! RES_SUCCESS(c, newData.channelId))
     stay() using newData
+  }
+
+  /**
+   * Plugins may reject outgoing HTLCs that passed our own validation (e.g. to preserve a minimum channel balance).
+   * We stop at the first plugin that rejects the HTLC.
+   */
+  private def validateOutgoingHtlcWithPlugins(c: CMD_ADD_HTLC, commitments1: Commitments): Either[ChannelException, Unit] = {
+    if (nodeParams.pluginOutgoingHtlcValidators.isEmpty || c.fundingFee_opt.nonEmpty) {
+      // We have already added liquidity for on-the-fly funded HTLCs, and our peer must use them to pay the funding fee:
+      // we don't let plugins reject them, otherwise that fee would never be paid.
+      Right(())
+    } else {
+      val htlc = OutgoingHtlcInfo.fromCommand(c, commitments1)
+      nodeParams.pluginOutgoingHtlcValidators.iterator
+        .map(plugin => validateOutgoingHtlcWithPlugin(plugin, htlc))
+        .collectFirst { case Left(failure) => failure }
+        .toLeft(())
+    }
+  }
+
+  /**
+   * Every call to plugin code (including [[PluginParams.name]] and the methods of the errors that it throws) must be
+   * guarded: anything that escapes would reach our default exception handler, which force-closes the channel (or stops
+   * the node, depending on [[UnhandledExceptionStrategy]]).
+   */
+  private def validateOutgoingHtlcWithPlugin(plugin: ValidateOutgoingHtlcPlugin, htlc: OutgoingHtlcInfo): Either[ChannelException, Unit] = {
+    // We also catch fatal errors (e.g. a LinkageError if the plugin was compiled against a different version of eclair).
+    def guarded[T](f: => T): Either[Throwable, T] = try {
+      Right(f)
+    } catch {
+      case i: InterruptedException =>
+        // Catching an InterruptedException clears the thread's interrupted flag: we restore it.
+        Thread.currentThread().interrupt()
+        Left(i)
+      case t: Throwable =>
+        Left(t)
+    }
+
+    val pluginName = guarded(plugin.name).toOption.flatMap(Option(_)).getOrElse(plugin.getClass.getName)
+    val result = guarded(plugin.validateOutgoingHtlc(htlc)) match {
+      case Right(null) =>
+        log.error(s"plugin=$pluginName returned an invalid result (null) when validating outgoing htlc (amount=${htlc.amount})")
+        Left("plugin error: invalid result (null)")
+      case Right(result) => result.left.map(reason => Option(reason).getOrElse("no reason provided"))
+      case Left(t) =>
+        log.error(t, s"plugin=$pluginName failed to validate outgoing htlc (amount=${htlc.amount})")
+        Left(s"plugin error: ${guarded(t.toString).getOrElse(t.getClass.getName)}")
+    }
+    result.left.map(reason => OutgoingHtlcRejectedByPlugin(htlc.channelId, htlc.amount, pluginName, reason))
   }
 
   private def handleAddHtlcCommandError(c: CMD_ADD_HTLC, cause: ChannelException, channelUpdate: Option[ChannelUpdate]) = {

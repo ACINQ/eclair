@@ -143,6 +143,7 @@ case class RemoteCannotAffordFeesForNewHtlc        (override val channelId: Byte
 case class InvalidHtlcPreimage                     (override val channelId: ByteVector32, id: Long) extends ChannelException(channelId, s"invalid htlc preimage for htlc id=$id")
 case class InvalidFulfillmentPayload               (override val channelId: ByteVector32, id: Long) extends ChannelException(channelId, s"invalid fulfillment payload for htlc id=$id")
 case class UnknownHtlcId                           (override val channelId: ByteVector32, id: Long) extends ChannelException(channelId, s"unknown htlc id=$id")
+case class OutgoingHtlcRejectedByPlugin            (override val channelId: ByteVector32, amount: MilliSatoshi, plugin: String, reason: String) extends ChannelException(channelId, s"outgoing htlc rejected by plugin=$plugin: amount=$amount reason=$reason")
 case class CannotExtractSharedSecret               (override val channelId: ByteVector32, htlc: UpdateAddHtlc) extends ChannelException(channelId, s"can't extract shared secret: paymentHash=${htlc.paymentHash} onion=${htlc.onionRoutingPacket}")
 case class NonInitiatorCannotSendUpdateFee         (override val channelId: ByteVector32) extends ChannelException(channelId, s"only the initiator should send update_fee messages")
 case class CannotAffordFirstCommitFees             (override val channelId: ByteVector32, missing: Satoshi, fees: Satoshi) extends ChannelException(channelId, s"can't pay the fee in first commitment: missing=$missing fees=$fees")
