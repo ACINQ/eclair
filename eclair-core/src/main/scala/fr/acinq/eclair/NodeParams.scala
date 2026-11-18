@@ -110,6 +110,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   val pluginOpenChannelInterceptor: Option[InterceptOpenChannelPlugin] = pluginParams.collectFirst { case p: InterceptOpenChannelPlugin => p }
 
+  val pluginOutgoingHtlcValidators: Seq[ValidateOutgoingHtlcPlugin] = pluginParams.collect { case p: ValidateOutgoingHtlcPlugin => p }
+
   def currentBlockHeight: BlockHeight = BlockHeight(blockHeight.get)
 
   def currentBitcoinCoreFeerates: FeeratesPerKw = bitcoinCoreFeerates.get()

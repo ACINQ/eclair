@@ -115,6 +115,7 @@ object ChannelRelay {
       case (_: LocalDustHtlcExposureTooHigh, Some(channelUpdate)) => TemporaryChannelFailure(Some(channelUpdate))
       case (_: RemoteDustHtlcExposureTooHigh, Some(channelUpdate)) => TemporaryChannelFailure(Some(channelUpdate))
       case (_: FeerateTooDifferent, Some(channelUpdate)) => TemporaryChannelFailure(Some(channelUpdate))
+      case (_: OutgoingHtlcRejectedByPlugin, Some(channelUpdate)) => TemporaryChannelFailure(Some(channelUpdate))
       case (_: ChannelUnavailable, Some(channelUpdate)) if !channelUpdate.channelFlags.isEnabled => ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, Some(channelUpdate))
       case (_: ChannelUnavailable, None) => PermanentChannelFailure()
       case _ => TemporaryNodeFailure()

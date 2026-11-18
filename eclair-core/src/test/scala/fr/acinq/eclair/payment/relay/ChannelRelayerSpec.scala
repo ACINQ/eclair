@@ -617,6 +617,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       TestCase(HtlcValueTooHighInFlight(channelId1, UInt64(250_000_000), 300_000_000 msat), u.channelUpdate, TemporaryChannelFailure(Some(u.channelUpdate))),
       TestCase(InsufficientFunds(channelId1, r.amountToForward, 100 sat, 0 sat, 0 sat), u.channelUpdate, TemporaryChannelFailure(Some(u.channelUpdate))),
       TestCase(FeerateTooDifferent(channelId1, FeeratePerKw(1000 sat), FeeratePerKw(300 sat)), u.channelUpdate, TemporaryChannelFailure(Some(u.channelUpdate))),
+      TestCase(OutgoingHtlcRejectedByPlugin(channelId1, r.amountToForward, "test-plugin", "balance too low"), u.channelUpdate, TemporaryChannelFailure(Some(u.channelUpdate))),
       TestCase(ChannelUnavailable(channelId1), u_disabled.channelUpdate, ChannelDisabled(u_disabled.channelUpdate.messageFlags, u_disabled.channelUpdate.channelFlags, Some(u_disabled.channelUpdate)))
     )
 
