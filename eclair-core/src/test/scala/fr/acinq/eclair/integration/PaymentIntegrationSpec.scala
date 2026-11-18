@@ -39,6 +39,7 @@ import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, build
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.payment.offer.OfferManager._
+import fr.acinq.eclair.payment.receive.MultiPartHandler.CreateInvoiceActor.Bolt11InvoiceSuccess
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
@@ -165,7 +166,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // first we retrieve a payment hash from D
     val amountMsat = 4200000.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("1 coffee")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     assert(invoice.paymentMetadata.nonEmpty)
 
     // then we make the actual payment
@@ -195,7 +196,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // we retrieve a payment hash from D
     val amountMsat = 4200000.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("1 coffee")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     // then we make the actual payment, do not randomize the route to make sure we route through node B
     val sendReq = SendPaymentToNode(sender.ref, amountMsat, invoice, Nil, routeParams = integrationTestRouteParams, maxAttempts = 5)
     sender.send(nodes("A").paymentInitiator, sendReq)
@@ -236,7 +237,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // first we retrieve a payment hash from D
     val amountMsat = 300000000.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("1 coffee")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     // then we make the payment (B-C has a smaller capacity than A-B and C-D)
     val sendReq = SendPaymentToNode(sender.ref, amountMsat, invoice, Nil, routeParams = integrationTestRouteParams, maxAttempts = 5)
     sender.send(nodes("A").paymentInitiator, sendReq)
@@ -270,7 +271,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = 200000000.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("1 coffee")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
 
     // A send payment of only 1 mBTC
     val sendReq = SendPaymentToNode(sender.ref, 100000000 msat, invoice, Nil, routeParams = integrationTestRouteParams, maxAttempts = 5)
@@ -290,7 +291,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = 200000000.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("1 coffee")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
 
     // A send payment of 6 mBTC
     val sendReq = SendPaymentToNode(sender.ref, 600000000 msat, invoice, Nil, routeParams = integrationTestRouteParams, maxAttempts = 5)
@@ -310,7 +311,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = 200000000.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("1 coffee")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
 
     // A send payment of 3 mBTC, more than asked but it should still be accepted
     val sendReq = SendPaymentToNode(sender.ref, 300000000 msat, invoice, Nil, routeParams = integrationTestRouteParams, maxAttempts = 5)
@@ -324,7 +325,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     for (_ <- 0 until 7) {
       val amountMsat = 1000000000.msat
       sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("1 payment")))
-      val invoice = sender.expectMsgType[Bolt11Invoice]
+      val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
 
       val sendReq = SendPaymentToNode(sender.ref, amountMsat, invoice, Nil, routeParams = integrationTestRouteParams, maxAttempts = 5)
       sender.send(nodes("A").paymentInitiator, sendReq)
@@ -339,7 +340,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // first we retrieve a payment hash from C
     val amountMsat = 200000.msat
     sender.send(nodes("C").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("Change from coffee")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
 
     // the payment is requesting to use a capacity-optimized route which will select node G even though it's a bit more expensive
     sender.send(nodes("A").paymentInitiator, SendPaymentToNode(sender.ref, amountMsat, invoice, Nil, maxAttempts = 1, routeParams = integrationTestRouteParams.copy(heuristics = HeuristicsConstants(0, RelayFees(10000000000L msat, 10000000000L), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false))))
@@ -355,7 +356,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val sender = TestProbe()
     val amount = 1000000000L.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("split the restaurant bill")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
 
     sender.send(nodes("B").paymentInitiator, SendPaymentToNode(sender.ref, amount, invoice, Nil, maxAttempts = 5, routeParams = integrationTestRouteParams))
@@ -402,7 +403,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // (the link C->D has too much capacity on D's side).
     val amount = 2000000000L.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("well that's an expensive restaurant bill")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
 
     sender.send(nodes("B").relayer, Relayer.GetOutgoingChannels())
@@ -429,7 +430,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // This amount is greater than any channel capacity between D and C, so it should be split.
     val amount = 5100000000L.msat
     sender.send(nodes("C").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("lemme borrow some money")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
 
     sender.send(nodes("D").paymentInitiator, SendPaymentToNode(sender.ref, amount, invoice, Nil, maxAttempts = 3, routeParams = integrationTestRouteParams))
@@ -457,7 +458,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // This amount is greater than the current capacity between D and C.
     val amount = 10000000000L.msat
     sender.send(nodes("C").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("lemme borrow more money")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
 
     sender.send(nodes("D").relayer, Relayer.GetOutgoingChannels())
@@ -486,7 +487,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     nodes("G").system.eventStream.subscribe(holdTimesRecorderG.ref, classOf[Router.ReportedHoldTimes])
     val amount = 4_000_000_000L.msat
     sender.send(nodes("F").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("like trampoline much?")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
 
@@ -524,7 +525,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     nodes("B").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
     val amount = 2_500_000_000L.msat
     sender.send(nodes("B").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("trampoline-MPP is so #reckless")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     assert(invoice.paymentMetadata.nonEmpty)
@@ -563,7 +564,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val amount = 3_000_000_000L.msat
     sender.send(nodes("A").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("trampoline to non-trampoline is so #vintage"), extraHops = routingHints))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(!invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     assert(invoice.paymentMetadata.nonEmpty)
@@ -595,7 +596,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     // We put most of the capacity C <-> D on D's side.
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(8_000_000_000L msat), Left("plz send everything")))
-    val pr1 = sender.expectMsgType[Bolt11Invoice]
+    val pr1 = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     sender.send(nodes("C").paymentInitiator, SendPaymentToNode(sender.ref, 8_000_000_000L msat, pr1, Nil, maxAttempts = 3, routeParams = integrationTestRouteParams))
     sender.expectMsgType[UUID]
     sender.expectMsgType[PaymentSent](max = 30 seconds)
@@ -603,7 +604,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // Now we try to send more than C's outgoing capacity to D.
     val amount = 1_800_000_000L.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("I iz Satoshi")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
 
@@ -625,7 +626,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val amount = 1_800_000_000L.msat // B can forward to C, but C doesn't have that much outgoing capacity to D
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("I iz not Satoshi")))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val invoice = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
 

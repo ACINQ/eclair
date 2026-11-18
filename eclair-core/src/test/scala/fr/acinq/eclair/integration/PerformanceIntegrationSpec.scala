@@ -22,6 +22,7 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.receive.MultiPartHandler.CreateInvoiceActor.Bolt11InvoiceSuccess
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator
@@ -83,7 +84,7 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     val amountMsat = 100_000.msat
     // first we retrieve a payment hash from B
     sender.send(nodes("B").paymentHandler, ReceiveStandardPayment(sender.ref.toTyped, Some(amountMsat), Left("1 coffee")))
-    val pr = sender.expectMsgType[Bolt11Invoice]
+    val pr = sender.expectMsgType[Bolt11InvoiceSuccess].invoice
     // then we make the actual payment
     sender.send(nodes("A").paymentInitiator, PaymentInitiator.SendPaymentToNode(sender.ref, amountMsat, pr, Nil, routeParams = integrationTestRouteParams, maxAttempts = 1))
     val paymentId = sender.expectMsgType[UUID]

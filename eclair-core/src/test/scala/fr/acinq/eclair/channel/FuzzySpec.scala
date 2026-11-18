@@ -29,6 +29,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.receive.MultiPartHandler.CreateInvoiceActor.{Bolt11InvoiceResponse, Bolt11InvoiceSuccess}
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
@@ -130,8 +131,8 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       if (remaining > 0) {
         paymentHandler ! ReceiveStandardPayment(context.self, Some(requiredAmount), Left("One coffee"))
         context become {
-          case invoice: Bolt11Invoice =>
-            sendChannel ! buildCmdAdd(invoice)
+          case success: Bolt11InvoiceSuccess =>
+            sendChannel ! buildCmdAdd(success.invoice)
             context become {
               case RES_SUCCESS(_: CMD_ADD_HTLC, _) => ()
               case RES_ADD_SETTLED(_, _, htlc, _: HtlcResult.Fulfill) =>
