@@ -445,8 +445,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           fees
       }
       request match {
-        case request: SendPaymentToNode =>
+        // When the first hop is forced by the caller, the result doesn't reflect the experiment's path-finding heuristics.
+        case request: SendPaymentToNode if request.routeParams.firstHopChannelId_opt.isEmpty =>
           context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, request.amount, fees, status, duration, now, isMultiPart = false, request.routeParams.experimentName, request.recipient.nodeId, request.recipient.extraEdges))
+        case _: SendPaymentToNode => ()
         case _: SendPaymentToRoute => ()
       }
     }

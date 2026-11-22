@@ -27,6 +27,7 @@ import fr.acinq.eclair.payment.PaymentSent.PaymentPart
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
+import fr.acinq.eclair.router.InvalidFirstHop
 import fr.acinq.eclair.router.Router.MultiPartParams.FullCapacity
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, MilliSatoshiLong, NodeParams, TimestampMilli}
@@ -87,7 +88,9 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       // Channels are mostly ignored for temporary reasons, likely because they didn't have enough balance to forward
       // the payment. When we're retrying an MPP split, it may make sense to retry those ignored channels because with
       // a different split, they may have enough balance to forward the payment.
-      if (d.ignore.channels.nonEmpty) {
+      // This doesn't apply when the requested first hop isn't a valid channel (e.g. it has been closed): we won't find
+      // any route, whatever the channels we ignore.
+      if (d.ignore.channels.nonEmpty && !t.isInstanceOf[InvalidFirstHop]) {
         log.debug("retry sending payment without ignoring channels {} ({} payments still pending for {})", d.ignore.channels.map(_.shortChannelId).mkString(","), d.pending.size, d.pending.values.map(_.amount).sum)
         val routeParams = d.request.routeParams.copy(randomize = true) // we randomize route selection when we retry
         router ! createRouteRequest(self, nodeParams, routeParams, d, cfg).copy(ignore = d.ignore.emptyChannels())
@@ -265,7 +268,10 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
           }
           paymentSent.feesPaid + localFees
       }
-      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, request.recipient.totalAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, request.recipient.nodeId, request.recipient.extraEdges))
+      // When the first hop is forced by the caller, the result doesn't reflect the experiment's path-finding heuristics.
+      if (request.routeParams.firstHopChannelId_opt.isEmpty) {
+        context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, request.recipient.totalAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, request.recipient.nodeId, request.recipient.extraEdges))
+      }
     }
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)

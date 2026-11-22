@@ -28,7 +28,8 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
-import fr.acinq.eclair.payment.send.{ClearRecipient, SpontaneousRecipient}
+import fr.acinq.eclair.payment.send.BlindedPathsResolver.{PartialBlindedRoute, ResolvedPath}
+import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient, SpontaneousRecipient}
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRoutesFromPaths, channelAnnouncement}
@@ -37,7 +38,7 @@ import fr.acinq.eclair.router.RouteCalculationSpec.{DEFAULT_AMOUNT_MSAT, DEFAULT
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestConstants, TimestampSecond, randomBytes32, randomKey}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiryDelta, EncodedNodeId, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestConstants, TimestampSecond, randomBytes32, randomKey}
 import org.scalatest.Inside.inside
 import scodec.bits._
 
@@ -568,6 +569,151 @@ class RouterSpec extends BaseRouterSpec {
     val res1 = sender.expectMessageType[RouteResponse]
     assert(route2NodeIds(res1.routes.head) == Seq(a, g, h))
     assert(res1.routes.head.finalHop_opt.isEmpty)
+  }
+
+  test("route found (specific first hop)") { fixture =>
+    import fixture._
+    val sender = TypedProbe[PaymentRouteResponse]()(system.toTyped)
+    val probe = TestProbe()
+
+    def findRoute(source: PublicKey, target: PublicKey, firstHopChannelId: ByteVector32, allowMultiPart: Boolean = false): Unit = {
+      router ! RouteRequest(sender.ref, source, SpontaneousRecipient(target, DEFAULT_AMOUNT_MSAT, DEFAULT_EXPIRY, ByteVector32.One), DEFAULT_ROUTE_PARAMS.copy(firstHopChannelId_opt = Some(firstHopChannelId)), allowMultiPart = allowMultiPart)
+    }
+
+    // The router learns the channel_id of our public channels from their local channel updates.
+    val commitments_ab = CommitmentsSpec.makeCommitments(950_000_000 msat, 50_000_000 msat, a, b, announcement_opt = Some(chan_ab))
+    val channelId_ab = commitments_ab.channelId
+    findRoute(a, d, channelId_ab)
+    sender.expectMessage(PaymentRouteNotFound(InvalidFirstHop(channelId_ab)))
+    probe.send(router, LocalChannelUpdate(probe.ref, channelId_ab, scids_ab, b, Some(AnnouncedCommitment(commitments_ab.latest.commitment, chan_ab)), update_ab, commitments_ab))
+    // public channel: the graph uses its real scid
+    findRoute(a, d, channelId_ab)
+    val res1 = sender.expectMessageType[RouteResponse]
+    assert(res1.routes.nonEmpty)
+    assert(res1.routes.forall(_.hops.head.shortChannelId == scid_ab))
+    assert(route2NodeIds(res1.routes.head) == Seq(a, b, c, d))
+    // private channel: the graph uses our local alias
+    findRoute(a, h, channelId_ag_private)
+    val res2 = sender.expectMessageType[RouteResponse]
+    assert(res2.routes.nonEmpty)
+    assert(res2.routes.forall(_.hops.head.shortChannelId == alias_ag_private))
+    assert(route2NodeIds(res2.routes.head) == Seq(a, g, h))
+    // the target cannot be reached through the requested channel
+    findRoute(a, h, channelId_ab)
+    sender.expectMessage(PaymentRouteNotFound(RouteNotFound))
+    findRoute(a, d, channelId_ag_private)
+    sender.expectMessage(PaymentRouteNotFound(RouteNotFound))
+    // unknown channel
+    val unknownChannelId = randomBytes32()
+    findRoute(a, d, unknownChannelId)
+    sender.expectMessage(PaymentRouteNotFound(InvalidFirstHop(unknownChannelId)))
+    findRoute(a, d, unknownChannelId, allowMultiPart = true)
+    sender.expectMessage(PaymentRouteNotFound(InvalidFirstHop(unknownChannelId)))
+    // known channel that doesn't belong to the source node
+    findRoute(c, d, channelId_ab)
+    sender.expectMessage(PaymentRouteNotFound(InvalidFirstHop(channelId_ab)))
+    // once the channel is down, it cannot be used anymore
+    probe.send(router, LocalChannelDown(probe.ref, channelId_ab, Seq(scid_ab), scids_ab, b))
+    findRoute(a, d, channelId_ab)
+    sender.expectMessage(PaymentRouteNotFound(InvalidFirstHop(channelId_ab)))
+  }
+
+  test("route found (specific first hop, private channel announced)") { fixture =>
+    import fixture._
+    val sender = TypedProbe[PaymentRouteResponse]()(system.toTyped)
+    val probe = TestProbe()
+
+    def findRoute(): Seq[Route] = {
+      router ! RouteRequest(sender.ref, a, SpontaneousRecipient(h, DEFAULT_AMOUNT_MSAT, DEFAULT_EXPIRY, ByteVector32.One), DEFAULT_ROUTE_PARAMS.copy(firstHopChannelId_opt = Some(channelId_ag_private)))
+      val routes = sender.expectMessageType[RouteResponse].routes
+      assert(routes.nonEmpty)
+      assert(route2NodeIds(routes.head) == Seq(a, g, h))
+      routes
+    }
+
+    assert(findRoute().forall(_.hops.head.shortChannelId == alias_ag_private))
+    // The channel is announced: it moves from the private channels to the public channels, and the graph now uses its
+    // real scid instead of our local alias.
+    val ann_ag = channelAnnouncement(scid_ag_private, priv_a, priv_g, priv_funding_a, priv_funding_g)
+    val commitments_ag = CommitmentsSpec.makeCommitments(30_000_000 msat, 8_000_000 msat, a, g, announcement_opt = Some(ann_ag))
+    val update_ag = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, scid_ag_private, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+    probe.send(router, LocalChannelUpdate(probe.ref, channelId_ag_private, scids_ag_private, g, Some(AnnouncedCommitment(commitments_ag.latest.commitment, ann_ag)), update_ag, commitments_ag))
+    assert(findRoute().forall(_.hops.head.shortChannelId == scid_ag_private))
+  }
+
+  test("route found (specific first hop, spliced channel)") { fixture =>
+    import fixture._
+    val sender = TypedProbe[PaymentRouteResponse]()(system.toTyped)
+    val probe = TestProbe()
+
+    val commitments_ab = CommitmentsSpec.makeCommitments(950_000_000 msat, 50_000_000 msat, a, b, announcement_opt = Some(chan_ab))
+    probe.send(router, LocalChannelUpdate(probe.ref, commitments_ab.channelId, scids_ab, b, Some(AnnouncedCommitment(commitments_ab.latest.commitment, chan_ab)), update_ab, commitments_ab))
+
+    def findRoute(): Seq[Route] = {
+      router ! RouteRequest(sender.ref, a, SpontaneousRecipient(d, DEFAULT_AMOUNT_MSAT, DEFAULT_EXPIRY, ByteVector32.One), DEFAULT_ROUTE_PARAMS.copy(firstHopChannelId_opt = Some(commitments_ab.channelId)))
+      val routes = sender.expectMessageType[RouteResponse].routes
+      assert(routes.nonEmpty)
+      assert(route2NodeIds(routes.head) == Seq(a, b, c, d))
+      routes
+    }
+
+    assert(findRoute().forall(_.hops.head.shortChannelId == scid_ab))
+    // The channel is spliced and the splice is announced: its channel_id doesn't change, but the graph now uses the
+    // real scid of the splice.
+    val newCapacity = publicChannelCapacity - 100_000.sat
+    val spliceTx = spendingTx(funding_a, funding_b, newCapacity)
+    router ! WatchExternalChannelSpentTriggered(scid_ab, Some(spliceTx))
+    assert(watcher.expectMsgType[WatchTxConfirmed].txId == spliceTx.txid)
+    val spliceScid = RealShortChannelId(BlockHeight(450_000), 1, 0)
+    val spliceAnn = channelAnnouncement(spliceScid, priv_a, priv_b, priv_funding_a, priv_funding_b)
+    processSpliceChannelAnnouncement(fixture, scid_ab, spliceAnn, spliceTx, newCapacity)
+    val spliceUpdate = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, spliceScid, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+    probe.send(router, LocalChannelUpdate(probe.ref, commitments_ab.channelId, scids_ab, b, Some(AnnouncedCommitment(commitments_ab.latest.commitment, spliceAnn)), spliceUpdate, commitments_ab))
+    assert(findRoute().forall(_.hops.head.shortChannelId == spliceScid))
+  }
+
+  test("route found (specific first hop, blinded route starting at our node)") { fixture =>
+    import fixture._
+    val sender = TypedProbe[PaymentRouteResponse]()(system.toTyped)
+    val r = randomKey().publicKey
+    val hopsToRecipient = Seq(
+      ChannelHop(ShortChannelId(10000), b, r, HopRelayParams.FromHint(ExtraEdge(b, r, ShortChannelId(10000), 800 msat, 0, CltvExpiryDelta(36), 1 msat, Some(400_000 msat)))) :: Nil,
+      ChannelHop(ShortChannelId(10001), g, r, HopRelayParams.FromHint(ExtraEdge(g, r, ShortChannelId(10001), 500 msat, 0, CltvExpiryDelta(36), 1 msat, Some(400_000 msat)))) :: Nil,
+    )
+    val (invoice, _) = blindedRoutesFromPaths(100_000 msat, DEFAULT_EXPIRY, hopsToRecipient, DEFAULT_EXPIRY)
+    // We are the introduction node of both blinded paths: the BlindedPathsResolver has already decrypted our payload,
+    // so the resolved paths start at the next node (b or g), which we reach through one of our local channels.
+    val resolvedPaths = invoice.blindedPaths.zip(Seq(b, g)).map { case (path, nextNodeId) =>
+      ResolvedPath(PartialBlindedRoute(EncodedNodeId.WithPublicKey.Plain(nextNodeId), randomKey().publicKey, path.route.blindedHops.tail), path.paymentInfo)
+    }
+    val recipient = BlindedRecipient(invoice, resolvedPaths, 100_000 msat, DEFAULT_EXPIRY, Set.empty, duplicatePaths = 1)
+    assert(recipient.extraEdges.forall(_.sourceNodeId != a))
+
+    // The first hop selects which of the blinded paths starting at our node is used.
+    val commitments_ab = CommitmentsSpec.makeCommitments(950_000_000 msat, 50_000_000 msat, a, b, announcement_opt = Some(chan_ab))
+    val channelId_ab = commitments_ab.channelId
+    val probe = TestProbe()
+    probe.send(router, LocalChannelUpdate(probe.ref, channelId_ab, scids_ab, b, Some(AnnouncedCommitment(commitments_ab.latest.commitment, chan_ab)), update_ab, commitments_ab))
+    Seq((channelId_ab, scid_ab, b), (channelId_ag_private, alias_ag_private, g)).foreach { case (firstHopChannelId, firstHopScid, nextNodeId) =>
+      router ! RouteRequest(sender.ref, a, recipient, DEFAULT_ROUTE_PARAMS.copy(firstHopChannelId_opt = Some(firstHopChannelId)))
+      val routes = sender.expectMessageType[RouteResponse].routes
+      assert(routes.nonEmpty)
+      routes.foreach { route =>
+        assert(route.hops.map(_.shortChannelId) == Seq(firstHopScid))
+        assert(route2NodeIds(route) == Seq(a, nextNodeId))
+        assert(route.finalHop_opt.collect { case h: BlindedHop => h.nodeId }.contains(nextNodeId))
+      }
+    }
+    // The same applies to multi-part payments.
+    router ! RouteRequest(sender.ref, a, recipient, DEFAULT_ROUTE_PARAMS.copy(firstHopChannelId_opt = Some(channelId_ab)), allowMultiPart = true)
+    val mppRoutes = sender.expectMessageType[RouteResponse].routes
+    assert(mppRoutes.nonEmpty)
+    assert(mppRoutes.forall(route => route.hops.map(_.shortChannelId) == Seq(scid_ab)))
+    // If the blinded path reachable through the requested first hop is ignored, we don't fall back to the other one.
+    val edge_b = recipient.extraEdges.find(_.sourceNodeId == b).get
+    val ignored = Ignore(Set.empty, Set(ChannelDesc(edge_b.shortChannelId, edge_b.sourceNodeId, edge_b.targetNodeId)))
+    router ! RouteRequest(sender.ref, a, recipient, DEFAULT_ROUTE_PARAMS.copy(firstHopChannelId_opt = Some(channelId_ab)), ignore = ignored)
+    sender.expectMessage(PaymentRouteNotFound(RouteNotFound))
   }
 
   test("route found (with extra routing info)") { fixture =>

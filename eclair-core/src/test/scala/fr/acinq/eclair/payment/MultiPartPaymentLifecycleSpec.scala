@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelHopFromUpdate}
 import fr.acinq.eclair.router.Graph.HeuristicsConstants
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.router.{Announcements, RouteNotFound}
+import fr.acinq.eclair.router.{Announcements, InvalidFirstHop, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -120,6 +120,26 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(metrics.experimentName == "my-test-experiment")
     assert(metrics.amount == finalAmount)
     assert(metrics.fees == 100.msat)
+    metricsListener.expectNoMessage()
+  }
+
+  test("successful first attempt (specific first hop)") { f =>
+    import f._
+
+    val firstHopChannelId = randomBytes32()
+    val routeParams1 = routeParams.copy(firstHopChannelId_opt = Some(firstHopChannelId))
+    val payment = SendMultiPartPayment(sender.ref, clearRecipient, 1, routeParams1)
+    sender.send(payFsm, payment)
+
+    expectRouteRequest(router, nodeParams.nodeId, clearRecipient, routeParams1, allowMultiPart = true, paymentContext = Some(cfg.paymentContext))
+    val singleRoute = Route(finalAmount, hop_ab_1 :: hop_be :: Nil, None)
+    router.send(payFsm, RouteResponse(Seq(singleRoute)))
+    childPayFsm.expectMsgType[SendPaymentToRoute]
+
+    val result = fulfillPendingPayments(f, 1, e, finalAmount)
+    assert(result.amountWithFees == finalAmount + 100.msat)
+
+    // The first hop was forced by the caller: this payment shouldn't be included in path-finding experiment metrics.
     metricsListener.expectNoMessage()
   }
 
@@ -460,6 +480,42 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(metrics.experimentName == "my-test-experiment")
     assert(metrics.amount == finalAmount)
     assert(metrics.fees == 15_000.msat)
+    metricsListener.expectNoMessage()
+  }
+
+  test("abort if first hop is invalid (without retrying ignored channels)") { f =>
+    import f._
+
+    sender.watch(payFsm)
+    val firstHopChannelId = randomBytes32()
+    val routeParams1 = routeParams.copy(firstHopChannelId_opt = Some(firstHopChannelId))
+    val payment = SendMultiPartPayment(sender.ref, clearRecipient, 3, routeParams1)
+    sender.send(payFsm, payment)
+    router.expectMsgType[RouteRequest].replyTo ! RouteResponse(Seq(Route(500_000 msat, hop_ab_1 :: hop_be :: Nil, None), Route(500_000 msat, hop_ab_1 :: hop_be :: Nil, None)))
+    childPayFsm.expectMsgType[SendPaymentToRoute]
+    childPayFsm.expectMsgType[SendPaymentToRoute]
+    childPayFsm.expectNoMessage(100 millis)
+
+    val (failedId, failedRoute) :: (pendingId, pendingRoute) :: Nil = payFsm.stateData.asInstanceOf[PaymentProgress].pending.toSeq
+    childPayFsm.send(payFsm, PaymentFailed(failedId, paymentHash, Seq(LocalFailure(failedRoute.amount, failedRoute.fullRoute, ChannelUnavailable(randomBytes32()))), 100 unixms, 250 unixms))
+    val routeRequest = expectRouteRequest(router,
+      nodeParams.nodeId,
+      clearRecipient,
+      routeParams1.copy(randomize = true),
+      Ignore(Set.empty, Set(ChannelDesc(channelId_ab_1, a, b))),
+      pendingPayments = Seq(pendingRoute),
+      allowMultiPart = true,
+      paymentContext = Some(cfg.paymentContext))
+    // The first hop channel has been closed in the meantime: retrying without ignoring channels cannot help.
+    routeRequest.replyTo ! PaymentRouteNotFound(InvalidFirstHop(firstHopChannelId))
+    router.expectNoMessage(100 millis)
+    awaitCond(payFsm.stateName == PAYMENT_ABORTED)
+
+    childPayFsm.send(payFsm, PaymentFailed(pendingId, paymentHash, Seq(LocalFailure(pendingRoute.amount, pendingRoute.fullRoute, ChannelUnavailable(randomBytes32()))), 100 unixms, 300 unixms))
+    val result = sender.expectMsgType[PaymentFailed]
+    assert(result.failures.contains(LocalFailure(finalAmount, Nil, InvalidFirstHop(firstHopChannelId))))
+    sender.expectTerminated(payFsm)
+    // The first hop was forced by the caller: this payment shouldn't be included in path-finding experiment metrics.
     metricsListener.expectNoMessage()
   }
 

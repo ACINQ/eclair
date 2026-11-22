@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.router
 
+import fr.acinq.bitcoin.scalacompat.ByteVector32
+
 /**
   * Created by PM on 12/04/2017.
   */
@@ -27,3 +29,5 @@ object RouteNotFound extends RouterException("route not found")
 object BalanceTooLow extends RouterException("balance too low")
 
 object CannotRouteToSelf extends RouterException("cannot route to self")
+
+case class InvalidFirstHop(channelId: ByteVector32) extends RouterException(s"first hop channel $channelId is not a known channel of the source node")

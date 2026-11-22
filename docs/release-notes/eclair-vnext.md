@@ -12,7 +12,7 @@
 
 ### API changes
 
-<insert changes>
+- `findroute*`, `payinvoice`, `payoffer` and `sendtonode` now take an optional `--firstHopChannelId` parameter (the `channelId` of one of our channels). When it is set, path-finding only returns routes whose first hop is that channel (#3407)
 
 ### Miscellaneous improvements and bug fixes
 
