@@ -1273,6 +1273,43 @@ class RouterSpec extends BaseRouterSpec {
     assert(pc.toIncomingExtraHop.contains(ExtraHop(x.publicKey, aliases.remoteAlias_opt.get, 25 msat, 150, CltvExpiryDelta(40))))
   }
 
+  test("accept channel_update using the real scid of a private channel that reached our peer's min depth before ours") { fixture =>
+    import fixture._
+
+    val sender = TestProbe()
+    val peerConnection = TestProbe()
+    peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
+
+    // We open a private channel with x, which uses a smaller min depth than ours and sends an early channel_ready with
+    // an alias: the channel is added to the router before its funding transaction confirms.
+    val x = randomKey()
+    val scid = RealShortChannelId(BlockHeight(420_001), 7, 1)
+    val aliases = ShortIdAliases(ShortChannelId.generateLocalAlias(), Some(ShortChannelId.generateLocalAlias()))
+    val commitments = CommitmentsSpec.makeCommitments(30_000_000 msat, 8_000_000 msat, a, x.publicKey, announcement_opt = None)
+    sender.send(router, ShortChannelIdAssigned(sender.ref, commitments.channelId, announcement_opt = None, aliases, x.publicKey))
+
+    // The funding transaction reaches x's min depth: x sends its channel_update using the real scid, which we don't know
+    // yet since the funding transaction hasn't reached our own min depth.
+    val update_xa = makeChannelUpdate(Block.RegtestGenesisBlock.hash, x, a, scid, CltvExpiryDelta(40), htlcMinimumMsat = 0 msat, feeBaseMsat = 25 msat, feeProportionalMillionths = 150, htlcMaximumMsat = htlcMaximum)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, x.publicKey, update_xa))
+    peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update_xa))
+    // An update for the same scid that isn't signed by x must be ignored.
+    val forged = makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey(), a, scid, CltvExpiryDelta(144), htlcMinimumMsat = 0 msat, feeBaseMsat = 1_000_000 msat, feeProportionalMillionths = 10_000, htlcMaximumMsat = htlcMaximum, timestamp = update_xa.timestamp + 1)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, x.publicKey, forged))
+    peerConnection.expectMsg(GossipDecision.NoRelatedChannel(forged))
+    sender.send(router, GetRouterData)
+    assert(sender.expectMsgType[Data].privateChannels(commitments.channelId).toIncomingExtraHop.isEmpty)
+
+    // The funding transaction then reaches our min depth: we can now use x's channel_update.
+    val fundingConfirmed = LocalFundingStatus.ConfirmedFundingTx(Nil, TxOut(commitments.latest.capacity, Nil), scid, None, None)
+    val commitments1 = commitments.updateLocalFundingStatus(commitments.latest.fundingTxId, fundingConfirmed, None)(akka.event.NoLogging).toOption.get._1
+    sender.send(router, ChannelFundingConfirmed(sender.ref, commitments.channelId, x.publicKey, commitments1.latest.fundingTxId, 0, BlockHeight(420_008), commitments1, commitments))
+    sender.send(router, GetRouterData)
+    val pc = sender.expectMsgType[Data].privateChannels(commitments.channelId)
+    assert(pc.remoteUpdate_opt.contains(update_xa))
+    assert(pc.toIncomingExtraHop.contains(ExtraHop(x.publicKey, aliases.remoteAlias_opt.get, 25 msat, 150, CltvExpiryDelta(40))))
+  }
+
   test("stream updates to front") { fixture =>
     import fixture._
 
