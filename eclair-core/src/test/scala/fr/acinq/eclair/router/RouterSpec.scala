@@ -1245,6 +1245,34 @@ class RouterSpec extends BaseRouterSpec {
     peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update3))
   }
 
+  test("accept channel_update using the real scid of a new private channel before our own channel_update") { fixture =>
+    import fixture._
+
+    val sender = TestProbe()
+    val peerConnection = TestProbe()
+    peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
+
+    // We open a private channel with x: when the funding transaction confirms, the channel emits ChannelFundingConfirmed
+    // *before* ShortChannelIdAssigned, which adds the private channel to the router.
+    val x = randomKey()
+    val scid = RealShortChannelId(BlockHeight(420_000), 12, 0)
+    val aliases = ShortIdAliases(ShortChannelId.generateLocalAlias(), Some(ShortChannelId.generateLocalAlias()))
+    val commitments = CommitmentsSpec.makeCommitments(30_000_000 msat, 8_000_000 msat, a, x.publicKey, announcement_opt = None)
+    val fundingConfirmed = LocalFundingStatus.ConfirmedFundingTx(Nil, TxOut(commitments.latest.capacity, Nil), scid, None, None)
+    val commitments1 = commitments.updateLocalFundingStatus(commitments.latest.fundingTxId, fundingConfirmed, None)(akka.event.NoLogging).toOption.get._1
+    sender.send(router, ChannelFundingConfirmed(sender.ref, commitments.channelId, x.publicKey, commitments1.latest.fundingTxId, 0, BlockHeight(420_000), commitments1, commitments))
+    sender.send(router, ShortChannelIdAssigned(sender.ref, commitments.channelId, announcement_opt = None, aliases, x.publicKey))
+
+    // Our peer sends its channel_update using the real scid right after its channel_ready, and it reaches the router
+    // before our local channel_update (which goes through our channel actor and the event stream).
+    val update_xa = makeChannelUpdate(Block.RegtestGenesisBlock.hash, x, a, scid, CltvExpiryDelta(40), htlcMinimumMsat = 0 msat, feeBaseMsat = 25 msat, feeProportionalMillionths = 150, htlcMaximumMsat = htlcMaximum)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, x.publicKey, update_xa))
+    peerConnection.expectMsg(GossipDecision.Accepted(update_xa))
+    sender.send(router, GetRouterData)
+    val pc = sender.expectMsgType[Data].privateChannels(commitments.channelId)
+    assert(pc.toIncomingExtraHop.contains(ExtraHop(x.publicKey, aliases.remoteAlias_opt.get, 25 msat, 150, CltvExpiryDelta(40))))
+  }
+
   test("stream updates to front") { fixture =>
     import fixture._
 
