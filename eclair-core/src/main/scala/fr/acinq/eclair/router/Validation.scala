@@ -21,7 +21,7 @@ import akka.actor.{ActorContext, ActorRef, typed}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.scalacompat.{Satoshi, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, TxId}
 import fr.acinq.eclair.ShortChannelId.outputIndex
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -581,6 +581,23 @@ object Validation {
     }
   }
 
+  /**
+   * Our peer may use either an alias we gave them or the real scid in the channel_update it sends us for an unannounced
+   * channel (see BOLT 7). We thus map the real scids of our private channels, which are only used to resolve channel
+   * updates: we never use them in invoice routing hints, to avoid leaking them.
+   */
+  private def mapPrivateChannelRealScids(d: Data, channelId: ByteVector32, commitments: Commitments)(implicit log: LoggingAdapter): Data = {
+    if (d.privateChannels.contains(channelId)) {
+      val realScids = commitments.all.flatMap(_.shortChannelId_opt).filterNot(scid => d.scid2PrivateChannels.get(scid.toLong).contains(channelId))
+      if (realScids.nonEmpty) log.debug("mapping real scids={} to private channelId={}", realScids.mkString(","), channelId)
+      d.copy(scid2PrivateChannels = d.scid2PrivateChannels ++ realScids.map(_.toLong -> channelId))
+    } else {
+      d
+    }
+  }
+
+  def handleChannelFundingConfirmed(d: Data, e: ChannelFundingConfirmed)(implicit log: LoggingAdapter): Data = mapPrivateChannelRealScids(d, e.channelId, e.commitments)
+
   def handleLocalChannelUpdate(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     import nodeParams.db.{network => db}
@@ -602,7 +619,7 @@ object Validation {
             log.debug("this is a known private channel, processing channel_update privateChannel={}", privateChannel)
             // This a known private channel, we update the short ids and the balances.
             val pc1 = privateChannel.copy(aliases = lcu.aliases).updateBalances(lcu.commitments)
-            val d1 = d.copy(privateChannels = d.privateChannels + (privateChannel.channelId -> pc1))
+            val d1 = mapPrivateChannelRealScids(d.copy(privateChannels = d.privateChannels + (privateChannel.channelId -> pc1)), privateChannel.channelId, lcu.commitments)
             handleChannelUpdate(d1, db, nodeParams.currentBlockHeight, Left(lcu))
         }
       case None =>
@@ -640,7 +657,8 @@ object Validation {
   def handleLocalChannelDown(d: Data, localNodeId: PublicKey, lcd: LocalChannelDown)(implicit log: LoggingAdapter): Data = {
     import lcd.{channelId, remoteNodeId}
     log.debug("handleLocalChannelDown lcd={}", lcd)
-    val scid2PrivateChannels1 = d.scid2PrivateChannels - lcd.aliases.localAlias.toLong -- lcd.realScids.map(_.toLong)
+    // NB: we also remove real scids of previous funding transactions that may have been pruned from the commitments.
+    val scid2PrivateChannels1 = (d.scid2PrivateChannels - lcd.aliases.localAlias.toLong -- lcd.realScids.map(_.toLong)).filterNot { case (_, cid) => cid == channelId }
     // a local channel has permanently gone down
     if (lcd.realScids.exists(d.channels.contains)) {
       // the channel was public, we will receive (or have already received) a WatchSpent event, that will trigger a clean up of the channel

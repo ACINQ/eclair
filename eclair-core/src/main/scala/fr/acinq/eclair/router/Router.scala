@@ -68,6 +68,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
       context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
       context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
+      context.system.eventStream.subscribe(self, classOf[ChannelFundingConfirmed])
       context.system.eventStream.subscribe(self, classOf[PeerDisconnected])
       context.system.eventStream.publish(SubscriptionsComplete(this.getClass))
 
@@ -314,6 +315,9 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(lcd: LocalChannelDown, d: Data) =>
       stay() using Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
 
+    case Event(e: ChannelFundingConfirmed, d: Data) =>
+      stay() using Validation.handleChannelFundingConfirmed(d, e)
+
     case Event(e: AvailableBalanceChanged, d: Data) =>
       stay() using Validation.handleAvailableBalanceChanged(d, e)
 
@@ -361,6 +365,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       case lcu: LocalChannelUpdate => (Some(lcu.remoteNodeId), Some(lcu.channelId))
       case lcd: LocalChannelDown => (Some(lcd.remoteNodeId), Some(lcd.channelId))
       case abc: AvailableBalanceChanged => (Some(abc.commitments.remoteNodeId), Some(abc.channelId))
+      case cfc: ChannelFundingConfirmed => (Some(cfc.remoteNodeId), Some(cfc.channelId))
       case pd: PeerDisconnected => (Some(pd.nodeId), None)
       case _ => (None, None)
     }
