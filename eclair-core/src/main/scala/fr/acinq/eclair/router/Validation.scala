@@ -538,9 +538,15 @@ object Validation {
                 d.copy(channels = d.channels + (pc1.shortChannelId -> pc1), prunedChannels = d.prunedChannels - pc1.shortChannelId, rebroadcast = rebroadcast1, graphWithBalances = graphWithBalances1)
               }
             case None =>
-              log.debug("ignoring announcement {} (unknown channel)", u)
               sendDecision(origins, GossipDecision.NoRelatedChannel(u))
-              d
+              keepPendingPrivateUpdate(d, u, origins) match {
+                case Some(d1) =>
+                  log.debug("keeping {} until we know the real scid of our private channel", u)
+                  d1
+                case None =>
+                  log.debug("ignoring announcement {} (unknown channel)", u)
+                  d
+              }
           }
         }
     }
@@ -581,6 +587,44 @@ object Validation {
     }
   }
 
+  private val maxPendingPrivateUpdatesPerPeer = 10
+
+  /**
+   * Our peer may use a smaller min depth than ours, in which case it may send its channel_update for a private channel
+   * using the real scid before the funding transaction reaches our min depth: we don't know this real scid yet, so we
+   * keep their channel_update until we do (see [[replayPendingPrivateUpdates]]). We only do this for updates that our
+   * peers signed and sent us directly, and we keep a few of them per peer.
+   */
+  private def keepPendingPrivateUpdate(d: Data, u: ChannelUpdate, origins: Set[GossipOrigin]): Option[Data] = {
+    origins.collectFirst {
+      case RemoteGossip(_, nodeId) if d.privateChannels.values.exists(_.remoteNodeId == nodeId) && Announcements.checkSig(u, nodeId) => nodeId
+    }.flatMap { nodeId =>
+      val pending = d.pendingPrivateUpdates.getOrElse(nodeId, Map.empty)
+      pending.get(u.shortChannelId.toLong) match {
+        case Some(previous) if previous.timestamp >= u.timestamp => Some(d)
+        case Some(_) => Some(d.copy(pendingPrivateUpdates = d.pendingPrivateUpdates + (nodeId -> (pending + (u.shortChannelId.toLong -> u)))))
+        case None if pending.size < maxPendingPrivateUpdatesPerPeer => Some(d.copy(pendingPrivateUpdates = d.pendingPrivateUpdates + (nodeId -> (pending + (u.shortChannelId.toLong -> u)))))
+        case None => None
+      }
+    }
+  }
+
+  /** Process the channel_updates that our peer sent before we knew the real scid of this private channel. */
+  private def replayPendingPrivateUpdates(d: Data, db: NetworkDb, currentBlockHeight: BlockHeight, channelId: ByteVector32)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+    d.privateChannels.get(channelId) match {
+      case Some(pc) =>
+        val pending = d.pendingPrivateUpdates.getOrElse(pc.remoteNodeId, Map.empty)
+        val (ready, remaining) = pending.partition { case (scid, _) => d.scid2PrivateChannels.get(scid).contains(channelId) }
+        val d1 = d.copy(pendingPrivateUpdates = if (remaining.isEmpty) d.pendingPrivateUpdates - pc.remoteNodeId else d.pendingPrivateUpdates + (pc.remoteNodeId -> remaining))
+        ready.values.foldLeft(d1) {
+          case (d2, u) =>
+            log.debug("processing pending channel_update for private channelId={}: {}", channelId, u)
+            handleChannelUpdate(d2, db, currentBlockHeight, Right(RemoteChannelUpdate(u, Set.empty)), wasStashed = true)
+        }
+      case None => d
+    }
+  }
+
   /**
    * Our peer may use either an alias we gave them or the real scid in the channel_update it sends us for an unannounced
    * channel (see BOLT 7). We thus map the real scids of our private channels, which are only used to resolve channel
@@ -596,7 +640,7 @@ object Validation {
     }
   }
 
-  def handleChannelFundingConfirmed(d: Data, e: ChannelFundingConfirmed)(implicit log: LoggingAdapter): Data = {
+  def handleChannelFundingConfirmed(d: Data, db: NetworkDb, currentBlockHeight: BlockHeight, e: ChannelFundingConfirmed)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     // When the funding transaction of a new channel confirms, this event is emitted *before* the private channel is added
     // to our state (with ShortChannelIdAssigned). Our peer may send its channel_update using the real scid right after
     // receiving our channel_ready, and it may reach us before our local channel_update: we thus map the real scid now.
@@ -607,7 +651,8 @@ object Validation {
     } else {
       val realScids = e.commitments.all.flatMap(_.shortChannelId_opt).filterNot(scid => d.channels.contains(scid) || d.scid2PrivateChannels.get(scid.toLong).contains(e.channelId))
       if (realScids.nonEmpty) log.debug("mapping real scids={} to private channelId={}", realScids.mkString(","), e.channelId)
-      d.copy(scid2PrivateChannels = d.scid2PrivateChannels ++ realScids.map(_.toLong -> e.channelId))
+      val d1 = d.copy(scid2PrivateChannels = d.scid2PrivateChannels ++ realScids.map(_.toLong -> e.channelId))
+      replayPendingPrivateUpdates(d1, db, currentBlockHeight, e.channelId)
     }
   }
 
@@ -633,7 +678,8 @@ object Validation {
             // This a known private channel, we update the short ids and the balances.
             val pc1 = privateChannel.copy(aliases = lcu.aliases).updateBalances(lcu.commitments)
             val d1 = mapPrivateChannelRealScids(d.copy(privateChannels = d.privateChannels + (privateChannel.channelId -> pc1)), privateChannel.channelId, lcu.commitments)
-            handleChannelUpdate(d1, db, nodeParams.currentBlockHeight, Left(lcu))
+            val d2 = replayPendingPrivateUpdates(d1, db, nodeParams.currentBlockHeight, privateChannel.channelId)
+            handleChannelUpdate(d2, db, nodeParams.currentBlockHeight, Left(lcu))
         }
       case None =>
         lcu.announcement_opt match {
@@ -667,9 +713,16 @@ object Validation {
     }
   }
 
-  def handleLocalChannelDown(d: Data, localNodeId: PublicKey, lcd: LocalChannelDown)(implicit log: LoggingAdapter): Data = {
+  def handleLocalChannelDown(d0: Data, localNodeId: PublicKey, lcd: LocalChannelDown)(implicit log: LoggingAdapter): Data = {
     import lcd.{channelId, remoteNodeId}
     log.debug("handleLocalChannelDown lcd={}", lcd)
+    // We only keep pending channel_updates from peers with whom we have other private channels.
+    val pendingPrivateUpdates1 = if (d0.privateChannels.values.exists(pc => pc.remoteNodeId == remoteNodeId && pc.channelId != channelId)) {
+      d0.pendingPrivateUpdates.updatedWith(remoteNodeId)(_.map(_ -- lcd.realScids.map(_.toLong)).filter(_.nonEmpty))
+    } else {
+      d0.pendingPrivateUpdates - remoteNodeId
+    }
+    val d = d0.copy(pendingPrivateUpdates = pendingPrivateUpdates1)
     // NB: we also remove real scids of previous funding transactions that may have been pruned from the commitments.
     val scid2PrivateChannels1 = (d.scid2PrivateChannels - lcd.aliases.localAlias.toLong -- lcd.realScids.map(_.toLong)).filterNot { case (_, cid) => cid == channelId }
     // a local channel has permanently gone down

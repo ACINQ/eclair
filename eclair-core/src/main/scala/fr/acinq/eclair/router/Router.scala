@@ -316,7 +316,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
 
     case Event(e: ChannelFundingConfirmed, d: Data) =>
-      stay() using Validation.handleChannelFundingConfirmed(d, e)
+      stay() using Validation.handleChannelFundingConfirmed(d, nodeParams.db.network, nodeParams.currentBlockHeight, e)
 
     case Event(e: AvailableBalanceChanged, d: Data) =>
       stay() using Validation.handleAvailableBalanceChanged(d, e)
@@ -868,6 +868,7 @@ object Router {
                   graphWithBalances: GraphWithBalanceEstimates,
                   sync: Map[PublicKey, Syncing], // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
                   spentChannels: Map[TxId, Set[RealShortChannelId]], // transactions that spend funding txs that are not yet deeply buried
+                  pendingPrivateUpdates: Map[PublicKey, Map[Long, ChannelUpdate]] = Map.empty, // channel_updates (indexed by scid) that our peers sent for private channels whose real scid we don't know yet
                  ) extends RouterData {
     def resolve(scid: ShortChannelId): Option[KnownChannel] = {
       // let's assume this is a real scid

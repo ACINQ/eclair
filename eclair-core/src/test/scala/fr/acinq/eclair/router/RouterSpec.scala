@@ -1207,11 +1207,12 @@ class RouterSpec extends BaseRouterSpec {
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, g, update1))
     peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update1))
 
-    // The funding transaction confirms while we're connected: we accept channel_update using the real scid.
+    // The funding transaction confirms while we're connected: we use the channel_update we kept, and accept channel_update
+    // using the real scid.
     val commitments1 = confirm(commitments, scid_ag_private)
     sender.send(router, ChannelFundingConfirmed(sender.ref, channelId_ag_private, g, commitments1.latest.fundingTxId, 0, BlockHeight(420_000), commitments1, commitments))
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, g, update1))
-    peerConnection.expectMsg(GossipDecision.Accepted(update1))
+    peerConnection.expectMsg(GossipDecision.Duplicate(update1))
     sender.send(router, GetRouterData)
     inside(sender.expectMsgType[Data]) { data =>
       val pc = data.privateChannels(channelId_ag_private)
