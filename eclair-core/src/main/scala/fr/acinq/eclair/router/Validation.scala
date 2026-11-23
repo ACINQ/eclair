@@ -596,7 +596,20 @@ object Validation {
     }
   }
 
-  def handleChannelFundingConfirmed(d: Data, e: ChannelFundingConfirmed)(implicit log: LoggingAdapter): Data = mapPrivateChannelRealScids(d, e.channelId, e.commitments)
+  def handleChannelFundingConfirmed(d: Data, e: ChannelFundingConfirmed)(implicit log: LoggingAdapter): Data = {
+    // When the funding transaction of a new channel confirms, this event is emitted *before* the private channel is added
+    // to our state (with ShortChannelIdAssigned). Our peer may send its channel_update using the real scid right after
+    // receiving our channel_ready, and it may reach us before our local channel_update: we thus map the real scid now.
+    // This mapping is only used once the private channel has been added. Channels that will be announced are handled
+    // when we receive our local channel_update, and use the real scid once announced.
+    if (e.commitments.announceChannel) {
+      d
+    } else {
+      val realScids = e.commitments.all.flatMap(_.shortChannelId_opt).filterNot(scid => d.channels.contains(scid) || d.scid2PrivateChannels.get(scid.toLong).contains(e.channelId))
+      if (realScids.nonEmpty) log.debug("mapping real scids={} to private channelId={}", realScids.mkString(","), e.channelId)
+      d.copy(scid2PrivateChannels = d.scid2PrivateChannels ++ realScids.map(_.toLong -> e.channelId))
+    }
+  }
 
   def handleLocalChannelUpdate(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
