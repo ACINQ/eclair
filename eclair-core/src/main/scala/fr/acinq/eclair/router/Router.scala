@@ -496,10 +496,11 @@ object Router {
       case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
+    /** Our peer's channel_update, which they may not have sent us (it is optional for unannounced channels). */
+    def remoteUpdate_opt: Option[ChannelUpdate] = if (localNodeId == nodeId1) update_2_opt else update_1_opt
     /** Create an invoice routing hint for that channel. */
     def toIncomingExtraHop: Option[Bolt11Invoice.ExtraHop] = {
       // We use the incoming channel_update because we want to route to ourselves.
-      val remoteUpdate_opt = if (localNodeId == nodeId1) update_2_opt else update_1_opt
       // They sent us their channel update using either the real scid or our local alias (to allow us to map the update
       // to the right channel): we need to override it with the alias *they* are using for that channel. If they didn't
       // provide one, we won't use this channel as routing hint, because it would leak its short_channel_id.
