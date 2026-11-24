@@ -391,7 +391,17 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     privateChannelIds_opt match {
       case Some(channelIds) =>
         (appKit.router ? GetRouterData).mapTo[Router.Data].map {
-          d => channelIds.flatMap(cid => d.privateChannels.get(cid)).flatMap(_.toIncomingExtraHop).map(hop => hop :: Nil)
+          d =>
+            channelIds.flatMap(cid => d.privateChannels.get(cid)).flatMap { pc =>
+              if (pc.remoteUpdate_opt.isEmpty) {
+                logger.warn(s"cannot include private channelId=${pc.channelId} in invoice routing hints: we don't have the channel_update of remoteNodeId=${pc.remoteNodeId}")
+              }
+              if (pc.aliases.remoteAlias_opt.isEmpty) {
+                // We would otherwise leak the real scid of the channel.
+                logger.warn(s"cannot include private channelId=${pc.channelId} in invoice routing hints: remoteNodeId=${pc.remoteNodeId} did not send us an alias for this channel")
+              }
+              pc.toIncomingExtraHop
+            }.map(hop => hop :: Nil)
         }
       case None => Future.successful(Nil)
     }

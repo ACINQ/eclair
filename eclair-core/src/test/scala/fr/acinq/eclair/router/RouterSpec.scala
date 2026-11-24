@@ -37,10 +37,11 @@ import fr.acinq.eclair.router.RouteCalculationSpec.{DEFAULT_AMOUNT_MSAT, DEFAULT
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestConstants, TimestampSecond, randomBytes32, randomKey}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestConstants, TimestampSecond, randomBytes32, randomKey}
 import org.scalatest.Inside.inside
 import scodec.bits._
 
+import scala.collection.immutable.SortedMap
 import scala.concurrent.duration._
 
 /**
@@ -1180,6 +1181,134 @@ class RouterSpec extends BaseRouterSpec {
       assert(chan2.ann == announcement2)
       assert((chan2.update_1_opt.toSet ++ chan2.update_2_opt.toSet) == Set(update2))
     }
+  }
+
+  test("accept channel_update from our peer using the real scid of a private channel") { fixture =>
+    import fixture._
+
+    val sender = TestProbe()
+    val peerConnection = TestProbe()
+    peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
+
+    def confirm(commitments: Commitments, scid: RealShortChannelId): Commitments = {
+      val fundingConfirmed = LocalFundingStatus.ConfirmedFundingTx(Nil, TxOut(commitments.latest.capacity, Nil), scid, None, None)
+      commitments.updateLocalFundingStatus(commitments.latest.fundingTxId, fundingConfirmed, None)(akka.event.NoLogging).toOption.get._1
+    }
+
+    def peerUpdate(feeBase: MilliSatoshi, timestampOffset: Long): ChannelUpdate = {
+      makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, a, scid_ag_private, CltvExpiryDelta(40), htlcMinimumMsat = 0 msat, feeBaseMsat = feeBase, feeProportionalMillionths = 150, htlcMaximumMsat = htlcMaximum, timestamp = update_ga_private.timestamp + timestampOffset)
+    }
+
+    // BOLT 7 lets our peer use either an alias we gave them or the real scid in its channel_update for unannounced
+    // channels: lnd for example uses the real scid when sending its channel_update again after reconnecting.
+    // While the (zero-conf) funding transaction is unconfirmed, there is no real scid.
+    val commitments = CommitmentsSpec.makeCommitments(30_000_000 msat, 8_000_000 msat, a, g, announcement_opt = None)
+    val update1 = peerUpdate(25 msat, 1)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, g, update1))
+    peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update1))
+
+    // The funding transaction confirms while we're connected: we use the channel_update we kept, and accept channel_update
+    // using the real scid.
+    val commitments1 = confirm(commitments, scid_ag_private)
+    sender.send(router, ChannelFundingConfirmed(sender.ref, channelId_ag_private, g, commitments1.latest.fundingTxId, 0, BlockHeight(420_000), commitments1, commitments))
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, g, update1))
+    peerConnection.expectMsg(GossipDecision.Duplicate(update1))
+    sender.send(router, GetRouterData)
+    inside(sender.expectMsgType[Data]) { data =>
+      val pc = data.privateChannels(channelId_ag_private)
+      assert(pc.remoteUpdate_opt.contains(update1))
+      // We still use our peer's alias in routing hints, the real scid must not be leaked.
+      assert(pc.toIncomingExtraHop.contains(ExtraHop(g, alias_ga_private, 25 msat, 150, CltvExpiryDelta(40))))
+    }
+
+    // After a restart, the real scid is mapped when the channel is restored.
+    system.stop(router)
+    val router1 = system.actorOf(Router.props(nodeParams, watcher.ref.toTyped))
+    router1 ! Router.Init(SortedMap.empty, Nil, None)
+    sender.send(router1, ShortChannelIdAssigned(sender.ref, channelId_ag_private, announcement_opt = None, scids_ag_private, g))
+    sender.send(router1, LocalChannelUpdate(sender.ref, channelId_ag_private, scids_ag_private, g, None, update_ag_private, commitments1))
+    val update2 = peerUpdate(30 msat, 2)
+    peerConnection.send(router1, PeerRoutingMessage(peerConnection.ref, g, update2))
+    peerConnection.expectMsg(GossipDecision.Accepted(update2))
+    sender.send(router1, GetRouterData)
+    inside(sender.expectMsgType[Data]) { data =>
+      val pc = data.privateChannels(channelId_ag_private)
+      assert(pc.toIncomingExtraHop.contains(ExtraHop(g, alias_ga_private, 30 msat, 150, CltvExpiryDelta(40))))
+      // The incoming edge is in the graph, and uses our local alias.
+      val edge_ga = data.graphWithBalances.graph.getEdge(ChannelDesc(alias_ag_private, g, a)).get
+      assert(edge_ga.params == HopRelayParams.FromAnnouncement(update2))
+    }
+
+    // Once the channel is closed, we don't recognize its real scid anymore.
+    sender.send(router1, LocalChannelDown(sender.ref, channelId_ag_private, Seq(scid_ag_private), scids_ag_private, g))
+    val update3 = peerUpdate(35 msat, 3)
+    peerConnection.send(router1, PeerRoutingMessage(peerConnection.ref, g, update3))
+    peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update3))
+  }
+
+  test("accept channel_update using the real scid of a new private channel before our own channel_update") { fixture =>
+    import fixture._
+
+    val sender = TestProbe()
+    val peerConnection = TestProbe()
+    peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
+
+    // We open a private channel with x: when the funding transaction confirms, the channel emits ChannelFundingConfirmed
+    // *before* ShortChannelIdAssigned, which adds the private channel to the router.
+    val x = randomKey()
+    val scid = RealShortChannelId(BlockHeight(420_000), 12, 0)
+    val aliases = ShortIdAliases(ShortChannelId.generateLocalAlias(), Some(ShortChannelId.generateLocalAlias()))
+    val commitments = CommitmentsSpec.makeCommitments(30_000_000 msat, 8_000_000 msat, a, x.publicKey, announcement_opt = None)
+    val fundingConfirmed = LocalFundingStatus.ConfirmedFundingTx(Nil, TxOut(commitments.latest.capacity, Nil), scid, None, None)
+    val commitments1 = commitments.updateLocalFundingStatus(commitments.latest.fundingTxId, fundingConfirmed, None)(akka.event.NoLogging).toOption.get._1
+    sender.send(router, ChannelFundingConfirmed(sender.ref, commitments.channelId, x.publicKey, commitments1.latest.fundingTxId, 0, BlockHeight(420_000), commitments1, commitments))
+    sender.send(router, ShortChannelIdAssigned(sender.ref, commitments.channelId, announcement_opt = None, aliases, x.publicKey))
+
+    // Our peer sends its channel_update using the real scid right after its channel_ready, and it reaches the router
+    // before our local channel_update (which goes through our channel actor and the event stream).
+    val update_xa = makeChannelUpdate(Block.RegtestGenesisBlock.hash, x, a, scid, CltvExpiryDelta(40), htlcMinimumMsat = 0 msat, feeBaseMsat = 25 msat, feeProportionalMillionths = 150, htlcMaximumMsat = htlcMaximum)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, x.publicKey, update_xa))
+    peerConnection.expectMsg(GossipDecision.Accepted(update_xa))
+    sender.send(router, GetRouterData)
+    val pc = sender.expectMsgType[Data].privateChannels(commitments.channelId)
+    assert(pc.toIncomingExtraHop.contains(ExtraHop(x.publicKey, aliases.remoteAlias_opt.get, 25 msat, 150, CltvExpiryDelta(40))))
+  }
+
+  test("accept channel_update using the real scid of a private channel that reached our peer's min depth before ours") { fixture =>
+    import fixture._
+
+    val sender = TestProbe()
+    val peerConnection = TestProbe()
+    peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
+
+    // We open a private channel with x, which uses a smaller min depth than ours and sends an early channel_ready with
+    // an alias: the channel is added to the router before its funding transaction confirms.
+    val x = randomKey()
+    val scid = RealShortChannelId(BlockHeight(420_001), 7, 1)
+    val aliases = ShortIdAliases(ShortChannelId.generateLocalAlias(), Some(ShortChannelId.generateLocalAlias()))
+    val commitments = CommitmentsSpec.makeCommitments(30_000_000 msat, 8_000_000 msat, a, x.publicKey, announcement_opt = None)
+    sender.send(router, ShortChannelIdAssigned(sender.ref, commitments.channelId, announcement_opt = None, aliases, x.publicKey))
+
+    // The funding transaction reaches x's min depth: x sends its channel_update using the real scid, which we don't know
+    // yet since the funding transaction hasn't reached our own min depth.
+    val update_xa = makeChannelUpdate(Block.RegtestGenesisBlock.hash, x, a, scid, CltvExpiryDelta(40), htlcMinimumMsat = 0 msat, feeBaseMsat = 25 msat, feeProportionalMillionths = 150, htlcMaximumMsat = htlcMaximum)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, x.publicKey, update_xa))
+    peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update_xa))
+    // An update for the same scid that isn't signed by x must be ignored.
+    val forged = makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey(), a, scid, CltvExpiryDelta(144), htlcMinimumMsat = 0 msat, feeBaseMsat = 1_000_000 msat, feeProportionalMillionths = 10_000, htlcMaximumMsat = htlcMaximum, timestamp = update_xa.timestamp + 1)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, x.publicKey, forged))
+    peerConnection.expectMsg(GossipDecision.NoRelatedChannel(forged))
+    sender.send(router, GetRouterData)
+    assert(sender.expectMsgType[Data].privateChannels(commitments.channelId).toIncomingExtraHop.isEmpty)
+
+    // The funding transaction then reaches our min depth: we can now use x's channel_update.
+    val fundingConfirmed = LocalFundingStatus.ConfirmedFundingTx(Nil, TxOut(commitments.latest.capacity, Nil), scid, None, None)
+    val commitments1 = commitments.updateLocalFundingStatus(commitments.latest.fundingTxId, fundingConfirmed, None)(akka.event.NoLogging).toOption.get._1
+    sender.send(router, ChannelFundingConfirmed(sender.ref, commitments.channelId, x.publicKey, commitments1.latest.fundingTxId, 0, BlockHeight(420_008), commitments1, commitments))
+    sender.send(router, GetRouterData)
+    val pc = sender.expectMsgType[Data].privateChannels(commitments.channelId)
+    assert(pc.remoteUpdate_opt.contains(update_xa))
+    assert(pc.toIncomingExtraHop.contains(ExtraHop(x.publicKey, aliases.remoteAlias_opt.get, 25 msat, 150, CltvExpiryDelta(40))))
   }
 
   test("stream updates to front") { fixture =>

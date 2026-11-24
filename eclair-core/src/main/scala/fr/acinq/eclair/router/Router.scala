@@ -68,6 +68,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
       context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
       context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
+      context.system.eventStream.subscribe(self, classOf[ChannelFundingConfirmed])
       context.system.eventStream.subscribe(self, classOf[PeerDisconnected])
       context.system.eventStream.publish(SubscriptionsComplete(this.getClass))
 
@@ -314,6 +315,9 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(lcd: LocalChannelDown, d: Data) =>
       stay() using Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
 
+    case Event(e: ChannelFundingConfirmed, d: Data) =>
+      stay() using Validation.handleChannelFundingConfirmed(d, nodeParams.db.network, nodeParams.currentBlockHeight, e)
+
     case Event(e: AvailableBalanceChanged, d: Data) =>
       stay() using Validation.handleAvailableBalanceChanged(d, e)
 
@@ -361,6 +365,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       case lcu: LocalChannelUpdate => (Some(lcu.remoteNodeId), Some(lcu.channelId))
       case lcd: LocalChannelDown => (Some(lcd.remoteNodeId), Some(lcd.channelId))
       case abc: AvailableBalanceChanged => (Some(abc.commitments.remoteNodeId), Some(abc.channelId))
+      case cfc: ChannelFundingConfirmed => (Some(cfc.remoteNodeId), Some(cfc.channelId))
       case pd: PeerDisconnected => (Some(pd.nodeId), None)
       case _ => (None, None)
     }
@@ -496,10 +501,11 @@ object Router {
       case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
+    /** Our peer's channel_update, which they may not have sent us (it is optional for unannounced channels). */
+    def remoteUpdate_opt: Option[ChannelUpdate] = if (localNodeId == nodeId1) update_2_opt else update_1_opt
     /** Create an invoice routing hint for that channel. */
     def toIncomingExtraHop: Option[Bolt11Invoice.ExtraHop] = {
       // We use the incoming channel_update because we want to route to ourselves.
-      val remoteUpdate_opt = if (localNodeId == nodeId1) update_2_opt else update_1_opt
       // They sent us their channel update using either the real scid or our local alias (to allow us to map the update
       // to the right channel): we need to override it with the alias *they* are using for that channel. If they didn't
       // provide one, we won't use this channel as routing hint, because it would leak its short_channel_id.
@@ -862,6 +868,7 @@ object Router {
                   graphWithBalances: GraphWithBalanceEstimates,
                   sync: Map[PublicKey, Syncing], // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
                   spentChannels: Map[TxId, Set[RealShortChannelId]], // transactions that spend funding txs that are not yet deeply buried
+                  pendingPrivateUpdates: Map[PublicKey, Map[Long, ChannelUpdate]] = Map.empty, // channel_updates (indexed by scid) that our peers sent for private channels whose real scid we don't know yet
                  ) extends RouterData {
     def resolve(scid: ShortChannelId): Option[KnownChannel] = {
       // let's assume this is a real scid
