@@ -48,6 +48,7 @@ import java.net.InetSocketAddress
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * Minimal serializer that only does serialization, not deserialization, and does not depend on external formats.
@@ -171,6 +172,10 @@ object TimestampMilliSerializer extends ConvertClassSerializer[TimestampMilli](t
   unix = ts.toLong / 1000 // we convert to standard unix timestamp with second precision
 ))
 // @formatter:on
+
+object FiniteDurationSerializer extends MinimalSerializer({
+  case d: FiniteDuration => JLong(d.toMillis)
+})
 
 object BtcSerializer extends MinimalSerializer({
   case x: Btc => JDecimal(x.toDouble)
@@ -763,6 +768,7 @@ object JsonSerializers {
     UInt64Serializer +
     TimestampSecondSerializer +
     TimestampMilliSerializer +
+    FiniteDurationSerializer +
     BtcSerializer +
     SatoshiSerializer +
     MilliSatoshiSerializer +
