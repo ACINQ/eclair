@@ -30,7 +30,7 @@ import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.OfferData
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.PeerInfo
-import fr.acinq.eclair.payment.{ChannelPaymentRelayed, Invoice, PaymentEvent}
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, Invoice, PaymentEvent, PaymentFailed, UnreadableRemoteFailure}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc, Transactions}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs
@@ -42,6 +42,7 @@ import scodec.bits._
 
 import java.net.InetAddress
 import java.util.{Currency, UUID}
+import scala.concurrent.duration.DurationInt
 
 class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Matchers {
 
@@ -526,6 +527,21 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
 
   test("serialize block height") {
     JsonSerializers.serialization.write(BlockHeight(123456))(JsonSerializers.formats) shouldBe "123456"
+  }
+
+  test("serialize payment failed with unreadable remote failure") {
+    val remoteNodeId = PublicKey(hex"02d0ef21f4b5f5b6d4ad3fb5e4fcb6d56d6e1ef6d7d6dc0c19a5d3ba5d2c2c5f7e")
+    val failure = UnreadableRemoteFailure(
+      amount = 1000 msat,
+      route = Nil,
+      e = Sphinx.CannotDecryptFailurePacket(hex"deadbeef", None),
+      startedAt = TimestampMilli(1633357961456L),
+      failedAt = TimestampMilli(1633357962456L),
+      holdTimes = Seq(Sphinx.HoldTime(500 millis, remoteNodeId), Sphinx.HoldTime(1200 millis, remoteNodeId))
+    )
+    val paymentFailed = PaymentFailed(UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f"), ByteVector32.Zeroes, Seq(failure), TimestampMilli(1633357961456L), TimestampMilli(1633357962456L))
+    val json = JsonSerializers.serialization.write(paymentFailed)(JsonSerializers.formats)
+    assert(json.contains(s""""holdTimes":[{"duration":500,"remoteNodeId":"$remoteNodeId"},{"duration":1200,"remoteNodeId":"$remoteNodeId"}]"""))
   }
 
   /** utility method that strips line breaks in the expected json */
