@@ -260,7 +260,7 @@ object TransactionSerializer extends MinimalSerializer({
 })
 
 object KeyPathSerializer extends MinimalSerializer({
-  case x: KeyPath => JArray(x.path.map(x => JLong(x)).toList)
+  case x: KeyPath => JString(x.toString())
 })
 
 object TransactionWithInputInfoSerializer extends MinimalSerializer({
