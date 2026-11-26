@@ -7,7 +7,7 @@
       "channelFeatures" : [ ],
       "localParams" : {
         "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
-        "fundingKeyPath" : [ 2991312759, 2885060634, 655227718, 2922102827, 1043845274, 1752953898, 1181026574, 3694432728, 2147483649 ],
+        "fundingKeyPath" : "m/843829111'/737576986'/655227718/774619179'/1043845274/1752953898/1181026574/1546949080'/1'",
         "initialRequestedChannelReserve_opt" : 10000,
         "isChannelOpener" : true,
         "paysCommitTxFees" : true,

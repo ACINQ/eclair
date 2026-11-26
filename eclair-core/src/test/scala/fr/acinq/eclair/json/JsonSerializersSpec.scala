@@ -19,7 +19,8 @@ package fr.acinq.eclair.json
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxHash, TxId, TxOut}
+import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxHash, TxId, TxOut, addressToPublicKeyScript}
 import fr.acinq.eclair._
 import fr.acinq.eclair.balance.CheckBalance
 import fr.acinq.eclair.balance.CheckBalance.{GlobalBalance, MainAndHtlcBalance}
@@ -163,7 +164,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |       "channelFeatures": [],
         |       "localParams": {
         |         "nodeId": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
-        |         "fundingKeyPath": [42],
+        |         "fundingKeyPath": "m/42",
         |         "initialRequestedChannelReserve_opt": 1000,
         |         "isChannelOpener": true,
         |         "paysCommitTxFees" : true,
@@ -537,4 +538,23 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     assert(actual == cleanedExpected)
   }
 
+  test("serialize key path as a string") {
+    val master = DeterministicWallet.generate(ByteVector.fromValidHex("01" * 32))
+    val path = List(3278558947L, 3908113959L, 2867807599L, 3986451686L, 965856826L, 1628259292L, 1652967911L, 1720819212L, 2147483649L)
+    val keyPath = KeyPath(path)
+    val key1 = master.derivePrivateKey(keyPath)
+    val key2 = master.derivePrivateKey(path)
+    assert(key1 == key2)
+
+    // this is how our key path was serialized: as a list of longs, without taking into account index hardening
+    val oldPathAsString = "3278558947/3908113959/2867807599/3986451686/965856826/1628259292/1652967911/1720819212/2147483649"
+    intercept[IllegalArgumentException] {
+      KeyPath(oldPathAsString)
+    }
+
+    val newPathAsString = JsonSerializers.serialization.write(keyPath)(JsonSerializers.formats).stripPrefix("\"").stripSuffix("\"")
+    assert(newPathAsString == "m/1131075299'/1760630311'/720323951'/1838968038'/965856826/1628259292/1652967911/1720819212/1'")
+    val keyPath1 = KeyPath(newPathAsString)
+    assert(keyPath1 == keyPath)
+  }
 }

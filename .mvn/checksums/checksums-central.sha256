@@ -135,6 +135,7 @@
 0fa7dd96ff039af75db12bca1d9af5529df55e80b16ce86ecc8cf38a13699c9d  org/apache/maven/maven-project/2.0/maven-project-2.0.jar
 0ffa0ad084ebff5712540a7b7ea0abda487c53d3a18f78c98d1a3675dab9bf61  org/codehaus/plexus/plexus-utils/3.1.0/plexus-utils-3.1.0.jar
 1052baf8572537698106c764856b0f861930668b57961f89289688507330b022  org/apache/maven/surefire/surefire/2.20/surefire-2.20.pom
+1061d4d0fe0ee7ca7ca2baba458d9e1e03a900674ce93e5086ff6dccf70bcd96  fr/acinq/bitcoin-lib_2.13/0.50/bitcoin-lib_2.13-0.50.pom
 10937d44c425984cb8739225d34712e1a3145641ca93ac3f7ef186fa25f6babc  org/junit/junit-bom/5.10.3/junit-bom-5.10.3.pom
 109edd22a65676a023c73fde368d89ea2021b1b99f84fc9de478743dd1ae436a  org/scalatest/scalatest-funspec_2.13/3.2.16/scalatest-funspec_2.13-3.2.16.pom
 10bbc5674fab0fa2bbcf8f7696796d3e1b92ab31525330921fbdb8da74fe1472  org/apache/maven/doxia/doxia-skin-model/2.0.0/doxia-skin-model-2.0.0.pom
@@ -551,6 +552,7 @@
 42a193e06fa41b7e75de548e95b6e3d655646406ba7cd9b62c8a5c66d1de9be1  org/apache/maven/plugins/maven-surefire-plugin/3.0.0-M4/maven-surefire-plugin-3.0.0-M4.pom
 42ae10b7881b5219010546c577578d57a23f69a31e3bac9c0fabb9ab4ffd2cd3  com/github/luben/zstd-jni/1.5.7-15/zstd-jni-1.5.7-15.pom
 42b7b756506bca98b505938426a35c99082f7819c333ed25bd4114bfb0e3b5f2  org/jline/jline-terminal/3.27.1/jline-terminal-3.27.1.jar
+42c050e62bc0355c090c3ba84add0be7a4c285009720e622f7cb425223102d62  fr/acinq/bitcoin/bitcoin-kmp-jvm/0.33.0/bitcoin-kmp-jvm-0.33.0.jar
 42d759c550d723373ae34556e80930b9ed2e13495dace134adf99e64ddc8d2e1  org/apache/maven/plugins/maven-plugins/35/maven-plugins-35.pom
 42fde763a6e6fe8480b1608adff2c35d02612e279ec9ce72fabb4fd8fb5c5753  org/apache/maven/maven-parent/31/maven-parent-31.pom
 43125840dd928065fa83fb76c89873be4fc34e28c8b6fb62fd66be9be965100d  javax/enterprise/cdi-api/1.0/cdi-api-1.0.pom
@@ -872,6 +874,7 @@
 6a80b1821e5d6956cf78ec4c0ce3c640c7f1141edd4885fae3e0b060797cca01  org/slf4j/slf4j-api/1.7.9/slf4j-api-1.7.9.pom
 6a9d8c4698dc8c6904d6ac1f5d13018aa7f828449bc5b8cef78fc1431ce08217  org/junit/jupiter/junit-jupiter-api/5.9.0/junit-jupiter-api-5.9.0.pom
 6abdbcd5020cbeeb748e63ad6ec18ea99b3ccd631d504e2be3975d14510ca664  pl/project13/maven/git-commit-id-plugin-parent/4.9.10/git-commit-id-plugin-parent-4.9.10.pom
+6ad27a7f660ca18204d65f820c3a0be2c7e5e6bac29f4dc0331de71c29f84ff3  fr/acinq/bitcoin/bitcoin-kmp-jvm/0.33.0/bitcoin-kmp-jvm-0.33.0.pom
 6aecfd5459728a595601cfa07258d131972ffc39b492eb48bdd596577a2f244a  org/apache/commons/commons-compress/1.21/commons-compress-1.21.jar
 6af8dc59a82d094886289d49bd50d9b01c5b3b718795744fda5832f4d66a3eaf  org/apache/maven/plugins/maven-surefire-plugin/3.6.0-M1/maven-surefire-plugin-3.6.0-M1.pom
 6b2184872fa7cc2ef5a90481b56af9711c15b371e69ab52f0f31bf24e910dd82  org/apache/maven/resolver/maven-resolver-util/1.4.1/maven-resolver-util-1.4.1.jar
@@ -1735,6 +1738,7 @@ d9440bbd99b48c4e2c924657a7580a33c8eab24d6d2c4551ae7791b00ea89792  org/apache/mav
 d95678e3af56b17c7db6cff9645efad5eb59be9f3c1caaaf5f0146edf04691d7  org/apache/commons/commons-compress/1.20/commons-compress-1.20.pom
 d9a3fe6374558b88948a96382b6b8a7ad75c23bed754994ea6f002586bb35f27  org/codehaus/plexus/plexus-classworlds/2.9.0/plexus-classworlds-2.9.0.pom
 d9ea8f560c90f9732d4713df9ee5b2b67a268cf10b129e54a4e89c543f2bbe64  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-darwin/0.23.0/secp256k1-kmp-jni-jvm-darwin-0.23.0.jar
+d9f8c42e13520c72df3ea91c5f00b16be752078df785d7584e516c58195e6f89  fr/acinq/bitcoin-lib_2.13/0.50/bitcoin-lib_2.13-0.50.jar
 da3f53be1d45ef3af667fdfa26f54c3ebc0e196b8c4dfb646491dbe3e31cb20b  org/glassfish/json/1.1.4/json-1.1.4.pom
 da73e32b58132e64daf12269fd9d011c0b303f234840f179908725a632b6b57c  org/sonatype/plexus/plexus-sec-dispatcher/1.4/plexus-sec-dispatcher-1.4.jar
 dac807f65b07698ff39b1b07bfef3d87ae3fd46d91bbf8a2bc02b2a831616f68  org/apache/commons/commons-lang3/3.8.1/commons-lang3-3.8.1.jar

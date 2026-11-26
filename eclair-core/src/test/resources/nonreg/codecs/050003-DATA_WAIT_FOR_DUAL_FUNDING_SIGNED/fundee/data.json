@@ -6,7 +6,7 @@
     "channelFeatures" : [ "option_dual_fund" ],
     "localParams" : {
       "nodeId" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
-      "fundingKeyPath" : [ 3698239691, 3327814459, 1126810397, 2640456200, 3776652990, 3516296501, 3460455443, 2042350080, 2147483648 ],
+      "fundingKeyPath" : "m/1550756043'/1180330811'/1126810397/492972552'/1629169342'/1368812853'/1312971795'/2042350080/0'",
       "isChannelOpener" : false,
       "paysCommitTxFees" : false,
       "initFeatures" : {
